@@ -1,0 +1,505 @@
+//! Repositories for the meetings domain (`data-model.md` §2): `meetings`,
+//! `meeting_segments` and `meeting_app_rules`.
+
+use anyhow::Result;
+use chrono::Utc;
+use rusqlite::{params, Connection, OptionalExtension, Row};
+use uuid::Uuid;
+
+// ---------------------------------------------------------------------------
+// meetings
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Meeting {
+    /// uuid
+    pub id: String,
+    pub title: String,
+    /// e.g. "Zoom.exe", "chrome.exe"
+    pub app_exe: Option<String>,
+    /// e.g. "Google Meet"
+    pub app_label: Option<String>,
+    /// 'auto_prompt' | 'auto_start' | 'manual' | 'in_person'
+    pub detection: String,
+    /// 'recording' | 'paused' | 'processing' | 'ready' | 'error' | 'recovered'
+    pub status: String,
+    /// Unix epoch seconds.
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub capture_system_audio: bool,
+    pub stt_provider_id: Option<String>,
+    pub llm_provider_id: Option<String>,
+    pub template_id: Option<String>,
+    /// Editable markdown summary.
+    pub summary_md: Option<String>,
+    /// Directory with the 60 s audio blocks; NULL after retention expiry.
+    pub audio_dir: Option<String>,
+    pub language: Option<String>,
+    pub error_code: Option<String>,
+}
+
+impl Meeting {
+    /// A meeting detected/started now with the given `detection` trigger.
+    /// `detection`: 'auto_prompt' | 'auto_start' | 'manual' | 'in_person'.
+    pub fn new(title: &str, detection: &str) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            title: title.to_string(),
+            app_exe: None,
+            app_label: None,
+            detection: detection.to_string(),
+            status: "recording".to_string(),
+            started_at: Utc::now().timestamp(),
+            ended_at: None,
+            capture_system_audio: true,
+            stt_provider_id: None,
+            llm_provider_id: None,
+            template_id: None,
+            summary_md: None,
+            audio_dir: None,
+            language: None,
+            error_code: None,
+        }
+    }
+
+    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            title: row.get("title")?,
+            app_exe: row.get("app_exe")?,
+            app_label: row.get("app_label")?,
+            detection: row.get("detection")?,
+            status: row.get("status")?,
+            started_at: row.get("started_at")?,
+            ended_at: row.get("ended_at")?,
+            capture_system_audio: row.get("capture_system_audio")?,
+            stt_provider_id: row.get("stt_provider_id")?,
+            llm_provider_id: row.get("llm_provider_id")?,
+            template_id: row.get("template_id")?,
+            summary_md: row.get("summary_md")?,
+            audio_dir: row.get("audio_dir")?,
+            language: row.get("language")?,
+            error_code: row.get("error_code")?,
+        })
+    }
+}
+
+pub trait MeetingRepository {
+    fn create(&self, meeting: &Meeting) -> Result<()>;
+    fn get(&self, id: &str) -> Result<Option<Meeting>>;
+    /// Newest first (by `started_at`).
+    fn list(&self) -> Result<Vec<Meeting>>;
+    /// Persist every mutable field of `meeting`.
+    fn update(&self, meeting: &Meeting) -> Result<()>;
+    /// Set `status` (and optionally `error_code`); when `ended` is true also
+    /// stamps `ended_at` if not already set.
+    fn set_status(&self, id: &str, status: &str, error_code: Option<&str>) -> Result<()>;
+    /// Deletes the meeting and cascades to its segments/notes.
+    fn delete(&self, id: &str) -> Result<()>;
+}
+
+pub struct SqliteMeetingRepository<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> SqliteMeetingRepository<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+}
+
+impl MeetingRepository for SqliteMeetingRepository<'_> {
+    fn create(&self, meeting: &Meeting) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO meetings (
+                id, title, app_exe, app_label, detection, status,
+                started_at, ended_at, capture_system_audio,
+                stt_provider_id, llm_provider_id, template_id,
+                summary_md, audio_dir, language, error_code
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+            params![
+                meeting.id,
+                meeting.title,
+                meeting.app_exe,
+                meeting.app_label,
+                meeting.detection,
+                meeting.status,
+                meeting.started_at,
+                meeting.ended_at,
+                meeting.capture_system_audio,
+                meeting.stt_provider_id,
+                meeting.llm_provider_id,
+                meeting.template_id,
+                meeting.summary_md,
+                meeting.audio_dir,
+                meeting.language,
+                meeting.error_code,
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn get(&self, id: &str) -> Result<Option<Meeting>> {
+        let mut stmt = self.conn.prepare("SELECT * FROM meetings WHERE id = ?1")?;
+        let meeting = stmt.query_row(params![id], Meeting::from_row).optional()?;
+        Ok(meeting)
+    }
+
+    fn list(&self) -> Result<Vec<Meeting>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM meetings ORDER BY started_at DESC")?;
+        let rows = stmt.query_map([], Meeting::from_row)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn update(&self, meeting: &Meeting) -> Result<()> {
+        self.conn.execute(
+            "UPDATE meetings SET
+                title = ?1, app_exe = ?2, app_label = ?3, detection = ?4,
+                status = ?5, started_at = ?6, ended_at = ?7,
+                capture_system_audio = ?8, stt_provider_id = ?9,
+                llm_provider_id = ?10, template_id = ?11, summary_md = ?12,
+                audio_dir = ?13, language = ?14, error_code = ?15
+             WHERE id = ?16",
+            params![
+                meeting.title,
+                meeting.app_exe,
+                meeting.app_label,
+                meeting.detection,
+                meeting.status,
+                meeting.started_at,
+                meeting.ended_at,
+                meeting.capture_system_audio,
+                meeting.stt_provider_id,
+                meeting.llm_provider_id,
+                meeting.template_id,
+                meeting.summary_md,
+                meeting.audio_dir,
+                meeting.language,
+                meeting.error_code,
+                meeting.id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn set_status(&self, id: &str, status: &str, error_code: Option<&str>) -> Result<()> {
+        let ended = matches!(status, "ready" | "error" | "recovered");
+        self.conn.execute(
+            "UPDATE meetings SET
+                status = ?1,
+                error_code = ?2,
+                ended_at = CASE WHEN ?3 AND ended_at IS NULL THEN ?4 ELSE ended_at END
+             WHERE id = ?5",
+            params![status, error_code, ended, Utc::now().timestamp(), id],
+        )?;
+        Ok(())
+    }
+
+    fn delete(&self, id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM meetings WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// meeting_segments
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeetingSegment {
+    /// uuid
+    pub id: String,
+    pub meeting_id: String,
+    /// 'mic' | 'system'
+    pub track: String,
+    /// "Você", "Outros", "Falante 1"…
+    pub speaker: Option<String>,
+    /// Milliseconds relative to the meeting's `started_at`.
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub text: String,
+    /// 'speech' | 'dictation_marker' | 'gap_marker'
+    pub kind: String,
+    /// false while the segment is still a partial transcript.
+    pub is_final: bool,
+}
+
+impl MeetingSegment {
+    /// `track`: 'mic' | 'system'. `kind` defaults to 'speech'.
+    pub fn new(meeting_id: &str, track: &str, start_ms: i64, end_ms: i64, text: &str) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            meeting_id: meeting_id.to_string(),
+            track: track.to_string(),
+            speaker: None,
+            start_ms,
+            end_ms,
+            text: text.to_string(),
+            kind: "speech".to_string(),
+            is_final: true,
+        }
+    }
+
+    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            meeting_id: row.get("meeting_id")?,
+            track: row.get("track")?,
+            speaker: row.get("speaker")?,
+            start_ms: row.get("start_ms")?,
+            end_ms: row.get("end_ms")?,
+            text: row.get("text")?,
+            kind: row.get("kind")?,
+            is_final: row.get("is_final")?,
+        })
+    }
+}
+
+pub trait MeetingSegmentRepository {
+    fn create(&self, segment: &MeetingSegment) -> Result<()>;
+    /// Segments of a meeting ordered by `start_ms`.
+    fn list_by_meeting(&self, meeting_id: &str) -> Result<Vec<MeetingSegment>>;
+    fn delete(&self, id: &str) -> Result<()>;
+}
+
+pub struct SqliteMeetingSegmentRepository<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> SqliteMeetingSegmentRepository<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+}
+
+impl MeetingSegmentRepository for SqliteMeetingSegmentRepository<'_> {
+    fn create(&self, segment: &MeetingSegment) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO meeting_segments (
+                id, meeting_id, track, speaker, start_ms, end_ms, text, kind, is_final
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![
+                segment.id,
+                segment.meeting_id,
+                segment.track,
+                segment.speaker,
+                segment.start_ms,
+                segment.end_ms,
+                segment.text,
+                segment.kind,
+                segment.is_final,
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn list_by_meeting(&self, meeting_id: &str) -> Result<Vec<MeetingSegment>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT * FROM meeting_segments WHERE meeting_id = ?1 ORDER BY start_ms ASC",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], MeetingSegment::from_row)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn delete(&self, id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM meeting_segments WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// meeting_app_rules
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeetingAppRule {
+    /// uuid
+    pub id: String,
+    /// e.g. "Zoom.exe", "chrome.exe"
+    pub exe: String,
+    /// Optional window-title regex.
+    pub title_pattern: Option<String>,
+    /// e.g. "Zoom", "Google Meet"
+    pub label: String,
+    /// 'ask' | 'auto_start' | 'ignore'
+    pub action: String,
+    /// Shipped with the app; not user-deletable.
+    pub builtin: bool,
+}
+
+impl MeetingAppRule {
+    /// `action`: 'ask' | 'auto_start' | 'ignore'.
+    pub fn new(exe: &str, label: &str, action: &str) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            exe: exe.to_string(),
+            title_pattern: None,
+            label: label.to_string(),
+            action: action.to_string(),
+            builtin: false,
+        }
+    }
+
+    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            exe: row.get("exe")?,
+            title_pattern: row.get("title_pattern")?,
+            label: row.get("label")?,
+            action: row.get("action")?,
+            builtin: row.get("builtin")?,
+        })
+    }
+}
+
+pub trait MeetingAppRuleRepository {
+    fn create(&self, rule: &MeetingAppRule) -> Result<()>;
+    /// Rules whose `exe` matches (exact, case-insensitive).
+    fn find_by_exe(&self, exe: &str) -> Result<Vec<MeetingAppRule>>;
+    fn list(&self) -> Result<Vec<MeetingAppRule>>;
+    fn delete(&self, id: &str) -> Result<()>;
+}
+
+pub struct SqliteMeetingAppRuleRepository<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> SqliteMeetingAppRuleRepository<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+}
+
+impl MeetingAppRuleRepository for SqliteMeetingAppRuleRepository<'_> {
+    fn create(&self, rule: &MeetingAppRule) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO meeting_app_rules (id, exe, title_pattern, label, action, builtin)
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![
+                rule.id,
+                rule.exe,
+                rule.title_pattern,
+                rule.label,
+                rule.action,
+                rule.builtin
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn find_by_exe(&self, exe: &str) -> Result<Vec<MeetingAppRule>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT * FROM meeting_app_rules WHERE exe = ?1 COLLATE NOCASE ORDER BY label ASC",
+        )?;
+        let rows = stmt.query_map(params![exe], MeetingAppRule::from_row)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn list(&self) -> Result<Vec<MeetingAppRule>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM meeting_app_rules ORDER BY label ASC")?;
+        let rows = stmt.query_map([], MeetingAppRule::from_row)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn delete(&self, id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM meeting_app_rules WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::run_migrations;
+
+    fn setup() -> Connection {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        crate::db::configure_connection(&conn).expect("configure");
+        run_migrations(&mut conn).expect("run migrations");
+        conn
+    }
+
+    #[test]
+    fn meeting_lifecycle_and_segments() {
+        let conn = setup();
+        let meetings = SqliteMeetingRepository::new(&conn);
+        let segments = SqliteMeetingSegmentRepository::new(&conn);
+
+        let mut m = Meeting::new("Daily", "auto_prompt");
+        m.app_exe = Some("zoom.exe".to_string());
+        m.app_label = Some("Zoom".to_string());
+        meetings.create(&m).expect("create meeting");
+
+        let mut s1 = MeetingSegment::new(&m.id, "mic", 0, 1500, "bom dia");
+        s1.speaker = Some("Você".to_string());
+        let s2 = MeetingSegment::new(&m.id, "system", 1500, 3000, "oi pessoal");
+        segments.create(&s2).expect("seg2");
+        segments.create(&s1).expect("seg1");
+
+        let segs = segments.list_by_meeting(&m.id).expect("list segments");
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0].text, "bom dia"); // ordered by start_ms
+
+        meetings
+            .set_status(&m.id, "ready", None)
+            .expect("set status");
+        let fetched = meetings.get(&m.id).expect("get").expect("exists");
+        assert_eq!(fetched.status, "ready");
+        assert!(fetched.ended_at.is_some());
+
+        // Full update path.
+        let mut edited = fetched;
+        edited.summary_md = Some("# Resumo".to_string());
+        meetings.update(&edited).expect("update");
+        assert_eq!(
+            meetings
+                .get(&m.id)
+                .expect("get")
+                .expect("exists")
+                .summary_md,
+            Some("# Resumo".to_string())
+        );
+
+        // Deleting the meeting cascades to its segments (FK ON).
+        meetings.delete(&m.id).expect("delete");
+        assert!(segments.list_by_meeting(&m.id).expect("list").is_empty());
+    }
+
+    #[test]
+    fn invalid_status_is_rejected_by_check() {
+        let conn = setup();
+        let meetings = SqliteMeetingRepository::new(&conn);
+        let mut m = Meeting::new("X", "manual");
+        m.status = "bogus".to_string();
+        assert!(meetings.create(&m).is_err());
+    }
+
+    #[test]
+    fn app_rules_find_by_exe_is_case_insensitive() {
+        let conn = setup();
+        let rules = SqliteMeetingAppRuleRepository::new(&conn);
+
+        rules
+            .create(&MeetingAppRule::new("Zoom.exe", "Zoom", "ask"))
+            .expect("create");
+        let mut meet = MeetingAppRule::new("chrome.exe", "Google Meet", "ask");
+        meet.title_pattern = Some("Meet".to_string());
+        meet.builtin = true;
+        rules.create(&meet).expect("create");
+
+        assert_eq!(rules.find_by_exe("zoom.EXE").expect("find").len(), 1);
+        assert_eq!(rules.list().expect("list").len(), 2);
+
+        rules
+            .delete(&rules.list().expect("list")[0].id)
+            .expect("delete");
+        assert_eq!(rules.list().expect("list").len(), 1);
+    }
+}

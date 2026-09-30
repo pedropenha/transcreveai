@@ -7287,6 +7287,7 @@ dependencies = [
  "tokio",
  "transcribe-cpp",
  "transcribe-rs",
+ "uuid",
  "vad-rs",
  "webview2-com",
  "whatlang",
