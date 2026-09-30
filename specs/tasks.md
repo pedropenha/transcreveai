@@ -31,6 +31,8 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
   - Criar o repositório a partir do Handy em `29bd2c0`, com remote `upstream`.
   - Renomear para **Sussurro**: nome, `identifier` do bundle, ícones, logo, textos, `sponsor-images/`, endpoint e chave do updater. Manter o `LICENSE` MIT com o copyright do Handy e acrescentar o nosso.
   - Janela principal do Handy = `hub`; overlay `recording_overlay` = `flowbar`.
+  - Instruções para agentes: o `CLAUDE.md` herdado aponta para o `AGENTS.md` do Handy. Reescrever o `CLAUDE.md` para apontar para `specs/` e para a hierarquia da [constituição](constitution.md) (ECC rules > specs). Do `AGENTS.md`, manter os comandos e a visão da arquitetura; remover o fluxo de PR/issues do repositório do Handy. Avaliar remover o `CRUSH.md`.
+  - Bloquear push acidental para o Handy: `git remote set-url --push upstream no_push`.
   - Toolchain Windows (conforme o `BUILD.md` do Handy), documentada no README: Rust stable (rustup), Bun, Visual Studio Build Tools 2022 com a carga "Desenvolvimento para desktop com C++" (MSVC), CMake no `PATH` e Vulkan SDK (LunarG; define `VULKAN_SDK`, usado pelo backend Vulkan do whisper). Após instalar, abrir um terminal novo.
   - **Portão (smoke manual no Windows 11)**: `bun run tauri dev` sobe; ditado local chega ao Bloco de Notas, ao Chrome e ao VS Code; o clipboard anterior é restaurado; o overlay não rouba o foco; `cargo test` passa. Se falhar de forma estrutural, reabrir o ADR-0001.
   - Depende de: T-000.
