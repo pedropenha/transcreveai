@@ -1,13 +1,18 @@
 # Contributing Translations to Transcreve.ai
 
-Thank you for helping translate Transcreve.ai! This guide explains how to add or improve translations.
+Thank you for helping translate Transcreve.ai! This guide explains how to improve translations.
 
-## Quick Start
+## Currently Supported Languages
 
-1. Fork the repository
-2. Copy the English translation file to your language folder
-3. Translate the values (not the keys!)
-4. Submit a pull request
+Per [ADR-0002](docs/adr/0002-escopo-v1.md), v1 ships exactly two UI languages:
+
+| Language            | Code    | Status            |
+| ------------------- | ------- | ----------------- |
+| English             | `en`    | Complete (source) |
+| Portuguese (Brazil) | `pt-BR` | Complete          |
+
+New languages are welcome, but they only ship after the v1 scope — talk to the
+maintainers before starting a new locale.
 
 ## File Structure
 
@@ -16,104 +21,36 @@ Translation files are located in:
 ```
 src/i18n/locales/
 ├── en/
-│   └── translation.json    # English (source)
-├── vi/
-│   └── translation.json    # Vietnamese
-├── fr/
-│   └── translation.json    # French
-└── [your-language]/
-    └── translation.json    # Your contribution!
+│   └── translation.json      # English (source of truth)
+└── pt-BR/
+    └── translation.json      # Brazilian Portuguese
 ```
 
-## Adding a New Language
-
-### Step 1: Create the Language Folder
-
-Create a new folder using the [ISO 639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes):
-
-```bash
-mkdir src/i18n/locales/[language-code]
-```
-
-Examples:
-
-- `de` for German
-- `es` for Spanish
-- `ja` for Japanese
-- `zh` for Chinese
-- `ko` for Korean
-- `pt` for Portuguese
-
-### Step 2: Copy the English File
-
-```bash
-cp src/i18n/locales/en/translation.json src/i18n/locales/[language-code]/translation.json
-```
-
-### Step 3: Translate the Values
-
-Open the file and translate only the **values** (right side), not the keys (left side):
-
-```json
-{
-  "sidebar": {
-    "general": "General",      // ← Translate this value
-    "advanced": "Advanced",    // ← Translate this value
-    ...
-  }
-}
-```
-
-**Important:**
-
-- Keep all keys exactly the same
-- Preserve any `{{variables}}` in the text (e.g., `{{error}}`, `{{model}}`)
-- Keep the JSON structure and formatting intact
-
-### Step 4: Register Your Language
-
-Edit `src/i18n/languages.ts` and add your language metadata:
-
-```typescript
-export const LANGUAGE_METADATA: Record<
-  string,
-  { name: string; nativeName: string }
-> = {
-  en: { name: "English", nativeName: "English" },
-  es: { name: "Spanish", nativeName: "Español" },
-  fr: { name: "French", nativeName: "Français" },
-  vi: { name: "Vietnamese", nativeName: "Tiếng Việt" },
-  de: { name: "German", nativeName: "Deutsch" }, // ← Add your language
-};
-```
-
-### Step 5: Test Your Translation
-
-1. Run the app: `bun run tauri dev`
-2. Go to Settings → General → App Language
-3. Select your language
-4. Verify all text displays correctly
-
-### Step 6: Submit a Pull Request
-
-1. Commit your changes
-2. Push to your fork
-3. Open a pull request with:
-   - Language name in the title (e.g., "Add German translation")
-   - Any notes about the translation
+English is the reference: every key in `en/translation.json` must exist in
+`pt-BR/translation.json` and vice versa. `bun run check:translations` enforces
+key parity, and `bun src/i18n/locales.test.ts` pins the shipped locale list.
 
 ## Improving Existing Translations
 
-Found a typo or better translation?
+Found a typo or better wording?
 
 1. Edit the relevant `translation.json` file
-2. Submit a PR with a brief description of the change
+2. Run `bun run check:translations` to confirm key parity
+3. Submit a PR with a brief description of the change
+
+## Adding Strings (developers)
+
+1. Add the key to `src/i18n/locales/en/translation.json`
+2. Add the pt-BR translation to `src/i18n/locales/pt-BR/translation.json`
+3. Use it in a component: `const { t } = useTranslation(); t("key.path")`
+
+ESLint (`eslint-plugin-i18next`) rejects hardcoded user-facing strings in JSX.
 
 ## Translation Guidelines
 
 ### Do:
 
-- Use natural, native-sounding language
+- Use natural, native-sounding pt-BR (not European Portuguese: "tela", "arquivo", "registro")
 - Keep translations concise (UI space is limited)
 - Match the tone of the English text (friendly, clear)
 - Preserve technical terms when appropriate (e.g., "API", "GPU")
@@ -133,42 +70,25 @@ Some strings contain variables like `{{error}}` or `{{model}}`. Keep these exact
 // English
 "downloadModel": "Failed to download model: {{error}}"
 
-// French (correct)
-"downloadModel": "Échec du téléchargement du modèle : {{error}}"
+// pt-BR (correct)
+"downloadModel": "Falha ao baixar o modelo: {{error}}"
 
-// French (incorrect - don't translate the variable!)
-"downloadModel": "Échec du téléchargement du modèle : {{erreur}}"
+// pt-BR (incorrect — don't translate the variable!)
+"downloadModel": "Falha ao baixar o modelo: {{erro}}"
 ```
 
 ### Handling Plurals
 
-Some languages have complex plural rules. For now, use a general form that works for all cases. We may add proper plural support in the future.
+For now, use a general form that works for all cases. We may add proper plural
+support in the future.
 
-## Questions?
+## Language Detection
 
-- Open an issue on GitHub
-- Join the discussion in existing translation PRs
-
-## Currently Supported Languages
-
-| Language   | Code | Status            |
-| ---------- | ---- | ----------------- |
-| English    | `en` | Complete (source) |
-| Catalan    | `ca` | Complete          |
-| Chinese    | `zh` | Complete          |
-| French     | `fr` | Complete          |
-| German     | `de` | Complete          |
-| Japanese   | `ja` | Complete          |
-| Spanish    | `es` | Complete          |
-| Vietnamese | `vi` | Complete          |
-
-## Requested Languages
-
-We'd love help with:
-
-- Korean (`ko`)
-- Portuguese (`pt`)
-- And more!
+The UI language is chosen by `resolveSupportedLanguage()` in
+`src/i18n/languages.ts`: an exact match wins, then the primary subtag
+(`pt`, `pt-PT`, `pt_BR` → `pt-BR`; `en-US` → `en`); anything else falls back to
+English. The stored `app_language` setting is normalized to `en`/`pt-BR` by a
+settings migration (schema v3).
 
 ---
 

@@ -598,7 +598,7 @@
       },
       "onboardingPreview": {
         "title": "Pré-visualizar configuração inicial",
-        "description": "Pré-visualize os ecrãs de configuração sem alterar permissões, modelos ou o estado de conclusão",
+        "description": "Pré-visualize as telas de configuração sem alterar permissões, modelos ou o estado de conclusão",
         "permissionsButton": "Permissões",
         "modelsButton": "Seleção de modelo",
         "exitButton": "Sair da pré-visualização"

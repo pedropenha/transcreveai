@@ -9,7 +9,7 @@ import { LANGUAGE_METADATA } from "@/i18n/languages";
 
 /**
  * Check if a language code is RTL (Right-to-Left)
- * @param langCode - The language code (e.g., 'ar', 'en', 'he')
+ * @param langCode - The language code (e.g., 'en', 'pt-BR')
  * @returns true if the language is RTL, false otherwise
  */
 export const isRTLLanguage = (langCode: string): boolean => {
@@ -20,7 +20,7 @@ export const isRTLLanguage = (langCode: string): boolean => {
 
 /**
  * Get the text direction ('ltr' or 'rtl') for a language
- * @param langCode - The language code (e.g., 'ar', 'en', 'he')
+ * @param langCode - The language code (e.g., 'en', 'pt-BR')
  * @returns 'rtl' if RTL language, 'ltr' otherwise
  */
 export const getLanguageDirection = (langCode: string): "ltr" | "rtl" => {
@@ -39,7 +39,7 @@ export const updateDocumentDirection = (dir: "ltr" | "rtl"): void => {
 
 /**
  * Update the HTML document's lang attribute
- * @param lang - The language code (e.g., 'ar', 'en')
+ * @param lang - The language code (e.g., 'en', 'pt-BR')
  */
 export const updateDocumentLanguage = (lang: string): void => {
   if (typeof document !== "undefined") {

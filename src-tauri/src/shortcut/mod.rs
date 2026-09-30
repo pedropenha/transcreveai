@@ -1327,7 +1327,9 @@ pub fn change_filler_word_removal_enabled_setting(
 #[specta::specta]
 pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.app_language = language.clone();
+    // Only en + pt-BR ship in v1 (ADR-0002); fold anything else onto the
+    // closest supported code rather than persisting an unusable locale.
+    settings.app_language = settings::normalize_app_language(&language);
     settings::write_settings(&app, settings);
 
     // Refresh the tray menu with the new language

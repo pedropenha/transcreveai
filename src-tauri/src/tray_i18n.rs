@@ -20,34 +20,27 @@ include!(concat!(env!("OUT_DIR"), "/tray_translations.rs"));
 
 /// Get localized tray menu strings based on the system locale.
 ///
-/// Lookup order: exact locale → Chinese script/region fallback → language code → English.
+/// Lookup order: exact locale → language code → same primary subtag
+/// ("pt" → "pt-BR") → English. Only `en` and `pt-BR` ship (ADR-0002).
 pub fn get_tray_translations(locale: Option<String>) -> TrayStrings {
     let normalized = locale
         .as_deref()
         .unwrap_or("en")
         .to_lowercase()
         .replace('_', "-");
-    let subtags: Vec<_> = normalized.split('-').collect();
-    let language = subtags.first().copied().unwrap_or("en");
-    let is_hant = subtags.contains(&"hant");
-    let is_hans = subtags.contains(&"hans");
-    let is_traditional_region = ["tw", "hk", "mo"]
-        .iter()
-        .any(|region| subtags.contains(region));
+    let language = normalized.split('-').next().unwrap_or("en");
 
-    let exact_match = TRANSLATIONS
+    TRANSLATIONS
         .iter()
-        .find_map(|(code, strings)| code.eq_ignore_ascii_case(&normalized).then_some(strings));
-    let fallback = match language {
-        "zh" if is_hant || (!is_hans && is_traditional_region) => "zh-TW",
-        // Cantonese uses Traditional Chinese unless explicitly tagged as Hans.
-        "yue" if is_hans => "zh",
-        "yue" => "zh-TW",
-        _ => language,
-    };
-
-    exact_match
-        .or_else(|| TRANSLATIONS.get(fallback))
+        .find(|(code, _)| code.eq_ignore_ascii_case(&normalized))
+        .map(|(_, strings)| strings)
+        .or_else(|| TRANSLATIONS.get(language))
+        .or_else(|| {
+            TRANSLATIONS
+                .iter()
+                .find(|(code, _)| code.split('-').next() == Some(language))
+                .map(|(_, strings)| strings)
+        })
         .or_else(|| TRANSLATIONS.get("en"))
         .cloned()
         .expect("English translations must exist")
@@ -60,16 +53,16 @@ mod tests {
     #[test]
     fn resolves_locale_fallbacks() {
         for (locale, expected) in [
-            ("zh-Hant-TW", "zh-TW"),
-            ("zh-Hant-HK", "zh-TW"),
-            ("zh-HK", "zh-TW"),
-            ("zh-MO", "zh-TW"),
-            ("ZH-TW", "zh-TW"),
-            ("zh_Hant_TW", "zh-TW"),
-            ("zh-Hans-CN", "zh"),
-            ("yue-Hant-HK", "zh-TW"),
-            ("yue-Hans-CN", "zh"),
-            ("fr-FR", "fr"),
+            ("en", "en"),
+            ("en-US", "en"),
+            ("pt-BR", "pt-BR"),
+            ("pt_br", "pt-BR"),
+            ("PT-BR", "pt-BR"),
+            // Bare or non-Brazilian Portuguese folds onto pt-BR.
+            ("pt", "pt-BR"),
+            ("pt-PT", "pt-BR"),
+            // Unsupported languages fall back to English.
+            ("de-DE", "en"),
             ("xx-YY", "en"),
         ] {
             assert_eq!(
@@ -78,5 +71,11 @@ mod tests {
                 "{locale} should resolve to {expected}"
             );
         }
+
+        assert_eq!(
+            format!("{:?}", get_tray_translations(None)),
+            format!("{:?}", TRANSLATIONS["en"]),
+            "missing locale should resolve to en"
+        );
     }
 }

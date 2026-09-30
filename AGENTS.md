@@ -151,10 +151,13 @@ src/i18n/
 ├── index.ts           # i18n setup
 ├── languages.ts       # Language metadata
 └── locales/
-    ├── en/translation.json  # English (source)
-    ├── de/, es/, fr/, ja/, ru/, zh/, ...
-    └── ...
+    ├── en/translation.json      # English (source)
+    └── pt-BR/translation.json   # Brazilian Portuguese
 ```
+
+Only `en` and `pt-BR` ship in v1 (ADR-0002). `resolveSupportedLanguage()` in
+`languages.ts` folds arbitrary tags (`pt`, `pt-PT`, `en-US`, …) onto the
+supported set; anything else falls back to English.
 
 For translation contribution guidelines, see [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md).
 
