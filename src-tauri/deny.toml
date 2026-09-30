@@ -1,0 +1,73 @@
+[graph]
+targets = [
+  "x86_64-pc-windows-msvc",
+  "aarch64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+]
+all-features = false
+
+[advisories]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = [
+  { id = "RUSTSEC-2026-0194", reason = "Inherited build-time quick-xml through plist/Tauri; no compatible plist release supports quick-xml 0.41 yet" },
+  { id = "RUSTSEC-2026-0195", reason = "Inherited build-time quick-xml through plist/Tauri; no compatible plist release supports quick-xml 0.41 yet" },
+  { id = "RUSTSEC-2025-0141", reason = "Inherited transitive bincode dependency; replacement requires upstream migration" },
+  { id = "RUSTSEC-2025-0057", reason = "Inherited transitive fxhash dependency; replacement requires upstream migration" },
+  { id = "RUSTSEC-2024-0422", reason = "Linux-only GTK3 layer-shell integration retained until the planned Linux port" },
+  { id = "RUSTSEC-2024-0423", reason = "Linux-only GTK3 layer-shell integration retained until the planned Linux port" },
+  { id = "RUSTSEC-2024-0436", reason = "Inherited transitive paste dependency; replacement requires upstream migration" },
+  { id = "RUSTSEC-2024-0370", reason = "Inherited build-time proc-macro-error dependency; replacement requires upstream migration" },
+  { id = "RUSTSEC-2025-0081", reason = "Inherited unic family through Tauri urlpattern; no safe in-place upgrade" },
+  { id = "RUSTSEC-2025-0075", reason = "Inherited unic family through Tauri urlpattern; no safe in-place upgrade" },
+  { id = "RUSTSEC-2025-0080", reason = "Inherited unic family through Tauri urlpattern; no safe in-place upgrade" },
+  { id = "RUSTSEC-2025-0100", reason = "Inherited unic family through Tauri urlpattern; no safe in-place upgrade" },
+  { id = "RUSTSEC-2025-0098", reason = "Inherited unic family through Tauri urlpattern; no safe in-place upgrade" },
+  { id = "RUSTSEC-2024-0429", reason = "Linux-only GTK3 stack retained until the planned Linux port; affected VariantStrIter API is unused" },
+  { id = "RUSTSEC-2026-0097", reason = "Inherited build dependency; app logger does not call rand from its callbacks" },
+  { id = "RUSTSEC-2026-0235", reason = "Inactive optional rkyv feature present only in Cargo.lock; cargo-deny excludes it from the resolved graph" },
+]
+
+[licenses]
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+allow-wildcard-paths = true
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+required-git-spec = "rev"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+  "https://github.com/rustdesk-org/rdev",
+  "https://github.com/cjpais/vad-rs",
+  "https://github.com/cjpais/rodio",
+  "https://github.com/cjpais/hf-hub",
+  "https://github.com/cjpais/tao",
+  "https://github.com/ahkohd/tauri-nspanel",
+]
