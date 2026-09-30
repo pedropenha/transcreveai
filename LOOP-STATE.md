@@ -22,9 +22,10 @@
 - [x] **T-012** — merge (ver git log). `managers/transcription.rs` → diretório (engine/inference/language/postprocess/streaming) + `stt/` (trait `SttProvider`, `SttOrchestrator` c/ retry+fallback, `LocalSttProvider`). FR-003-16 implementada. 294 testes.
 - [x] **fix/review-t005-t020** — merge (ver git log). `RestartBackoff` puro (backoff também na morte, reset após 30s estável, teto 10 falhas → `shortcut://hook-dead`); `release_all`/`release_binding` no matcher; `InjectionGuard` RAII + `validate_shortcut` rejeitando acordes de colagem; timeout 30s + `emit_to(hub)` no recording_loop; `normalize_app_language` idempotente; carimbo único de schema_version. 309 testes.
 
+- [x] **T-016** — merge `e59fa3b`. Chaves de API no OS keyring (`secrets.rs`, comandos write-only `secret_set/clear/hint`, migração remove plaintext só após cofre confirmar, redator de log no choke point). Security+code review pós-merge em andamento. `bindings.ts` editado à mão — regenerar.
+
 ## Em andamento (lanes)
 
-- **T-016** `feat/t-016-keyring-secrets` @ `ecc-t016` (70b66b95)
 - **T-002** `chore/t-002-ci` @ `ecc-t002` (8b9c2744)
 - **T-003** `chore/t-003-logging` @ `ecc-t003` (9c55f56d)
 - **T-007** `chore/t-007-tray-single-instance` @ `ecc-t007` (08fe6794)
