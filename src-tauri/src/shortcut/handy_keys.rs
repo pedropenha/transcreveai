@@ -5,21 +5,40 @@
 //!
 //! ## Architecture
 //!
-//! The implementation uses a dedicated manager thread that owns the `HotkeyManager`:
+//! The implementation uses a dedicated manager thread that owns the
+//! `KeyboardListener` (whose OS hook thread produces raw `KeyEvent`s) and
+//! the pure `HotkeyMatcher` that classifies them into actions:
 //!
 //! ```text
 //! ┌─────────────────┐     commands      ┌──────────────────────┐
 //! │   Main Thread   │ ───────────────▶ │   Manager Thread     │
 //! │                 │   (via channel)   │                      │
-//! │ - register()    │                   │ - owns HotkeyManager │
-//! │ - unregister()  │                   │ - polls for events   │
+//! │ - register()    │                   │ - owns the listener │
+//! │ - unregister()  │                   │ - feeds the matcher  │
 //! └─────────────────┘                   │ - dispatches actions │
 //!                                       └──────────────────────┘
 //! ```
 //!
-//! This design ensures thread-safety since `HotkeyManager` is only accessed
-//! from a single thread. Commands (register/unregister) are sent via an mpsc
-//! channel and responses are synchronously awaited.
+//! Keeping the raw-event consumption and matching on a single thread avoids
+//! locks; the hook callback itself stays minimal (classify + channel send,
+//! inside the crate), while the matching logic lives in our code as the pure
+//! `HotkeyMatcher` — the seam spec F002 requires for the `feed(event, now)`
+//! matcher (T-021). Suppression of matched combos happens synchronously
+//! inside the hook via the `BlockingHotkeys` set shared with the listener.
+//!
+//! Commands (register/unregister) are sent via an mpsc channel and
+//! responses are synchronously awaited, so listener/matcher state is only
+//! ever touched by the manager thread.
+//!
+//! ## Watchdog
+//!
+//! handy-keys re-arms the OS hooks on session unlock/console connect and on
+//! resume from sleep (Windows can silently drop low-level hooks there). On
+//! top of that, the manager thread detects a dead listener — a channel
+//! disconnect means the hook thread exited — and re-creates the
+//! `KeyboardListener` with exponential backoff, which reinstalls the hooks
+//! and is logged. A hook silently removed by the OS while the thread stays
+//! alive is not observable from user space and remains a known gap.
 //!
 //! ## Recording Mode
 //!
@@ -27,20 +46,22 @@
 //! polled from a dedicated recording thread. Events are emitted to the frontend
 //! via Tauri's event system.
 
-use handy_keys::{Hotkey, HotkeyId, HotkeyManager, HotkeyState, KeyboardListener};
-use log::{debug, error, info};
+use handy_keys::{BlockingHotkeys, Hotkey, KeyboardListener};
+use log::{debug, error, info, warn};
 use serde::Serialize;
 use specta::Type;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::settings::{self, get_settings, ShortcutBinding};
 
 use super::handler::handle_shortcut_event;
+use super::matcher::{HotkeyAction, HotkeyMatcher};
 
 /// Commands that can be sent to the hotkey manager thread
 enum ManagerCommand {
@@ -85,15 +106,31 @@ pub struct FrontendKeyEvent {
     pub hotkey_string: String,
 }
 
+/// Cap for the listener-respawn backoff in the manager thread.
+const RESTART_BACKOFF_MAX: Duration = Duration::from_secs(5);
+/// Initial delay before respawning a dead listener.
+const RESTART_BACKOFF_INIT: Duration = Duration::from_millis(100);
+
 impl HandyKeysState {
     /// Create a new HandyKeysState
     pub fn new(app: AppHandle) -> Result<Self, String> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<ManagerCommand>();
 
+        // Hotkeys the hook suppresses synchronously; shared with the
+        // listener and updated by the manager thread on register/unregister.
+        let blocking_hotkeys: BlockingHotkeys = Arc::new(Mutex::new(HashSet::new()));
+
+        // Install the listener (and its OS hook thread) up-front: a failure
+        // here — e.g. missing accessibility permission on macOS — surfaces
+        // to init_shortcuts so the caller can fall back to the Tauri
+        // implementation instead of running with dead shortcuts.
+        let listener = KeyboardListener::new_with_blocking(Arc::clone(&blocking_hotkeys))
+            .map_err(|e| format!("Failed to install keyboard hook: {}", e))?;
+
         // Start the manager thread
         let app_clone = app.clone();
         let thread_handle = thread::spawn(move || {
-            Self::manager_thread(cmd_rx, app_clone);
+            Self::manager_thread(cmd_rx, app_clone, listener, blocking_hotkeys);
         });
 
         Ok(Self {
@@ -106,38 +143,76 @@ impl HandyKeysState {
         })
     }
 
-    /// The main manager thread - owns the HotkeyManager and processes commands
-    fn manager_thread(cmd_rx: Receiver<ManagerCommand>, app: AppHandle) {
+    /// The main manager thread - owns the KeyboardListener and the pure
+    /// HotkeyMatcher, and processes commands.
+    fn manager_thread(
+        cmd_rx: Receiver<ManagerCommand>,
+        app: AppHandle,
+        listener: KeyboardListener,
+        blocking_hotkeys: BlockingHotkeys,
+    ) {
         info!("handy-keys manager thread started");
 
-        // Create the HotkeyManager in this thread
-        let manager = match HotkeyManager::new_with_blocking() {
-            Ok(m) => m,
-            Err(e) => {
-                error!("Failed to create HotkeyManager: {}", e);
-                return;
-            }
-        };
-
-        // Maps binding IDs to HotkeyIds and hotkey strings
-        let mut binding_to_hotkey: HashMap<String, HotkeyId> = HashMap::new();
-        let mut hotkey_to_binding: HashMap<HotkeyId, (String, String)> = HashMap::new(); // (binding_id, hotkey_string)
+        let mut listener = Some(listener);
+        let mut matcher = HotkeyMatcher::new();
+        // Watchdog state: when the listener's event channel disconnects its
+        // hook thread has died, so we respawn it (reinstalling the OS hooks)
+        // with exponential backoff.
+        let mut restart_backoff = RESTART_BACKOFF_INIT;
+        let mut next_restart = Instant::now();
 
         loop {
-            // Check for hotkey events (non-blocking)
-            while let Some(event) = manager.try_recv() {
-                if let Some((binding_id, hotkey_string)) = hotkey_to_binding.get(&event.id) {
-                    debug!(
-                        "handy-keys event: binding={}, hotkey={}, state={:?}",
-                        binding_id, hotkey_string, event.state
-                    );
-                    let is_pressed = event.state == HotkeyState::Pressed;
-                    handle_shortcut_event(&app, binding_id, hotkey_string, is_pressed);
+            // Drain raw key events into the matcher and dispatch actions.
+            let mut listener_dead = false;
+            if let Some(l) = &listener {
+                loop {
+                    // A zero timeout behaves like try_recv but keeps the
+                    // Timeout/Disconnected distinction that try_recv loses.
+                    match l.recv_timeout(Duration::from_millis(0)) {
+                        Ok(event) => {
+                            for action in matcher.feed(&event, Instant::now()) {
+                                Self::dispatch(&app, &matcher, action);
+                            }
+                        }
+                        Err(handy_keys::Error::Timeout) => break,
+                        Err(e) => {
+                            error!("handy-keys event stream ended: {}", e);
+                            listener_dead = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if listener_dead {
+                // Dropping the listener joins its hook thread (already dead,
+                // so this is instant). The shared blocking set survives, so
+                // suppression resumes unchanged once the listener is back.
+                listener = None;
+                next_restart = Instant::now();
+            }
+
+            // Watchdog: respawn a dead listener. Re-creating it runs the
+            // platform spawn path again, reinstalling the OS-level hooks.
+            if listener.is_none() && Instant::now() >= next_restart {
+                match KeyboardListener::new_with_blocking(Arc::clone(&blocking_hotkeys)) {
+                    Ok(l) => {
+                        warn!("handy-keys: keyboard listener restarted after hook thread death");
+                        listener = Some(l);
+                        restart_backoff = RESTART_BACKOFF_INIT;
+                    }
+                    Err(e) => {
+                        error!(
+                            "handy-keys: failed to restart keyboard listener (retry in {:?}): {}",
+                            restart_backoff, e
+                        );
+                        next_restart = Instant::now() + restart_backoff;
+                        restart_backoff = (restart_backoff * 2).min(RESTART_BACKOFF_MAX);
+                    }
                 }
             }
 
             // Check for commands (non-blocking with timeout)
-            match cmd_rx.recv_timeout(std::time::Duration::from_millis(10)) {
+            match cmd_rx.recv_timeout(Duration::from_millis(10)) {
                 Ok(cmd) => match cmd {
                     ManagerCommand::Register {
                         binding_id,
@@ -145,9 +220,8 @@ impl HandyKeysState {
                         response,
                     } => {
                         let result = Self::do_register(
-                            &manager,
-                            &mut binding_to_hotkey,
-                            &mut hotkey_to_binding,
+                            &mut matcher,
+                            &blocking_hotkeys,
                             &binding_id,
                             &hotkey_string,
                         );
@@ -157,12 +231,8 @@ impl HandyKeysState {
                         binding_id,
                         response,
                     } => {
-                        let result = Self::do_unregister(
-                            &manager,
-                            &mut binding_to_hotkey,
-                            &mut hotkey_to_binding,
-                            &binding_id,
-                        );
+                        let result =
+                            Self::do_unregister(&mut matcher, &blocking_hotkeys, &binding_id);
                         let _ = response.send(result);
                     }
                     ManagerCommand::Shutdown => {
@@ -183,11 +253,22 @@ impl HandyKeysState {
         info!("handy-keys manager thread stopped");
     }
 
-    /// Register a hotkey
+    /// Dispatch one matcher action to the shared shortcut handler.
+    fn dispatch(app: &AppHandle, matcher: &HotkeyMatcher, action: HotkeyAction) {
+        let binding_id = action.binding_id();
+        let is_pressed = matches!(action, HotkeyAction::Pressed(_));
+        let hotkey_string = matcher.hotkey_string(binding_id).unwrap_or_default();
+        debug!(
+            "handy-keys event: binding={}, hotkey={}, pressed={}",
+            binding_id, hotkey_string, is_pressed
+        );
+        handle_shortcut_event(app, binding_id, hotkey_string, is_pressed);
+    }
+
+    /// Register a hotkey in the matcher and the hook's suppression set
     fn do_register(
-        manager: &HotkeyManager,
-        binding_to_hotkey: &mut HashMap<String, HotkeyId>,
-        hotkey_to_binding: &mut HashMap<HotkeyId, (String, String)>,
+        matcher: &mut HotkeyMatcher,
+        blocking_hotkeys: &BlockingHotkeys,
         binding_id: &str,
         hotkey_string: &str,
     ) -> Result<(), String> {
@@ -195,12 +276,24 @@ impl HandyKeysState {
             .parse()
             .map_err(|e| format!("Failed to parse hotkey '{}': {}", hotkey_string, e))?;
 
-        let id = manager
-            .register(hotkey)
+        let previous = matcher
+            .register(binding_id, hotkey, hotkey_string.to_string())
             .map_err(|e| format!("Failed to register hotkey: {}", e))?;
 
-        binding_to_hotkey.insert(binding_id.to_string(), id);
-        hotkey_to_binding.insert(id, (binding_id.to_string(), hotkey_string.to_string()));
+        match blocking_hotkeys.lock() {
+            Ok(mut set) => {
+                if let Some(old) = previous {
+                    set.remove(&old);
+                }
+                set.insert(hotkey);
+            }
+            Err(_) => {
+                error!(
+                    "handy-keys: suppression set lock poisoned; '{}' will fire but not be suppressed",
+                    binding_id
+                );
+            }
+        }
 
         debug!(
             "Registered handy-keys shortcut: {} -> {:?}",
@@ -209,18 +302,24 @@ impl HandyKeysState {
         Ok(())
     }
 
-    /// Unregister a hotkey
+    /// Unregister a hotkey from the matcher and the suppression set
     fn do_unregister(
-        manager: &HotkeyManager,
-        binding_to_hotkey: &mut HashMap<String, HotkeyId>,
-        hotkey_to_binding: &mut HashMap<HotkeyId, (String, String)>,
+        matcher: &mut HotkeyMatcher,
+        blocking_hotkeys: &BlockingHotkeys,
         binding_id: &str,
     ) -> Result<(), String> {
-        if let Some(id) = binding_to_hotkey.remove(binding_id) {
-            manager
-                .unregister(id)
-                .map_err(|e| format!("Failed to unregister hotkey: {}", e))?;
-            hotkey_to_binding.remove(&id);
+        if let Some(hotkey) = matcher.unregister(binding_id) {
+            match blocking_hotkeys.lock() {
+                Ok(mut set) => {
+                    set.remove(&hotkey);
+                }
+                Err(_) => {
+                    error!(
+                        "handy-keys: suppression set lock poisoned; '{}' may keep being suppressed",
+                        binding_id
+                    );
+                }
+            }
             debug!("Unregistered handy-keys shortcut: {}", binding_id);
         }
         Ok(())
