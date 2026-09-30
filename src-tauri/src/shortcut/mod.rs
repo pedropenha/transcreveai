@@ -1077,19 +1077,9 @@ fn validate_provider_exists(
     Ok(())
 }
 
-#[tauri::command]
-#[specta::specta]
-pub fn change_post_process_api_key_setting(
-    app: AppHandle,
-    provider_id: String,
-    api_key: String,
-) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    validate_provider_exists(&settings, &provider_id)?;
-    settings.post_process_api_keys.insert(provider_id, api_key);
-    settings::write_settings(&app, settings);
-    Ok(())
-}
+// NOTE: provider API keys are managed by `commands::secrets` (secret_set /
+// secret_clear / secret_hint). There is intentionally no settings write path
+// for keys — they never touch `settings.json` anymore (FR-011-01/02).
 
 #[tauri::command]
 #[specta::specta]
@@ -1218,12 +1208,9 @@ pub async fn fetch_post_process_models(
         }
     }
 
-    // Get API key
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider_id)
-        .cloned()
-        .unwrap_or_default();
+    // Get the API key from the OS credential vault — never from settings
+    // (FR-011-01). The value only exists to build this request.
+    let api_key = crate::secrets::provider_api_key(&app, &provider_id).unwrap_or_default();
 
     // Skip fetching if no API key for providers that typically need one
     if api_key.trim().is_empty() && provider.id != "custom" {

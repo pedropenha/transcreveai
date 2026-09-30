@@ -66,6 +66,13 @@ rustfft = "6.4.0"
 strsim = "0.11.0"
 natural = "0.5.0"
 regex = "1"
+# OS credential vault for provider API keys (FR-011-01). Pinned: keyring 4.1.6
+# (2026-07-14) + keyring-core 1.0.0 — the last releases comfortably older than
+# 7 days — so the Windows credential target stays `Transcreve.ai/provider/<id>`.
+# `v1` (default) enables Windows Credential Manager, macOS Keychain and the
+# freedesktop Secret Service store.
+keyring = "=4.1.6"
+keyring-core = "=1.0.0"
 # Text-based language ID (filler-word removal fallback); isolang bridges the
 # ISO 639-1 codes in model metadata to whatlang's 639-3 codes.
 whatlang = "0.16"

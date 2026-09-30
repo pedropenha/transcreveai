@@ -11,6 +11,7 @@ interface UseSettingsReturn {
   outputDevices: AudioDevice[];
   audioFeedbackEnabled: boolean;
   postProcessModelOptions: Record<string, string[]>;
+  apiKeyHints: Record<string, string>;
   updateChecksLocked: boolean | null;
 
   // Actions
@@ -40,6 +41,7 @@ interface UseSettingsReturn {
     providerId: string,
     apiKey: string,
   ) => Promise<void>;
+  refreshApiKeyHint: (providerId: string) => Promise<void>;
   updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
   fetchPostProcessModels: (providerId: string) => Promise<string[]>;
 }
@@ -62,6 +64,7 @@ export const useSettings = (): UseSettingsReturn => {
     outputDevices: store.outputDevices,
     audioFeedbackEnabled: store.settings?.audio_feedback || false,
     postProcessModelOptions: store.postProcessModelOptions,
+    apiKeyHints: store.apiKeyHints,
     updateChecksLocked: store.updateChecksLocked,
     updateSetting: store.updateSetting,
     resetSetting: store.resetSetting,
@@ -74,6 +77,7 @@ export const useSettings = (): UseSettingsReturn => {
     setPostProcessProvider: store.setPostProcessProvider,
     updatePostProcessBaseUrl: store.updatePostProcessBaseUrl,
     updatePostProcessApiKey: store.updatePostProcessApiKey,
+    refreshApiKeyHint: store.refreshApiKeyHint,
     updatePostProcessModel: store.updatePostProcessModel,
     fetchPostProcessModels: store.fetchPostProcessModels,
   };
