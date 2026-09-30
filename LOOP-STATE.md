@@ -20,11 +20,11 @@
 - [x] **T-004** — merge (ver git log). Schema v9: `dictations` + 11 tabelas novas + 3 FTS5 + triggers; repos por domínio em `src-tauri/src/db/`; `history.rs` reescrito sobre `dictations` sem mudar `HistoryEntry`/IPC. 315 testes.
 - [x] **T-010** — merge (ver git log). Evento `audio://level {rms}` (FR-001-05); fan-out `Vec<FrameSubscriber>` com `FrameTap::{Raw,Processed}`+`when_idle` p/ T-063; `ResamplerInitError`; `plan_microphone_resolution` puro. 299 testes.
 - [x] **T-012** — merge (ver git log). `managers/transcription.rs` → diretório (engine/inference/language/postprocess/streaming) + `stt/` (trait `SttProvider`, `SttOrchestrator` c/ retry+fallback, `LocalSttProvider`). FR-003-16 implementada. 294 testes.
+- [x] **fix/review-t005-t020** — merge (ver git log). `RestartBackoff` puro (backoff também na morte, reset após 30s estável, teto 10 falhas → `shortcut://hook-dead`); `release_all`/`release_binding` no matcher; `InjectionGuard` RAII + `validate_shortcut` rejeitando acordes de colagem; timeout 30s + `emit_to(hub)` no recording_loop; `normalize_app_language` idempotente; carimbo único de schema_version. 309 testes.
 
 ## Em andamento (lanes)
 
 - **T-016** `feat/t-016-keyring-secrets` @ `ecc-t016` (70b66b95)
-- **fix/review-t005-t020** @ `ecc-fix-review` (95aab676) — watchdog backoff/held/release_all, validate_shortcut vs acordes de colagem, timeout do recording_loop, normalização idempotente de app_language
 
 ## Próximas na DAG (prontas para lanes)
 
@@ -43,6 +43,10 @@
 - `LLKHF_INJECTED` não é checado pelo crate handy-keys — eventos injetados pelo enigo chegam ao matcher (nota manual; candidate a patch upstream).
 - T-031 deve reconciliar `insertion_method` (novo, T-005) com `paste_method` legado que ainda dirige a colagem.
 - `src/bindings.ts` precisa ser regenerado num `bun run tauri dev` em algum merge (foi editado à mão na T-005).
+- Evento `shortcut://hook-dead` emitido mas ninguém escuta — UI de aviso fica para follow-up (T-040/T-041).
+- Aviso de fallback de mic (T-010) depende de `toast://show` — pendente de lane de UI.
+- `managers/transcription.rs` virou diretório — lanes futuras devem editar os submódulos.
+- Infra: `CARGO_TARGET_DIR` compartilhado (`C:\t`) — lanes devem usar `-TargetDir C:\t-<lane>`; fixar `TEMP/TMP` único por lane (race em `temp_dir()`).
 
 ## Notas operacionais
 
