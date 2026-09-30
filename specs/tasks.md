@@ -3,6 +3,7 @@
 Legenda: `[P]` = paralelizável com as outras `[P]` da fase · **Refs** = requisitos atendidos · marque `[x]` ao concluir.
 
 Base do código: **fork divergente do Handy** ([ADR-0001](../docs/adr/0001-fork-do-handy-como-base.md)). Cada tarefa leva uma destas marcações:
+
 - **Adaptar**: o Handy já tem a funcionalidade. A tarefa é verificar contra os `AC-*`, escrever os testes que faltam, trazer o trecho alterado para o padrão das rules e renomear.
 - **Estender**: o Handy tem uma parte. Reaproveitar o que existe e construir o que falta (a lacuna vem descrita).
 - **Migrar**: o Handy faz de um jeito que as rules/specs não aceitam; trocar preservando os dados do usuário.
@@ -42,6 +43,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
   - Configurar `cargo deny` (fontes git permitidas explicitamente e pinadas por `rev`) e `cargo audit`.
   - Inventariar arquivos com mais de 800 linhas e `unwrap` em produção.
   - Revisar os 50 usos de `unsafe` com `ecc:security-reviewer`.
+  - Fins de linha: com `core.autocrlf=true`, o checkout no Windows vem em CRLF e o `format:check` (Prettier com `endOfLine: lf`) falha em todos os arquivos. Adicionar `.gitattributes` (`* text=auto eol=lf`).
   - Saída: seção "Exceções herdadas" no ADR-0001 e a meta de catraca.
   - Depende de: T-001. — Refs: `rules/common/testing.md`, `rules/common/code-review.md`, `rules/rust/*`
 - [ ] **T-002** [P] **Estender** CI do Handy. Hoje: `cargo test` só no Ubuntu, ESLint, Prettier, checagem de traduções, smoke de Playwright e builds por plataforma. Acrescentar: job `windows-latest`, `clippy -D warnings`, cobertura (`cargo llvm-cov` + testes do frontend) com catraca sobre a baseline da T-001a, `cargo audit`, `cargo deny check`. Depende de: T-001a. — Refs: FR-011-26
@@ -56,6 +58,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 ## Fase 1 — MVP: ditado (v0.1)
 
 ### Áudio e STT
+
 - [ ] **T-010** **Adaptar** engine de áudio (`audio_toolkit/audio/`, `managers/audio.rs`: cpal + rtrb + rubato, visualizer → evento `mic-level`): verificar reamostragem 16 kHz, níveis a 30 Hz, troca de dispositivo e fan-out. — Refs: FR-002-10, FR-002-20, FR-001-05
 - [ ] **T-011** **Adaptar** VAD (Silero v4 + Earshot, `audio_toolkit/vad/`): aparar silêncio e "nada ouvido". — Refs: FR-002-14, FR-003-11
 - [ ] **T-012** **Estender** (refatorar) `managers/transcription.rs` (2.529 linhas, centrado no motor local) para o trait `SttProvider` + orquestrador com retry/fallback, dividindo o arquivo por domínio. — Refs: [contracts §2](architecture/contracts.md#2-sttprovider), FR-003-16
@@ -66,19 +69,23 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [ ] **T-017** Fixtures de áudio pt-BR/en + baseline de WER/latência com a skill `benchmark`. — Refs: NFR-003-02
 
 ### Atalhos e sessão
+
 - [ ] **T-020** **Adaptar** hook de teclado (`handy-keys` numa thread dedicada, fallback Tauri): verificar watchdog e callback < 1 ms. — Refs: NFR-002-01, NFR-002-03
 - [ ] **T-021** **Estender** matcher (`shortcut/`): combos só de modificadores e cancelamento dinâmico já existem. Faltam promoção de modo por prefixo, duplo toque, supressão e menu mask key. — Refs: FR-002-01..08, AC-002-01..08
 - [ ] **T-022** **Estender** `transcription_coordinator.rs` (`Idle/Recording/Processing` + toque pendente) para a máquina completa (`Arming`, `Transcribing`, `Inserting`…), fila FIFO de N sessões, limite de duração, preservação de áudio e comando "enviar" (partir de `auto_submit`). — Refs: FR-002-09..19, AC-002-09..11
 
 ### Inserção
+
 - [ ] **T-030** **Adaptar** inserção `paste` (`paste_tx/windows.rs` já faz snapshot multi-formato, exclusão do histórico/nuvem do clipboard e restauração condicionada a `GetClipboardSequenceNumber`): verificar a espera de liberação de modificadores (FR-005-01) e os AC. — Refs: FR-005-01..04, AC-005-01..04, AC-005-08
 - [ ] **T-031** [P] **Estender** métodos: Ctrl+V, Shift+Insert, Ctrl+Shift+V, digitação direta (`enigo`) e nenhum já existem. Faltam `auto`, detecção de janela elevada (UIPI) → `clipboard_only` com aviso, `newline_mode` e registro do resultado. — Refs: FR-005-05..11, AC-005-05, AC-005-07
 - [ ] **T-032** Matriz de apps (AC-005-06) com `windows-desktop-e2e` + roteiro manual do que não automatiza. Depende de: T-009.
 
 ### Pipeline mínimo
+
 - [ ] **T-035** **Estender** pipeline com as etapas 1, 2 e 4 (vocab) + limpeza determinística `light`, partindo de `custom_words` e da remoção de vícios em `audio_toolkit/text.rs`, num módulo `pipeline/` puro. — Refs: FR-004-01..03, FR-004-08, FR-004-12, AC-004-10
 
 ### UI
+
 - [ ] **T-040** **Estender** `overlay.rs` + `src/overlay/` para a Flow Bar. Já existem: não-focável, topmost reaplicado, transparente, níveis e botão cancelar. Faltam: click-through na área transparente, hover com 2 botões e tooltip de atalho, estados da F001. Depende de: T-008. — Refs: FR-001-01..06, NFR-001-01..05, AC-001-01..03, AC-001-07..08
 - [ ] **T-041** [P] Flow Bar: menu de clique direito, arrastar/encaixar, multi-monitor, visibilidade, tela cheia, soneca, sons. — Refs: FR-001-07..13, AC-001-04..06
 - [ ] **T-042** [P] **Estender** Hub + Início/Histórico: a lista de histórico existe. Faltam FTS5, filtros, detalhe com diff, estatísticas e o layout da T-008. — Refs: FR-010-01..06, AC-010-03
@@ -88,7 +95,8 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [ ] **T-046** Modo offline, "O que é enviado", retenção, "Apagar todos os dados". — Refs: FR-011-06..13, AC-011-02, AC-011-04, AC-011-06
 
 ### Release
-- [ ] **T-049** **Adaptar** pipeline de release do Handy (`build.yml`/`release.yml`: NSIS, assinatura das DLLs, updater) com certificado, chave do updater e endpoint próprios; release `v0.1.0` (skill `release`). — Refs: FR-011-25, FR-010-19
+
+- [ ] **T-049** **Adaptar** pipeline de release do Handy (`build.yml`/`release.yml`: NSIS, assinatura das DLLs, updater) com certificado, chave do updater e endpoint próprios; release `v0.1.0` (skill `release`). Herdado da T-001: preencher `plugins.updater` (`pubkey`/`endpoints`) e voltar `createUpdaterArtifacts` para `true` no `tauri.conf.json`, o que reativa o updater via `updater_policy.rs` (remover o teste `shipped_config_has_no_channel_until_t049`); apontar `PORTABLE_RELEASES_URL` (`portableInstaller.ts`) para as nossas releases; trocar a versão 0.9.7 herdada; revisar nos workflows a assinatura Azure do Handy e os downloads de `blob.handy.computer`. — Refs: FR-011-25, FR-010-19
 
 ## Fase 2 — Texto inteligente (v0.2)
 
@@ -120,7 +128,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [ ] **T-081** [P] **Adaptar** whisper com Vulkan (herdado: `transcribe-cpp` com backends dinâmicos no x86_64, dispositivo `Auto` com fallback para CPU): verificar o fallback automático, o log e o rótulo na UI. — Refs: FR-003-10
 - [ ] **T-082** [P] Diarização da trilha `system` + deduplicação de eco. — Refs: FR-003-19, FR-009-11
 - [ ] **T-083** [P] Provedor Deepgram. — Refs: F003
-- [ ] **T-084** Port macOS e Linux (validar build, atalhos, colagem e overlay; o código herdado já compila nas duas plataformas).
+- [ ] **T-084** Port macOS e Linux (validar build, atalhos, colagem e overlay; o código herdado já compila nas duas plataformas). Herdado da T-001: validar o empacotamento Nix renomeado (`flake.nix`, `nix/`, cache `handy-computer` no `nix-check.yml`) e trocar o link de ajuda do Secure Input no macOS (`SecureInputWarning.tsx`, hoje na documentação do Handy).
 - [ ] **T-085** Auditoria de acessibilidade (`accessibility`) e latência (`latency-critical-systems`, `benchmark`).
 
 ---

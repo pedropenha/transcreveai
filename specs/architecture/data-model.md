@@ -202,7 +202,11 @@ O acesso a dados segue o **Repository Pattern com traits** de `rules/rust/patter
     "paste_last": "Alt+Shift+V",
     "cancel": "Escape"
   },
-  "audio": { "input_device": "default", "sounds": true, "max_dictation_minutes": 20 },
+  "audio": {
+    "input_device": "default",
+    "sounds": true,
+    "max_dictation_minutes": 20
+  },
   "transcription": {
     "dictation_provider": "<provider_id>",
     "meeting_provider": "<provider_id>",
@@ -210,20 +214,43 @@ O acesso a dados segue o **Repository Pattern com traits** de `rules/rust/patter
     "languages": ["pt", "en"],
     "language_mode": "auto"
   },
-  "text": { "llm_provider": null, "cleanup_level": "light", "llm_timeout_ms": 3000, "spoken_punctuation": false },
-  "flowbar": { "visibility": "always", "follow": "foreground_monitor", "position": { "edge": "bottom", "offset": 0.5 }, "hide_in_fullscreen": true },
-  "meetings": { "detect": true, "detect_any_call": false, "auto_start": false, "auto_stop": true, "max_minutes": 120, "live_transcript": true, "capture_system_audio": true },
-  "privacy": { "offline_mode": false, "keep_dictation_audio": "24h", "keep_meeting_audio": "30d", "send_window_title": false },
+  "text": {
+    "llm_provider": null,
+    "cleanup_level": "light",
+    "llm_timeout_ms": 3000,
+    "spoken_punctuation": false
+  },
+  "flowbar": {
+    "visibility": "always",
+    "follow": "foreground_monitor",
+    "position": { "edge": "bottom", "offset": 0.5 },
+    "hide_in_fullscreen": true
+  },
+  "meetings": {
+    "detect": true,
+    "detect_any_call": false,
+    "auto_start": false,
+    "auto_stop": true,
+    "max_minutes": 120,
+    "live_transcript": true,
+    "capture_system_audio": true
+  },
+  "privacy": {
+    "offline_mode": false,
+    "keep_dictation_audio": "24h",
+    "keep_meeting_audio": "30d",
+    "send_window_title": false
+  },
   "system": { "launch_at_login": true, "tray": true }
 }
 ```
 
 ## 4. Retenção
 
-| Dado | Padrão | Opções |
-|---|---|---|
-| Áudio de ditado | últimas 10 sessões ou 24 h (o que vier primeiro) | nunca · 24 h · 7 dias |
-| Áudio de reunião | 30 dias após `ready` | apagar após processar · 7 d · 30 d · para sempre |
-| Transcrições, notas, histórico | até o usuário apagar | apagar histórico com mais de N dias |
+| Dado                           | Padrão                                           | Opções                                           |
+| ------------------------------ | ------------------------------------------------ | ------------------------------------------------ |
+| Áudio de ditado                | últimas 10 sessões ou 24 h (o que vier primeiro) | nunca · 24 h · 7 dias                            |
+| Áudio de reunião               | 30 dias após `ready`                             | apagar após processar · 7 d · 30 d · para sempre |
+| Transcrições, notas, histórico | até o usuário apagar                             | apagar histórico com mais de N dias              |
 
 Uma tarefa de limpeza roda na inicialização e a cada 6 h.

@@ -8,20 +8,21 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
 
 ## Estrutura do Hub (barra lateral)
 
-| Seção | Release | Conteúdo |
-|---|---|---|
-| **Início** | MVP | Histórico de ditados + estatísticas |
-| **Notas** | v0.2 | Scratchpad (F007) |
-| **Reuniões** | v0.3 | Lista e detalhes (F009) |
-| **Dicionário** | MVP (vocab) / v0.2 | Termos e substituições |
-| **Snippets** | v0.2 | Gatilhos e expansões |
-| **Estilos** | v0.2 | Perfis de app, nível de limpeza |
-| **Modelos & Provedores** | MVP | F003 |
-| **Configurações** | MVP | Geral, Sistema, Privacidade, Avançado |
+| Seção                    | Release            | Conteúdo                              |
+| ------------------------ | ------------------ | ------------------------------------- |
+| **Início**               | MVP                | Histórico de ditados + estatísticas   |
+| **Notas**                | v0.2               | Scratchpad (F007)                     |
+| **Reuniões**             | v0.3               | Lista e detalhes (F009)               |
+| **Dicionário**           | MVP (vocab) / v0.2 | Termos e substituições                |
+| **Snippets**             | v0.2               | Gatilhos e expansões                  |
+| **Estilos**              | v0.2               | Perfis de app, nível de limpeza       |
+| **Modelos & Provedores** | MVP                | F003                                  |
+| **Configurações**        | MVP                | Geral, Sistema, Privacidade, Avançado |
 
 ## Requisitos funcionais
 
 ### Início / Histórico
+
 - **FR-010-01** Lista cronológica (agrupada por dia) com: hora, ícone/nome do app, texto final (2 linhas), modo (ditado/comando/nota), status (ícone para falha/copiado).
 - **FR-010-02** Busca full-text; filtros por app, modo, status, período.
 - **FR-010-03** Detalhe da entrada: texto cru × final (diff), provedor/modelo, idioma, latências (STT/LLM/inserção), estágios do pipeline aplicados.
@@ -30,6 +31,7 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
 - **FR-010-06** Navegação por teclado (↑/↓ entre entradas, Enter abre, Ctrl+C copia) e compatível com leitor de tela.
 
 ### Configurações
+
 - **FR-010-07** **Geral**: atalhos (captura + conflitos, F002), microfone (com medidor de nível ao vivo e teste "grave 3 s e ouça"), idiomas de ditado, idioma da interface, sons.
 - **FR-010-08** **Sistema**: iniciar com o Windows (padrão ligado), visibilidade e comportamento da Flow Bar (F001), ícone na bandeja, posição dos toasts.
 - **FR-010-09** **Privacidade** (F011): modo offline, retenção de áudio e histórico, enviar título da janela ao LLM, "Apagar todos os dados".
@@ -38,16 +40,18 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
 - **FR-010-12** Mudanças aplicadas imediatamente (sem "Salvar"), com validação inline.
 
 ### Bandeja
+
 - **FR-010-13** Ícone com estados: normal, gravando (vermelho), erro (âmbar), offline (indicador).
 - **FR-010-14** Menu: Abrir Hub · Iniciar/Parar ditado · Nova nota por voz · Iniciar/Parar reunião (v0.3) · Mostrar/Ocultar Flow Bar · Pausar detecção de reuniões por 1 h (v0.3) · Modo offline · Sair.
 - **FR-010-15** Fechar o Hub minimiza para a bandeja (o app continua rodando); "Sair" encerra de fato (confirmando se houver gravação ativa).
 
 ### Onboarding (primeira execução)
+
 - **FR-010-16** Passos:
   1. Boas-vindas + idioma da interface e de ditado.
   2. **Microfone**: verifica permissão do Windows ("Permitir que apps da área de trabalho acessem o microfone"); se negada, botão que abre `ms-settings:privacy-microphone`; seleção de dispositivo com medidor.
-  3. **Transcrição**: *Local* (mostra recomendação por hardware, baixa com progresso — dá para seguir enquanto baixa) **ou** *Nuvem* (escolhe provedor, cola chave, testa) — F003.
-  4. **Atalho**: mostra o padrão, permite trocar, e um campo de prática: "Segure `Ctrl+Win` e diga: *Olá, estou testando o Transcreve.ai*" — sucesso quando o texto aparece no campo.
+  3. **Transcrição**: _Local_ (mostra recomendação por hardware, baixa com progresso — dá para seguir enquanto baixa) **ou** _Nuvem_ (escolhe provedor, cola chave, testa) — F003.
+  4. **Atalho**: mostra o padrão, permite trocar, e um campo de prática: "Segure `Ctrl+Win` e diga: _Olá, estou testando o Transcreve.ai_" — sucesso quando o texto aparece no campo.
   5. **Flow Bar**: animação mostrando hover e as 2 ações.
   6. (v0.3) **Reuniões**: liga/desliga detecção, explica consentimento.
 - **FR-010-17** Onboarding pode ser pulado e reaberto em Configurações → Ajuda.
@@ -64,8 +68,8 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
 
 ## Critérios de aceitação
 
-- **AC-010-01** *Dado* uma instalação nova, *quando* completo o onboarding escolhendo Local, *então* o campo de prática recebe o texto ditado e o onboarding marca sucesso.
-- **AC-010-02** *Dado* o mic bloqueado nas configurações de privacidade do Windows, *então* o passo 2 explica e o botão abre a página correta.
-- **AC-010-03** *Quando* clico em "Tentar novamente" numa entrada que falhou, escolhendo outro provedor, *então* uma nova transcrição é feita e a entrada é atualizada.
-- **AC-010-05** *Quando* fecho o Hub, *então* o app continua na bandeja e os atalhos seguem funcionando.
-- **AC-010-06** *Dado* uma gravação de reunião ativa, *quando* escolho "Sair", *então* sou avisado e posso cancelar.
+- **AC-010-01** _Dado_ uma instalação nova, _quando_ completo o onboarding escolhendo Local, _então_ o campo de prática recebe o texto ditado e o onboarding marca sucesso.
+- **AC-010-02** _Dado_ o mic bloqueado nas configurações de privacidade do Windows, _então_ o passo 2 explica e o botão abre a página correta.
+- **AC-010-03** _Quando_ clico em "Tentar novamente" numa entrada que falhou, escolhendo outro provedor, _então_ uma nova transcrição é feita e a entrada é atualizada.
+- **AC-010-05** _Quando_ fecho o Hub, _então_ o app continua na bandeja e os atalhos seguem funcionando.
+- **AC-010-06** _Dado_ uma gravação de reunião ativa, _quando_ escolho "Sair", _então_ sou avisado e posso cancelar.

@@ -17,26 +17,28 @@ O usuário escolhe entre transcrever **localmente** (grátis, offline, privado; 
 
 ## Provedores
 
-| Tipo | Release | Modelos sugeridos | Notas |
-|---|---|---|---|
-| `local_whisper` (whisper.cpp) | MVP | `tiny`, `base`, `small`, `medium`, `large-v3-turbo` (quantizações q5_0/q8_0) | GPU via Vulkan (build alternativo), CPU com AVX2. |
-| `local_parakeet` (NVIDIA Parakeet TDT 0.6B v3, ONNX int8) | v1.0 (P1) | `parakeet-tdt-0.6b-v3` | Muito rápido em CPU; 25 idiomas europeus, inclui português. |
-| `openai` | MVP | `gpt-4o-mini-transcribe` (padrão, mais barato), `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize`, `whisper-1` | 25 MB por arquivo. |
-| `groq` | MVP | `whisper-large-v3-turbo`, `whisper-large-v3` | API compatível com OpenAI; baixa latência. |
-| `openai_compat` | MVP | livre | `base_url` + modelo + chave opcional (servidores locais tipo speaches/faster-whisper, LocalAI). |
-| `deepgram` | P1 | `nova-3` | Streaming e diarização nativos. |
+| Tipo                                                      | Release   | Modelos sugeridos                                                                                             | Notas                                                                                           |
+| --------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `local_whisper` (whisper.cpp)                             | MVP       | `tiny`, `base`, `small`, `medium`, `large-v3-turbo` (quantizações q5_0/q8_0)                                  | GPU via Vulkan (build alternativo), CPU com AVX2.                                               |
+| `local_parakeet` (NVIDIA Parakeet TDT 0.6B v3, ONNX int8) | v1.0 (P1) | `parakeet-tdt-0.6b-v3`                                                                                        | Muito rápido em CPU; 25 idiomas europeus, inclui português.                                     |
+| `openai`                                                  | MVP       | `gpt-4o-mini-transcribe` (padrão, mais barato), `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize`, `whisper-1` | 25 MB por arquivo.                                                                              |
+| `groq`                                                    | MVP       | `whisper-large-v3-turbo`, `whisper-large-v3`                                                                  | API compatível com OpenAI; baixa latência.                                                      |
+| `openai_compat`                                           | MVP       | livre                                                                                                         | `base_url` + modelo + chave opcional (servidores locais tipo speaches/faster-whisper, LocalAI). |
+| `deepgram`                                                | P1        | `nova-3`                                                                                                      | Streaming e diarização nativos.                                                                 |
 
 Catálogo (`resources/catalog.json`) guarda para cada modelo: id, motor, URL de download, **SHA-256**, tamanho, idiomas, RAM/VRAM aproximadas, custo estimado/min (nuvem). O catálogo é atualizável sem nova versão do app (P2), mas o SHA-256 é sempre verificado.
 
 ## Requisitos funcionais
 
 ### Configuração
+
 - **FR-003-01** Tela "Modelos & Provedores" lista provedores configurados com: tipo, modelo, local/nuvem, status (pronto, baixando, erro, sem chave), uso (ditado/reunião/fallback).
 - **FR-003-02** Adicionar provedor em nuvem: escolher tipo → colar chave (campo mascarado) → escolher/digitar modelo → **Testar conexão** (envia áudio embutido de ~2 s "teste de transcrição" e mostra texto retornado + latência) → salvar. Chave vai direto para o cofre (F011).
 - **FR-003-03** Selecionar, separadamente: provedor de **ditado**, provedor de **reuniões** e provedor de **fallback** (opcional).
 - **FR-003-04** Com o **modo offline** ligado (F011), provedores em nuvem ficam desabilitados e a seleção cai no local; se não houver local, a UI avisa.
 
 ### Modelos locais
+
 - **FR-003-05** Detectar hardware na primeira execução: RAM, núcleos, AVX2, GPU compatível com Vulkan/CUDA e VRAM. Recomendação:
   | Hardware | Recomendado |
   |---|---|
@@ -51,6 +53,7 @@ Catálogo (`resources/catalog.json`) guarda para cada modelo: id, motor, URL de 
 - **FR-003-10** Aceleração: usar GPU se disponível e compatível; se a inicialização falhar, cair para CPU automaticamente e registrar no log; exibir "GPU (Vulkan)" / "CPU" na UI.
 
 ### Transcrição
+
 - **FR-003-11** Antes de qualquer provedor: aparar silêncio no início/fim com VAD; se não houver fala, não chamar o provedor (FR-002-14).
 - **FR-003-12** Dicas de vocabulário: termos do dicionário (F004) enviados como `initial_prompt` (whisper, limitado a ~200 tokens, priorizando os mais usados), `prompt` (OpenAI/Groq) ou `keyterm` (Deepgram).
 - **FR-003-13** **Filtro de alucinação**: descartar segmentos com `no_speech_prob` alto e/ou energia baixa que correspondam à lista de bloqueio (pt/en), ex.: "Legendas pela comunidade Amara.org", "Obrigado por assistir", "Inscreva-se no canal", "Thanks for watching", "[Música]". Lista editável.
@@ -70,14 +73,14 @@ Catálogo (`resources/catalog.json`) guarda para cada modelo: id, motor, URL de 
 
 ## Critérios de aceitação
 
-- **AC-003-01** *Dado* nenhum provedor configurado, *quando* escolho "Local" no onboarding numa máquina sem GPU com 16 GB, *então* o app recomenda um modelo compatível, baixa com progresso, verifica o hash e transcreve "teste" corretamente.
-- **AC-003-02** *Dado* o cabo de rede desconectado e provedor local, *quando* dito, *então* a transcrição funciona e **nenhuma** conexão de rede é aberta (verificado com monitor de rede no teste).
-- **AC-003-03** *Quando* colo uma chave inválida da OpenAI e clico em Testar, *então* vejo "Chave inválida" em ≤ 5 s e a chave não é salva até eu confirmar.
-- **AC-003-04** *Dado* OpenAI como principal e whisper local como fallback, *quando* a OpenAI retorna 503 duas vezes, *então* o texto é transcrito localmente e o histórico registra o provedor de fallback.
-- **AC-003-05** *Dado* 3 s de silêncio gravado, *então* nada é inserido e nenhum texto como "Legendas pela comunidade Amara.org" aparece.
-- **AC-003-06** *Dado* "Kubernetes" e "Transcreve.ai" no dicionário, *quando* dito "suba o transcreve ai no kubernetes", *então* os termos saem com a grafia do dicionário em ≥ 90 % das fixtures.
-- **AC-003-07** *Dado* uma gravação de 25 min enviada à OpenAI, *então* ela é dividida em blocos < 25 MB e o texto final está completo e em ordem.
-- **AC-003-08** *Dado* o download interrompido em 60 %, *quando* reabro o app e retomo, *então* o download continua de onde parou.
+- **AC-003-01** _Dado_ nenhum provedor configurado, _quando_ escolho "Local" no onboarding numa máquina sem GPU com 16 GB, _então_ o app recomenda um modelo compatível, baixa com progresso, verifica o hash e transcreve "teste" corretamente.
+- **AC-003-02** _Dado_ o cabo de rede desconectado e provedor local, _quando_ dito, _então_ a transcrição funciona e **nenhuma** conexão de rede é aberta (verificado com monitor de rede no teste).
+- **AC-003-03** _Quando_ colo uma chave inválida da OpenAI e clico em Testar, _então_ vejo "Chave inválida" em ≤ 5 s e a chave não é salva até eu confirmar.
+- **AC-003-04** _Dado_ OpenAI como principal e whisper local como fallback, _quando_ a OpenAI retorna 503 duas vezes, _então_ o texto é transcrito localmente e o histórico registra o provedor de fallback.
+- **AC-003-05** _Dado_ 3 s de silêncio gravado, _então_ nada é inserido e nenhum texto como "Legendas pela comunidade Amara.org" aparece.
+- **AC-003-06** _Dado_ "Kubernetes" e "Transcreve.ai" no dicionário, _quando_ dito "suba o transcreve ai no kubernetes", _então_ os termos saem com a grafia do dicionário em ≥ 90 % das fixtures.
+- **AC-003-07** _Dado_ uma gravação de 25 min enviada à OpenAI, _então_ ela é dividida em blocos < 25 MB e o texto final está completo e em ordem.
+- **AC-003-08** _Dado_ o download interrompido em 60 %, _quando_ reabro o app e retomo, _então_ o download continua de onde parou.
 
 ## Casos de borda
 

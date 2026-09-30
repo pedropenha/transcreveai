@@ -15,6 +15,7 @@
 ## Alternatives Considered
 
 ### Alternativa 1: [Nome]
+
 - **Pros**:
 - **Cons**:
 - **Why not**:
@@ -22,10 +23,13 @@
 ## Consequences
 
 ### Positive
+
 -
 
 ### Negative
+
 -
 
 ### Risks
+
 - [risco e mitigação]

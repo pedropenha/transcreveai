@@ -16,19 +16,20 @@ O uso principal é pelo teclado: segurar um atalho, falar, soltar. Precisa funci
 
 ## Atalhos padrão
 
-| Ação | Windows (padrão) | macOS (v1.0) | Tipo |
-|---|---|---|---|
-| Ditar (push-to-talk) | `Ctrl + Win` | `Fn` | segurar |
-| Ditar mãos-livres | **duplo toque** em `Ctrl + Win` · atalho dedicado opcional (ex.: `Win + Space`) | `Fn + Space` | alternar |
-| Command Mode (F006) | `Ctrl + Win + Alt` | `Fn + Ctrl` | segurar |
-| Nota por voz (F007) | `Ctrl + Win + Shift` | `Fn + Shift` | segurar |
-| Notetaker (F009) | `Alt + M` | `Option + M` | alternar |
-| Colar última transcrição | `Alt + Shift + V` | `Ctrl + Cmd + V` | pressionar |
-| Cancelar | `Esc` (só durante gravação) | `Esc` | pressionar |
+| Ação                     | Windows (padrão)                                                                | macOS (v1.0)     | Tipo       |
+| ------------------------ | ------------------------------------------------------------------------------- | ---------------- | ---------- |
+| Ditar (push-to-talk)     | `Ctrl + Win`                                                                    | `Fn`             | segurar    |
+| Ditar mãos-livres        | **duplo toque** em `Ctrl + Win` · atalho dedicado opcional (ex.: `Win + Space`) | `Fn + Space`     | alternar   |
+| Command Mode (F006)      | `Ctrl + Win + Alt`                                                              | `Fn + Ctrl`      | segurar    |
+| Nota por voz (F007)      | `Ctrl + Win + Shift`                                                            | `Fn + Shift`     | segurar    |
+| Notetaker (F009)         | `Alt + M`                                                                       | `Option + M`     | alternar   |
+| Colar última transcrição | `Alt + Shift + V`                                                               | `Ctrl + Cmd + V` | pressionar |
+| Cancelar                 | `Esc` (só durante gravação)                                                     | `Esc`            | pressionar |
 
 ## Requisitos funcionais
 
 ### Atalhos
+
 - **FR-002-01** Suportar: (a) só modificadores (`Ctrl+Win`), (b) modificadores + tecla (`Alt+M`), (c) tecla única dedicada (`F13`–`F24`, `Pause`, `ScrollLock`), (d) P2: botões laterais do mouse.
 - **FR-002-02** Tela de captura de atalho: o usuário pressiona a combinação desejada; o app mostra a combinação normalizada e valida.
 - **FR-002-03** Validação de conflitos: bloquear duplicatas internas; **avisar** (não bloquear) conflitos com atalhos conhecidos do Windows (`Win+Space` troca de idioma, `Win+H` ditado do Windows, `Win+V` histórico da área de transferência, `Ctrl+Win+Setas` áreas de trabalho, `Ctrl+Win+Enter` Narrador, `Alt+Tab`…).
@@ -39,6 +40,7 @@ O uso principal é pelo teclado: segurar um atalho, falar, soltar. Precisa funci
 - **FR-002-08** `Esc` só é interceptado enquanto houver gravação; fora disso, passa normalmente.
 
 ### Sessão de ditado
+
 - **FR-002-09** Estados: `Idle → Arming → Recording → Transcribing → Processing → Inserting → Done | Error`, conforme diagrama em [plan.md](../../architecture/plan.md#5-máquina-de-estados-da-sessão-de-ditado). Cada transição emite `session://state`.
 - **FR-002-10** A captura de áudio inicia em `Arming` (para não cortar a primeira sílaba). P2: "Microfone aquecido" (stream aberto com pré-roll de 500 ms só em memória) se a latência medida não bastar.
 - **FR-002-11** Push-to-talk: soltar qualquer tecla da combinação encerra a gravação.
@@ -50,8 +52,8 @@ O uso principal é pelo teclado: segurar um atalho, falar, soltar. Precisa funci
 - **FR-002-17** Comandos de voz de sessão (antes do pipeline de texto): "enviar" / "press enter" / "send" **no final** da fala → aperta Enter após inserir. Lista de frases configurável por idioma.
 - **FR-002-18** O áudio de cada sessão fica em memória até a conclusão; se a sessão falhar, é salvo em `audio/dictations` para "Tentar novamente" (respeitando a retenção) — nunca se perde a fala por erro de rede.
 - **FR-002-19** "Colar última transcrição" reinsere o `final_text` da sessão mais recente com status inserido/copiado/falhou.
-- **FR-002-20** Seleção de microfone: *Padrão do sistema* (segue mudanças do padrão) ou dispositivo específico; se o específico sumir, usar o padrão e avisar.
-- **FR-002-21** Idioma: *Automático* (detecção pelo motor, restrita à lista de idiomas escolhidos quando o motor suportar) ou fixo.
+- **FR-002-20** Seleção de microfone: _Padrão do sistema_ (segue mudanças do padrão) ou dispositivo específico; se o específico sumir, usar o padrão e avisar.
+- **FR-002-21** Idioma: _Automático_ (detecção pelo motor, restrita à lista de idiomas escolhidos quando o motor suportar) ou fixo.
 - **FR-002-22** P2: baixar o volume de mídia (ducking) durante a gravação.
 
 ## Requisitos não funcionais
@@ -62,17 +64,17 @@ O uso principal é pelo teclado: segurar um atalho, falar, soltar. Precisa funci
 
 ## Critérios de aceitação
 
-- **AC-002-01** *Dado* um campo de texto em foco, *quando* seguro `Ctrl+Win`, falo "olá mundo" e solto, *então* "Olá mundo." é inserido e o Menu Iniciar **não** abre.
-- **AC-002-02** *Dado* `Ctrl+Win` segurado por 100 ms e solto sem segundo toque, *então* nada é inserido e nenhuma requisição ao provedor é feita.
-- **AC-002-03** *Quando* faço duplo toque em `Ctrl+Win`, falo por 2 min e toco de novo, *então* o texto completo é inserido.
-- **AC-002-04** *Dado* uma gravação ativa, *quando* aperto `Esc`, *então* nada é inserido, o áudio é descartado e o `Esc` não chega ao app.
-- **AC-002-05** *Dado* nenhuma gravação, *quando* aperto `Esc`, *então* o app em foco recebe o `Esc`.
-- **AC-002-06** *Quando* aperto `Ctrl+Win+→`, *então* o Windows troca de área de trabalho e nenhuma sessão é criada.
-- **AC-002-07** *Dado* o atalho mãos-livres configurado como `Win+Space`, *quando* o pressiono, *então* a gravação alterna e o layout de teclado do Windows **não** muda.
-- **AC-002-08** *Quando* começo com `Ctrl+Win`, adiciono `Alt` após 150 ms e falo uma instrução, *então* a sessão é tratada como Command Mode.
-- **AC-002-09** *Dado* que a internet caiu, *quando* termino um ditado com provedor em nuvem sem fallback, *então* a Flow Bar mostra erro, a sessão aparece no histórico como `failed` com áudio e "Tentar novamente" funciona quando a rede volta.
-- **AC-002-10** *Quando* digo "vou chegar em 5 minutos enviar" num chat, *então* é inserido "Vou chegar em 5 minutos." seguido de Enter.
-- **AC-002-11** *Dado* limite de 1 min, *quando* gravo em mãos-livres, *então* aos 0:00 restantes a gravação encerra e o texto é inserido; aviso visível aos 60 s restantes.
+- **AC-002-01** _Dado_ um campo de texto em foco, _quando_ seguro `Ctrl+Win`, falo "olá mundo" e solto, _então_ "Olá mundo." é inserido e o Menu Iniciar **não** abre.
+- **AC-002-02** _Dado_ `Ctrl+Win` segurado por 100 ms e solto sem segundo toque, _então_ nada é inserido e nenhuma requisição ao provedor é feita.
+- **AC-002-03** _Quando_ faço duplo toque em `Ctrl+Win`, falo por 2 min e toco de novo, _então_ o texto completo é inserido.
+- **AC-002-04** _Dado_ uma gravação ativa, _quando_ aperto `Esc`, _então_ nada é inserido, o áudio é descartado e o `Esc` não chega ao app.
+- **AC-002-05** _Dado_ nenhuma gravação, _quando_ aperto `Esc`, _então_ o app em foco recebe o `Esc`.
+- **AC-002-06** _Quando_ aperto `Ctrl+Win+→`, _então_ o Windows troca de área de trabalho e nenhuma sessão é criada.
+- **AC-002-07** _Dado_ o atalho mãos-livres configurado como `Win+Space`, _quando_ o pressiono, _então_ a gravação alterna e o layout de teclado do Windows **não** muda.
+- **AC-002-08** _Quando_ começo com `Ctrl+Win`, adiciono `Alt` após 150 ms e falo uma instrução, _então_ a sessão é tratada como Command Mode.
+- **AC-002-09** _Dado_ que a internet caiu, _quando_ termino um ditado com provedor em nuvem sem fallback, _então_ a Flow Bar mostra erro, a sessão aparece no histórico como `failed` com áudio e "Tentar novamente" funciona quando a rede volta.
+- **AC-002-10** _Quando_ digo "vou chegar em 5 minutos enviar" num chat, _então_ é inserido "Vou chegar em 5 minutos." seguido de Enter.
+- **AC-002-11** _Dado_ limite de 1 min, _quando_ gravo em mãos-livres, _então_ aos 0:00 restantes a gravação encerra e o texto é inserido; aviso visível aos 60 s restantes.
 
 ## Casos de borda
 

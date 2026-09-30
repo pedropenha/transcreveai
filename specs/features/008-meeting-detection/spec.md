@@ -15,27 +15,28 @@ Ao entrar numa chamada (Zoom, Teams, Meet, Slack, Discord…), o app mostra um t
 
 ## Sinais de detecção (Windows)
 
-| Sinal | Fonte | Uso |
-|---|---|---|
-| **S1 — Mic em uso por outro processo** | Registro `HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone` (subchaves de apps empacotados e `NonPackaged\<caminho com #>`): `LastUsedTimeStop == 0` ⇒ em uso agora | Sinal principal; identifica o executável. |
-| **S2 — Janela/processo conhecido** | Lista de regras (`meeting_app_rules`): exe + regex de título | Identifica o app e rotula (ex.: "Google Meet"). |
-| **S3 — Sessão de áudio de saída ativa** | WASAPI `IAudioSessionManager2` (sessões `Active` por PID) | Aumenta a confiança (P1). |
+| Sinal                                   | Fonte                                                                                                                                                                                                             | Uso                                             |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **S1 — Mic em uso por outro processo**  | Registro `HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone` (subchaves de apps empacotados e `NonPackaged\<caminho com #>`): `LastUsedTimeStop == 0` ⇒ em uso agora | Sinal principal; identifica o executável.       |
+| **S2 — Janela/processo conhecido**      | Lista de regras (`meeting_app_rules`): exe + regex de título                                                                                                                                                      | Identifica o app e rotula (ex.: "Google Meet"). |
+| **S3 — Sessão de áudio de saída ativa** | WASAPI `IAudioSessionManager2` (sessões `Active` por PID)                                                                                                                                                         | Aumenta a confiança (P1).                       |
 
 ### Regras embutidas (editáveis)
 
-| Rótulo | Exe | Título (regex, aproximado — validar na implementação) |
-|---|---|---|
-| Zoom | `Zoom.exe` | `Zoom Meeting\|Reunião Zoom\|Zoom Workplace` |
-| Microsoft Teams | `ms-teams.exe`, `Teams.exe` | reunião/chamada ativa (janela de chamada) |
-| Google Meet | `chrome.exe`, `msedge.exe`, `firefox.exe`, `brave.exe`, `arc.exe` | `^Meet -\|meet\.google\.com` |
-| Slack Huddle | `slack.exe` | `Huddle` |
-| Discord | `Discord.exe` | (mic em uso basta) |
-| Webex | `CiscoCollabHost.exe`, `webexmta.exe` | — |
-| Whereby / Jitsi | navegadores | `Whereby\|Jitsi Meet` |
+| Rótulo          | Exe                                                               | Título (regex, aproximado — validar na implementação) |
+| --------------- | ----------------------------------------------------------------- | ----------------------------------------------------- |
+| Zoom            | `Zoom.exe`                                                        | `Zoom Meeting\|Reunião Zoom\|Zoom Workplace`          |
+| Microsoft Teams | `ms-teams.exe`, `Teams.exe`                                       | reunião/chamada ativa (janela de chamada)             |
+| Google Meet     | `chrome.exe`, `msedge.exe`, `firefox.exe`, `brave.exe`, `arc.exe` | `^Meet -\|meet\.google\.com`                          |
+| Slack Huddle    | `slack.exe`                                                       | `Huddle`                                              |
+| Discord         | `Discord.exe`                                                     | (mic em uso basta)                                    |
+| Webex           | `CiscoCollabHost.exe`, `webexmta.exe`                             | —                                                     |
+| Whereby / Jitsi | navegadores                                                       | `Whereby\|Jitsi Meet`                                 |
 
 ## Requisitos funcionais
 
 ### Detecção
+
 - **FR-008-01** Monitorar S1 com `RegNotifyChangeKeyValue` na árvore da chave (fallback: polling a cada 2 s). Ignorar o próprio executável.
 - **FR-008-02** **Reunião detectada** quando: S1 aponta um processo **e** (esse processo casa uma regra `ask`/`auto_start` **ou** — para navegadores — alguma janela do processo casa o título da regra, atualmente ou nos últimos 10 min), estável por ≥ 5 s (debounce).
 - **FR-008-03** "Detectar qualquer chamada" (padrão desligado): S1 sozinho por ≥ 10 s em processo que não seja navegador nem esteja na lista de ignorados (gravadores de voz, apps de ditado, o próprio app) também dispara, rotulado com o nome do produto do executável.
@@ -44,6 +45,7 @@ Ao entrar numa chamada (Zoom, Teams, Meet, Slack, Discord…), o app mostra um t
 - **FR-008-06** Enquanto o **próprio** app estiver gravando (ditado/reunião), mudanças de S1 causadas por ele são ignoradas.
 
 ### Toast (UX)
+
 - **FR-008-07** Toast compacto, ancorado acima da Flow Bar (ou canto inferior direito, configurável): ícone do app (ou câmera genérica), "Reunião detectada", "● Agora" e o rótulo do app. Não-ativável (não rouba foco).
 - **FR-008-08** Ao passar o mouse, expande: **✕** (dispensar), botão primário **"Iniciar Notetaker"** e **▾** com:
   - Iniciar só com microfone
@@ -56,6 +58,7 @@ Ao entrar numa chamada (Zoom, Teams, Meet, Slack, Discord…), o app mostra um t
 - **FR-008-12** Não mostrar toasts com "Não perturbe"/foco do Windows ativo ou em tela cheia, exceto se o usuário optar; a detecção continua (indicador na Flow Bar).
 
 ### Automação
+
 - **FR-008-13** "Iniciar automaticamente" (global ou por regra `auto_start`): inicia a gravação sem perguntar e mostra toast "Gravando · <App>" com botão "Parar".
 - **FR-008-14** Auto-stop (padrão ligado): no fim da reunião (FR-008-04), se a gravação foi iniciada por detecção ou pertence àquele app, mostrar toast "A reunião terminou — finalizando em 15 s" com **"Continuar gravando"**; sem ação, encerra (F009).
 - **FR-008-15** Configurações: Detectar reuniões (on/off) · Detectar qualquer chamada · Iniciar automaticamente · Auto-stop · Posição do toast · Lista de regras por app (ask / auto / ignore) com adicionar/editar/remover.
@@ -68,13 +71,13 @@ Ao entrar numa chamada (Zoom, Teams, Meet, Slack, Discord…), o app mostra um t
 
 ## Critérios de aceitação
 
-- **AC-008-01** *Dado* a detecção ligada, *quando* entro numa reunião do Google Meet no Chrome, *então* em ≤ 7 s aparece o toast "Reunião detectada · Google Meet" e o foco continua no Chrome.
-- **AC-008-02** *Quando* passo o mouse no toast, *então* ele mostra ✕, "Iniciar Notetaker" e ▾; *quando* clico em "Iniciar Notetaker", *então* a gravação começa e a Flow Bar mostra o cronômetro.
-- **AC-008-03** *Dado* "Nunca perguntar para Discord", *quando* entro numa chamada no Discord, *então* nenhum toast aparece.
-- **AC-008-04** *Dado* auto-start para Zoom, *quando* entro numa reunião Zoom, *então* a gravação começa sem clique e o toast de gravação aparece.
-- **AC-008-05** *Dado* uma gravação iniciada por detecção, *quando* saio da chamada, *então* após 15 s a gravação para e o processamento começa; *se* clico em "Continuar gravando" antes, *então* ela continua.
-- **AC-008-06** *Quando* uso o próprio ditado do app, *então* nenhum toast de reunião aparece.
-- **AC-008-07** *Dado* que dispensei o toast (✕), *então* ele não reaparece para a mesma reunião; numa nova reunião, reaparece.
+- **AC-008-01** _Dado_ a detecção ligada, _quando_ entro numa reunião do Google Meet no Chrome, _então_ em ≤ 7 s aparece o toast "Reunião detectada · Google Meet" e o foco continua no Chrome.
+- **AC-008-02** _Quando_ passo o mouse no toast, _então_ ele mostra ✕, "Iniciar Notetaker" e ▾; _quando_ clico em "Iniciar Notetaker", _então_ a gravação começa e a Flow Bar mostra o cronômetro.
+- **AC-008-03** _Dado_ "Nunca perguntar para Discord", _quando_ entro numa chamada no Discord, _então_ nenhum toast aparece.
+- **AC-008-04** _Dado_ auto-start para Zoom, _quando_ entro numa reunião Zoom, _então_ a gravação começa sem clique e o toast de gravação aparece.
+- **AC-008-05** _Dado_ uma gravação iniciada por detecção, _quando_ saio da chamada, _então_ após 15 s a gravação para e o processamento começa; _se_ clico em "Continuar gravando" antes, _então_ ela continua.
+- **AC-008-06** _Quando_ uso o próprio ditado do app, _então_ nenhum toast de reunião aparece.
+- **AC-008-07** _Dado_ que dispensei o toast (✕), _então_ ele não reaparece para a mesma reunião; numa nova reunião, reaparece.
 - **AC-008-08** Matriz manual: Zoom, Teams (novo), Meet (Chrome/Edge), Slack Huddle, Discord, WhatsApp chamada — registrar detecção e fim.
 
 ## Casos de borda

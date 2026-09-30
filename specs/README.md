@@ -4,10 +4,10 @@
 
 ## Hierarquia
 
-| Assunto | Quem manda |
-|---|---|
+| Assunto                                                                                                            | Quem manda                                                      |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | Engenharia: processo, TDD, cobertura, testes, revisão, estilo, erros, segurança de código, git, design de frontend | **ECC rules** (`~/.claude/rules/ecc/`) e **ECC skills/agentes** |
-| Produto: comportamento, escopo, prioridades | **Estas specs** (referência: Wispr Flow) |
+| Produto: comportamento, escopo, prioridades                                                                        | **Estas specs** (referência: Wispr Flow)                        |
 
 Detalhes em [constitution.md](constitution.md#0-hierarquia-de-autoridade). Se uma spec contradizer uma rule, a rule vence e a spec é corrigida.
 
@@ -15,37 +15,37 @@ Detalhes em [constitution.md](constitution.md#0-hierarquia-de-autoridade). Se um
 
 `rules/common/development-workflow.md` pede documentos de planejamento antes de codar. Eles já existem aqui:
 
-| ECC pede | Documento |
-|---|---|
-| PRD | [product/product-spec.md](product/product-spec.md) + [features/](features/) |
-| Architecture / system design | [architecture/plan.md](architecture/plan.md) |
-| Tech doc | [architecture/contracts.md](architecture/contracts.md) + [architecture/data-model.md](architecture/data-model.md) |
-| Task list | [tasks.md](tasks.md) |
-| Research & reuse (passo 0) | [product/research-wispr-flow.md](product/research-wispr-flow.md) + tarefa **T-000** → [ADR-0001](../docs/adr/0001-fork-do-handy-como-base.md) (fork do Handy) |
-| Decisões de arquitetura | [docs/adr/](../docs/adr/README.md) |
+| ECC pede                     | Documento                                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD                          | [product/product-spec.md](product/product-spec.md) + [features/](features/)                                                                                   |
+| Architecture / system design | [architecture/plan.md](architecture/plan.md)                                                                                                                  |
+| Tech doc                     | [architecture/contracts.md](architecture/contracts.md) + [architecture/data-model.md](architecture/data-model.md)                                             |
+| Task list                    | [tasks.md](tasks.md)                                                                                                                                          |
+| Research & reuse (passo 0)   | [product/research-wispr-flow.md](product/research-wispr-flow.md) + tarefa **T-000** → [ADR-0001](../docs/adr/0001-fork-do-handy-como-base.md) (fork do Handy) |
+| Decisões de arquitetura      | [docs/adr/](../docs/adr/README.md)                                                                                                                            |
 
 ## Índice
 
-| Documento | Conteúdo | Release |
-|---|---|---|
-| [constitution.md](constitution.md) | Hierarquia e princípios de produto | — |
-| [product/research-wispr-flow.md](product/research-wispr-flow.md) | Como o Wispr Flow funciona (pesquisa + prints) | — |
-| [product/product-spec.md](product/product-spec.md) | Visão, personas, escopo, jornadas, glossário | — |
-| [architecture/plan.md](architecture/plan.md) | Stack, módulos, janelas, fluxos, riscos, mapa de rules/skills | — |
-| [architecture/data-model.md](architecture/data-model.md) | SQLite, arquivos, retenção | — |
-| [architecture/contracts.md](architecture/contracts.md) | Traits de provedores, APIs externas, IPC | — |
-| [features/001-flow-bar](features/001-flow-bar/spec.md) | Barra flutuante (idle, hover com 2 opções, estados) | MVP |
-| [features/002-hotkeys-dictation](features/002-hotkeys-dictation/spec.md) | Atalhos globais e sessão de ditado | MVP |
-| [features/003-transcription-engines](features/003-transcription-engines/spec.md) | Motores locais e em nuvem, modelos, chaves | MVP |
-| [features/004-text-pipeline](features/004-text-pipeline/spec.md) | Limpeza, dicionário, snippets, estilos | v0.2 |
-| [features/005-text-insertion](features/005-text-insertion/spec.md) | Inserir texto no app com foco | MVP |
-| [features/006-command-mode](features/006-command-mode/spec.md) | Editar texto selecionado por voz | v0.2 |
-| [features/007-notes-scratchpad](features/007-notes-scratchpad/spec.md) | Notas por voz (Scratchpad) | v0.2 |
-| [features/008-meeting-detection](features/008-meeting-detection/spec.md) | Detectar reunião e mostrar popup | v0.3 |
-| [features/009-meeting-notetaker](features/009-meeting-notetaker/spec.md) | Gravar, transcrever e resumir reuniões | v0.3 |
-| [features/010-hub-settings](features/010-hub-settings/spec.md) | Hub, histórico, configurações, onboarding, bandeja | MVP |
-| [features/011-security-privacy](features/011-security-privacy/spec.md) | Segredos, dados, rede, consentimento | MVP |
-| [tasks.md](tasks.md) | Plano de implementação por fases | — |
+| Documento                                                                        | Conteúdo                                                      | Release |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------- |
+| [constitution.md](constitution.md)                                               | Hierarquia e princípios de produto                            | —       |
+| [product/research-wispr-flow.md](product/research-wispr-flow.md)                 | Como o Wispr Flow funciona (pesquisa + prints)                | —       |
+| [product/product-spec.md](product/product-spec.md)                               | Visão, personas, escopo, jornadas, glossário                  | —       |
+| [architecture/plan.md](architecture/plan.md)                                     | Stack, módulos, janelas, fluxos, riscos, mapa de rules/skills | —       |
+| [architecture/data-model.md](architecture/data-model.md)                         | SQLite, arquivos, retenção                                    | —       |
+| [architecture/contracts.md](architecture/contracts.md)                           | Traits de provedores, APIs externas, IPC                      | —       |
+| [features/001-flow-bar](features/001-flow-bar/spec.md)                           | Barra flutuante (idle, hover com 2 opções, estados)           | MVP     |
+| [features/002-hotkeys-dictation](features/002-hotkeys-dictation/spec.md)         | Atalhos globais e sessão de ditado                            | MVP     |
+| [features/003-transcription-engines](features/003-transcription-engines/spec.md) | Motores locais e em nuvem, modelos, chaves                    | MVP     |
+| [features/004-text-pipeline](features/004-text-pipeline/spec.md)                 | Limpeza, dicionário, snippets, estilos                        | v0.2    |
+| [features/005-text-insertion](features/005-text-insertion/spec.md)               | Inserir texto no app com foco                                 | MVP     |
+| [features/006-command-mode](features/006-command-mode/spec.md)                   | Editar texto selecionado por voz                              | v0.2    |
+| [features/007-notes-scratchpad](features/007-notes-scratchpad/spec.md)           | Notas por voz (Scratchpad)                                    | v0.2    |
+| [features/008-meeting-detection](features/008-meeting-detection/spec.md)         | Detectar reunião e mostrar popup                              | v0.3    |
+| [features/009-meeting-notetaker](features/009-meeting-notetaker/spec.md)         | Gravar, transcrever e resumir reuniões                        | v0.3    |
+| [features/010-hub-settings](features/010-hub-settings/spec.md)                   | Hub, histórico, configurações, onboarding, bandeja            | MVP     |
+| [features/011-security-privacy](features/011-security-privacy/spec.md)           | Segredos, dados, rede, consentimento                          | MVP     |
+| [tasks.md](tasks.md)                                                             | Plano de implementação por fases                              | —       |
 
 ## Convenções
 

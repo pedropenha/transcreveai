@@ -1,6 +1,6 @@
 # Contratos: provedores, APIs externas e IPC
 
-> Os trechos de código são **ilustrativos** — definem o que cada contrato precisa expressar. A forma idiomática segue as rules: IDs como *newtypes* (`ProviderId`, `SessionId`, `MeetingId`, `DetectionId`) e estados como enums com `match` exaustivo (`rules/rust/patterns.md`); erros tipados com `thiserror` nos módulos e `anyhow` na camada de aplicação, sem `unwrap()` em produção (`rules/rust/coding-style.md`); dados externos convertidos em tipos na fronteira ("parse, don't validate", `rules/rust/security.md`).
+> Os trechos de código são **ilustrativos** — definem o que cada contrato precisa expressar. A forma idiomática segue as rules: IDs como _newtypes_ (`ProviderId`, `SessionId`, `MeetingId`, `DetectionId`) e estados como enums com `match` exaustivo (`rules/rust/patterns.md`); erros tipados com `thiserror` nos módulos e `anyhow` na camada de aplicação, sem `unwrap()` em produção (`rules/rust/coding-style.md`); dados externos convertidos em tipos na fronteira ("parse, don't validate", `rules/rust/security.md`).
 
 ## 1. Tipos de áudio
 
@@ -90,14 +90,14 @@ Sem ferramentas/tool use: o LLM só devolve texto. Nada que ele retorne é execu
 
 > Modelos e preços mudam; o app mantém um **catálogo editável** (`resources/catalog.json`) com modelos sugeridos e custo estimado por minuto, e o usuário sempre pode digitar outro nome de modelo.
 
-| Provedor | Endpoint | Autenticação | Observações |
-|---|---|---|---|
-| **OpenAI STT** | `POST https://api.openai.com/v1/audio/transcriptions` (multipart: `file`, `model`, `language`, `prompt`, `response_format`) | `Authorization: Bearer` | Modelos: `gpt-4o-mini-transcribe` (mais barato), `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize` (reuniões), `whisper-1` (único com timestamps por palavra). Limite 25 MB por arquivo. |
-| **Groq STT** | `POST https://api.groq.com/openai/v1/audio/transcriptions` | Bearer | Mesmo formato da OpenAI. `whisper-large-v3-turbo` (muito rápido). |
-| **Deepgram** | `POST https://api.deepgram.com/v1/listen?model=…&language=…&smart_format=true&diarize=…` (corpo binário) | `Authorization: Token` | Streaming via WebSocket (P2). Dicas via `keyterm`. |
-| **Compatível OpenAI** | `POST {base_url}/audio/transcriptions` | Bearer opcional | Cobre servidores locais (speaches/faster-whisper-server, LocalAI) e outros. |
-| **OpenAI-compat LLM** | `POST {base_url}/chat/completions` | Bearer | OpenAI, Groq, OpenRouter, Ollama (`http://localhost:11434/v1`). |
-| **Anthropic LLM** | `POST https://api.anthropic.com/v1/messages` | `x-api-key` + `anthropic-version: 2023-06-01` | Modelo configurável (ex.: um Haiku para limpeza rápida, um Sonnet para resumos). |
+| Provedor              | Endpoint                                                                                                                    | Autenticação                                  | Observações                                                                                                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **OpenAI STT**        | `POST https://api.openai.com/v1/audio/transcriptions` (multipart: `file`, `model`, `language`, `prompt`, `response_format`) | `Authorization: Bearer`                       | Modelos: `gpt-4o-mini-transcribe` (mais barato), `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize` (reuniões), `whisper-1` (único com timestamps por palavra). Limite 25 MB por arquivo. |
+| **Groq STT**          | `POST https://api.groq.com/openai/v1/audio/transcriptions`                                                                  | Bearer                                        | Mesmo formato da OpenAI. `whisper-large-v3-turbo` (muito rápido).                                                                                                                       |
+| **Deepgram**          | `POST https://api.deepgram.com/v1/listen?model=…&language=…&smart_format=true&diarize=…` (corpo binário)                    | `Authorization: Token`                        | Streaming via WebSocket (P2). Dicas via `keyterm`.                                                                                                                                      |
+| **Compatível OpenAI** | `POST {base_url}/audio/transcriptions`                                                                                      | Bearer opcional                               | Cobre servidores locais (speaches/faster-whisper-server, LocalAI) e outros.                                                                                                             |
+| **OpenAI-compat LLM** | `POST {base_url}/chat/completions`                                                                                          | Bearer                                        | OpenAI, Groq, OpenRouter, Ollama (`http://localhost:11434/v1`).                                                                                                                         |
+| **Anthropic LLM**     | `POST https://api.anthropic.com/v1/messages`                                                                                | `x-api-key` + `anthropic-version: 2023-06-01` | Modelo configurável (ex.: um Haiku para limpeza rápida, um Sonnet para resumos).                                                                                                        |
 
 **Áudio para upload**: WAV 16 kHz mono 16-bit (~1,9 MB/min). Áudio > 20 MB é dividido em pontos de silêncio (VAD) em blocos ≤ 10 min, enviados com concorrência ≤ 3 e concatenados na ordem. (P1: comprimir para FLAC/Opus antes do envio.)
 
@@ -107,35 +107,35 @@ Sem ferramentas/tool use: o LLM só devolve texto. Nada que ele retorne é execu
 
 ### Commands (frontend → núcleo)
 
-| Command | Entrada | Saída |
-|---|---|---|
-| `dictation_start` / `dictation_stop` / `dictation_cancel` | `{ mode }` | `()` |
-| `settings_get` / `settings_update` | patch JSON | `Settings` |
-| `providers_list` / `providers_save` / `providers_delete` / `providers_test` | … | `Provider[]` / `HealthReport` |
-| `secret_set` | `{ provider_id, value }` | `{ hint }` — **não existe `secret_get`** |
-| `secret_clear` | `{ provider_id }` | `()` |
-| `models_catalog` / `models_download` / `models_cancel` / `models_delete` / `models_import` | … | … |
-| `history_list` / `history_search` / `history_delete` / `history_reinsert` / `history_retry` | … | … |
-| `dictionary_*`, `snippets_*`, `profiles_*`, `transforms_*` | CRUD | … |
-| `notes_*` | CRUD + `notes_export` | … |
-| `meeting_start` / `meeting_stop` / `meeting_pause` / `meeting_resume` / `meeting_get` / `meeting_list` / `meeting_regenerate_summary` / `meeting_export_markdown` | … | … |
-| `detector_respond` | `{ detection_id, action: start \| start_mic_only \| dismiss \| always \| never }` | `()` |
-| `hotkey_capture_begin` / `hotkey_capture_end` | — | combinação capturada |
-| `flowbar_set_hover` | `{ hovering }` | `()` (controle de click-through) |
+| Command                                                                                                                                                           | Entrada                                                                           | Saída                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------- |
+| `dictation_start` / `dictation_stop` / `dictation_cancel`                                                                                                         | `{ mode }`                                                                        | `()`                                     |
+| `settings_get` / `settings_update`                                                                                                                                | patch JSON                                                                        | `Settings`                               |
+| `providers_list` / `providers_save` / `providers_delete` / `providers_test`                                                                                       | …                                                                                 | `Provider[]` / `HealthReport`            |
+| `secret_set`                                                                                                                                                      | `{ provider_id, value }`                                                          | `{ hint }` — **não existe `secret_get`** |
+| `secret_clear`                                                                                                                                                    | `{ provider_id }`                                                                 | `()`                                     |
+| `models_catalog` / `models_download` / `models_cancel` / `models_delete` / `models_import`                                                                        | …                                                                                 | …                                        |
+| `history_list` / `history_search` / `history_delete` / `history_reinsert` / `history_retry`                                                                       | …                                                                                 | …                                        |
+| `dictionary_*`, `snippets_*`, `profiles_*`, `transforms_*`                                                                                                        | CRUD                                                                              | …                                        |
+| `notes_*`                                                                                                                                                         | CRUD + `notes_export`                                                             | …                                        |
+| `meeting_start` / `meeting_stop` / `meeting_pause` / `meeting_resume` / `meeting_get` / `meeting_list` / `meeting_regenerate_summary` / `meeting_export_markdown` | …                                                                                 | …                                        |
+| `detector_respond`                                                                                                                                                | `{ detection_id, action: start \| start_mic_only \| dismiss \| always \| never }` | `()`                                     |
+| `hotkey_capture_begin` / `hotkey_capture_end`                                                                                                                     | —                                                                                 | combinação capturada                     |
+| `flowbar_set_hover`                                                                                                                                               | `{ hovering }`                                                                    | `()` (controle de click-through)         |
 
 ### Events (núcleo → frontend)
 
-| Evento | Payload |
-|---|---|
-| `session://state` | `{ session_id, state, mode, error? }` |
-| `audio://level` | `{ rms: f32[] }` a 30 Hz, só durante gravação |
-| `session://result` | `{ session_id, final_text, inserted: bool }` |
+| Evento               | Payload                                                            |
+| -------------------- | ------------------------------------------------------------------ |
+| `session://state`    | `{ session_id, state, mode, error? }`                              |
+| `audio://level`      | `{ rms: f32[] }` a 30 Hz, só durante gravação                      |
+| `session://result`   | `{ session_id, final_text, inserted: bool }`                       |
 | `detector://meeting` | `{ detection_id, app_label, exe, icon, started_at }` / `{ ended }` |
-| `meeting://state` | `{ meeting_id, status, elapsed_ms }` |
-| `meeting://segment` | `Segment` (transcrição ao vivo) |
-| `meeting://progress` | `{ meeting_id, step, pct }` |
-| `models://progress` | `{ model_id, bytes, total }` |
-| `toast://show` | `{ kind, message, action? }` |
-| `settings://changed` | patch |
+| `meeting://state`    | `{ meeting_id, status, elapsed_ms }`                               |
+| `meeting://segment`  | `Segment` (transcrição ao vivo)                                    |
+| `meeting://progress` | `{ meeting_id, step, pct }`                                        |
+| `models://progress`  | `{ model_id, bytes, total }`                                       |
+| `toast://show`       | `{ kind, message, action? }`                                       |
+| `settings://changed` | patch                                                              |
 
 Tipos TypeScript são gerados a partir dos structs Rust (`specta`/`tauri-specta`) para evitar divergência.

@@ -15,6 +15,7 @@ Além de ditar no cursor, o usuário quer **tomar notas**: capturar ideias por v
 ## Requisitos funcionais
 
 ### Captura
+
 - **FR-007-01** Atalho "Nota por voz" (padrão `Ctrl+Win+Shift`, segurar; duplo toque para mãos-livres). Também acessível pelo 2º botão da Flow Bar antes da v0.3 e pelo menu ▾ depois (F001).
 - **FR-007-02** O texto passa pelo pipeline (F004) com o perfil "Notas" (estilo `default`, limpeza no nível global) e é salvo como **nova nota** (`source = voice`); nada é inserido no app em foco.
 - **FR-007-03** P2 — "Anexar à última nota se criada há menos de N min".
@@ -22,6 +23,7 @@ Além de ditar no cursor, o usuário quer **tomar notas**: capturar ideias por v
 - **FR-007-05** Título: primeira frase (≤ 60 chars); com LLM configurado, opção de gerar título curto.
 
 ### Scratchpad (Hub)
+
 - **FR-007-06** Lista de notas ordenada por atualização, fixadas no topo; busca full-text (FTS5) com destaque.
 - **FR-007-07** Editor Markdown (biblioteca escolhida via `search-first`) com salvamento automático (debounce 500 ms e ao fechar); ditar dentro do editor funciona como em qualquer campo (F005).
 - **FR-007-08** Ações: nova nota, fixar, duplicar, excluir (com desfazer por 5 s), copiar como Markdown.
@@ -31,10 +33,10 @@ Além de ditar no cursor, o usuário quer **tomar notas**: capturar ideias por v
 
 ## Critérios de aceitação
 
-- **AC-007-01** *Dado* o navegador em foco, *quando* seguro `Ctrl+Win+Shift` e digo "comprar café", *então* nada é digitado no navegador, aparece o toast "Nota salva" e a nota "Comprar café." está no topo do Scratchpad.
-- **AC-007-02** *Quando* busco "café" no Scratchpad, *então* a nota aparece com o termo destacado em ≤ 100 ms (com 10.000 notas).
-- **AC-007-03** *Quando* uso "copiar como Markdown" numa nota e colo no Notion, *então* títulos e listas aparecem formatados. (A exportação para pasta é P2.)
-- **AC-007-04** *Quando* fecho o Hub no meio de uma edição, *então* nada é perdido ao reabrir.
+- **AC-007-01** _Dado_ o navegador em foco, _quando_ seguro `Ctrl+Win+Shift` e digo "comprar café", _então_ nada é digitado no navegador, aparece o toast "Nota salva" e a nota "Comprar café." está no topo do Scratchpad.
+- **AC-007-02** _Quando_ busco "café" no Scratchpad, _então_ a nota aparece com o termo destacado em ≤ 100 ms (com 10.000 notas).
+- **AC-007-03** _Quando_ uso "copiar como Markdown" numa nota e colo no Notion, _então_ títulos e listas aparecem formatados. (A exportação para pasta é P2.)
+- **AC-007-04** _Quando_ fecho o Hub no meio de uma edição, _então_ nada é perdido ao reabrir.
 
 ## Casos de borda
 
