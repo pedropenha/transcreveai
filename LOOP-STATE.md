@@ -16,14 +16,15 @@
 - [x] Passo 0 — Governança: `integration/v1` criada em `ecc-v1`; ADR-0002; `specs/tasks.md` emendado; specs corrigidas; `bindings.ts` commitado (`2179f07`).
 - [x] T-001, T-001a, T-008 (pré-loop)
 - [x] **T-005** — merge `a79ec5f`. Schema v3 + só en/pt-BR (24 locales removidos, `pt`→`pt-BR`). bindings.ts editado à mão — regenerar num dev-build.
-- [x] **T-020** — merge `c9a53f2`. `shortcut/matcher.rs` novo (matcher puro); watchdog com backoff; fallback Tauri real. Passou por security-reviewer no merge.
+- [x] **T-020** — merge `c9a53f2`. `shortcut/matcher.rs` novo (matcher puro); watchdog com backoff; fallback Tauri real. Security review achou 1 HIGH (watchdog flapping no Windows) + 2 MEDIUM → fix-forward na lane `fix/review-t005-t020` @ `ecc-fix-review`.
+- [x] **T-004** — merge (ver git log). Schema v9: `dictations` + 11 tabelas novas + 3 FTS5 + triggers; repos por domínio em `src-tauri/src/db/`; `history.rs` reescrito sobre `dictations` sem mudar `HistoryEntry`/IPC. 315 testes.
 
 ## Em andamento (lanes)
 
-- **T-004** `feat/t-004-sqlite-schema` @ `ecc-t004` (fdde7638)
 - **T-016** `feat/t-016-keyring-secrets` @ `ecc-t016` (70b66b95)
 - **T-010** `feat/t-010-audio-engine` @ `ecc-t010` (cd862b96)
 - **T-012** `feat/t-012-stt-provider` @ `ecc-t012` (b58f96b6)
+- **fix/review-t005-t020** @ `ecc-fix-review` (95aab676) — watchdog backoff/held/release_all, validate_shortcut vs acordes de colagem, timeout do recording_loop, normalização idempotente de app_language
 
 ## Próximas na DAG (prontas para lanes)
 
