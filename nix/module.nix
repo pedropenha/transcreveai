@@ -1,4 +1,4 @@
-# NixOS module for Handy speech-to-text
+# NixOS module for Transcreve.ai speech-to-text
 #
 # Handles system-level configuration that the package wrapper cannot:
 #   - udev rule for /dev/uinput (rdev grab() needs it for virtual input)
@@ -7,12 +7,12 @@
 #
 # Usage in your flake:
 #
-#   inputs.handy.url = "github:cjpais/Handy";
+#   inputs.transcreve-ai.url = "github:<owner>/<repo>";
 #
 #   nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
 #     modules = [
-#       handy.nixosModules.default
-#       { programs.handy.enable = true; }
+#       transcreve-ai.nixosModules.default
+#       { programs.transcreve-ai.enable = true; }
 #     ];
 #   };
 {
@@ -22,16 +22,16 @@
   ...
 }:
 let
-  cfg = config.programs.handy;
+  cfg = config.programs.transcreve-ai;
 in
 {
-  options.programs.handy = {
-    enable = lib.mkEnableOption "Handy offline speech-to-text";
+  options.programs.transcreve-ai = {
+    enable = lib.mkEnableOption "Transcreve.ai offline speech-to-text";
 
     package = lib.mkOption {
       type = lib.types.package;
-      defaultText = lib.literalExpression "handy.packages.\${system}.handy";
-      description = "The Handy package to use.";
+      defaultText = lib.literalExpression "transcreve-ai.packages.\${system}.transcreve-ai";
+      description = "The Transcreve.ai package to use.";
     };
   };
 
