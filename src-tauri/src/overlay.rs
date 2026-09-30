@@ -730,6 +730,11 @@ pub fn update_overlay_enabled_cache(enabled: bool) {
     OVERLAY_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
+/// IPC contract (contracts.md §5): the flowbar receives `audio://level` with
+/// `{ rms: f32[] }` at ~30 Hz, only while recording. The values are the
+/// visualizer's per-band levels — the flowbar renders them directly as bars.
+const LEVEL_EVENT: &str = "audio://level";
+
 pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // Skip emission when the overlay is disabled. The flowbar
     // window is created at boot regardless of overlay_style, so without this
@@ -743,8 +748,9 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
         return;
     }
 
-    // Throttle to ~30 FPS. Even with the overlay enabled, the raw audio
-    // callback fires far faster than the UI needs; capping emission rate
+    // Throttle to ~30 Hz (FR-001-05). Even with the overlay enabled, the raw
+    // audio callback can fire faster than the UI needs (the visualizer emits
+    // one event per ~input_rate/30 samples); capping emission rate
     // cuts the per-frame `eval_script`/IPC volume that drives the wry
     // memory growth in issue #1279 (upstream tauri-apps/wry#1489).
     let now = SystemTime::now()
@@ -760,13 +766,17 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // Target only the overlay window. In Tauri 2 both `AppHandle::emit`
     // and `WebviewWindow::emit` broadcast to all webviews; Tauri's
     // listener filter then skips webviews with no registered listener
-    // for the event, so the settings webview never received `mic-level`.
+    // for the event, so the settings webview never received the level event.
     // But the previous dual-call pattern still produced two `eval_script`
     // calls to the overlay per audio callback (one from each .emit()).
     // `emit_to` with the overlay's window label produces a single
     // eval_script call per callback, cutting the per-callback WebKit
     // dispatch work in half.
-    let _ = app_handle.emit_to(crate::window_labels::FLOWBAR, "mic-level", levels);
+    let _ = app_handle.emit_to(
+        crate::window_labels::FLOWBAR,
+        LEVEL_EVENT,
+        serde_json::json!({ "rms": levels }),
+    );
 }
 
 #[cfg(test)]

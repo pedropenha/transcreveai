@@ -14,7 +14,7 @@ use cpal::{
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::audio_toolkit::{
-    audio::{AudioVisualiser, FrameResampler},
+    audio::{AudioVisualiser, FrameResampler, ResamplerInitError},
     constants,
     vad::{self, VadFrame},
     VoiceActivityDetector,
@@ -25,6 +25,10 @@ enum Cmd {
     /// long the command sat in the channel, plus a one-shot first-sample acknowledgement.
     Start(VadPolicy, Instant, mpsc::Sender<()>),
     Stop(mpsc::Sender<Vec<f32>>),
+    /// Attach a frame consumer to the live stream (meeting capture subscribes
+    /// without reopening the microphone).
+    AddSubscriber(FrameSubscriber),
+    RemoveSubscriber(u64),
     Shutdown,
 }
 
@@ -85,13 +89,51 @@ impl VadConfig {
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 pub type LevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
 
+/// Where a [`FrameSubscriber`] taps the capture pipeline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameTap {
+    /// 16 kHz mono frames straight from the resampler, before VAD gating.
+    /// Meeting capture (F009) uses this so speech the dictation VAD would
+    /// withhold still reaches the recording.
+    Raw,
+    /// 16 kHz mono frames that passed the session's active VAD policy.
+    /// Dictation streaming transcription taps here.
+    Processed,
+}
+
+/// One consumer of the single shared microphone stream (F009 fan-out: the mic
+/// is opened once and every consumer — dictation buffer, streaming
+/// transcription, level meter, meeting notetaker — receives frames).
+///
+/// The level meter is deliberately NOT a frame subscriber: it consumes raw
+/// ring chunks through [`LevelCallback`], so it never waits on resampler
+/// frames and stays session-scoped (FR-001-05 only meters while recording).
+#[derive(Clone)]
+pub struct FrameSubscriber {
+    id: u64,
+    /// Which side of the VAD this consumer reads.
+    pub tap: FrameTap,
+    /// Also deliver frames while no dictation session is recording. Meeting
+    /// capture sets this so audio keeps flowing between dictations; the
+    /// consumer thread then resamples continuously instead of discarding idle
+    /// chunks. Idle delivery is always pre-VAD (raw): the VAD policy is a
+    /// per-session concept and does not run outside a recording.
+    pub when_idle: bool,
+    pub callback: AudioFrameCallback,
+}
+
 pub struct AudioRecorder {
     device: Option<Device>,
     cmd_tx: Option<mpsc::Sender<Cmd>>,
     worker_handle: Option<std::thread::JoinHandle<()>>,
     vad: Option<VadConfig>,
     level_cb: Option<LevelCallback>,
-    audio_cb: Option<AudioFrameCallback>,
+    /// Consumers of the shared capture pipeline. Construction-time subscribers
+    /// live here until `open()` hands them to the worker; `subscribe()` adds
+    /// more at runtime through `Cmd::AddSubscriber`. Runtime subscribers are
+    /// lost when the stream is rebuilt — re-subscribe after reopening.
+    subscribers: Vec<FrameSubscriber>,
+    next_subscriber_id: AtomicU64,
     /// Which input channel to use. None = average all (original behavior).
     selected_channel: Option<usize>,
     /// Preferred stream config cached per device name. The two HAL property
@@ -113,7 +155,8 @@ impl AudioRecorder {
             worker_handle: None,
             vad: None,
             level_cb: None,
-            audio_cb: None,
+            subscribers: Vec::new(),
+            next_subscriber_id: AtomicU64::new(1),
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
             stream_error: Arc::new(AtomicBool::new(false)),
@@ -149,15 +192,69 @@ impl AudioRecorder {
     }
 
     /// Register a callback that receives real-time 16 kHz frames after the active
-    /// VAD policy has been applied. Frames arrive in real time, in order, on the
-    /// recorder's consumer thread — keep the callback cheap (e.g. forward to a
-    /// channel) so it never stalls capture.
-    pub fn with_audio_callback<F>(mut self, cb: F) -> Self
+    /// VAD policy has been applied, while a dictation session is recording.
+    /// Frames arrive in real time, in order, on the recorder's consumer thread —
+    /// keep the callback cheap (e.g. forward to a channel) so it never stalls
+    /// capture. Equivalent to `with_frame_subscriber(FrameTap::Processed, false, cb)`.
+    pub fn with_audio_callback<F>(self, cb: F) -> Self
     where
         F: Fn(&[f32]) + Send + Sync + 'static,
     {
-        self.audio_cb = Some(Arc::new(cb));
+        self.with_frame_subscriber(FrameTap::Processed, false, cb)
+    }
+
+    /// Attach a frame consumer before the stream opens. For a live stream use
+    /// [`AudioRecorder::subscribe`], which does not require a rebuild.
+    pub fn with_frame_subscriber<F>(mut self, tap: FrameTap, when_idle: bool, cb: F) -> Self
+    where
+        F: Fn(&[f32]) + Send + Sync + 'static,
+    {
+        let id = self.next_subscriber_id.fetch_add(1, Ordering::Relaxed);
+        self.subscribers.push(FrameSubscriber {
+            id,
+            tap,
+            when_idle,
+            callback: Arc::new(cb),
+        });
         self
+    }
+
+    /// Attach a frame consumer to the open stream without rebuilding it. This is
+    /// the extension point the meeting notetaker uses: `subscribe(
+    /// FrameTap::Raw, true, cb)` keeps the mic's frames flowing between
+    /// dictation sessions. Returns the subscriber id for `unsubscribe`.
+    ///
+    /// Fails if the stream is not open; ensure `start_microphone_stream` ran
+    /// first. Subscribers added here do not survive a stream rebuild — the
+    /// owner must re-subscribe after `open`/`needs_reopen` recovers the stream.
+    pub fn subscribe(
+        &self,
+        tap: FrameTap,
+        when_idle: bool,
+        callback: AudioFrameCallback,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let tx = self
+            .cmd_tx
+            .as_ref()
+            .ok_or_else(|| Error::other("Recorder is not open"))?;
+        let id = self.next_subscriber_id.fetch_add(1, Ordering::Relaxed);
+        tx.send(Cmd::AddSubscriber(FrameSubscriber {
+            id,
+            tap,
+            when_idle,
+            callback,
+        }))?;
+        Ok(id)
+    }
+
+    /// Detach a runtime subscriber previously returned by [`Self::subscribe`].
+    pub fn unsubscribe(&self, id: u64) -> Result<(), Box<dyn std::error::Error>> {
+        let tx = self
+            .cmd_tx
+            .as_ref()
+            .ok_or_else(|| Error::other("Recorder is not open"))?;
+        tx.send(Cmd::RemoveSubscriber(id))?;
+        Ok(())
     }
 
     pub fn with_selected_channel(mut self, channel: Option<u16>) -> Self {
@@ -195,110 +292,112 @@ impl AudioRecorder {
         let vad = self.vad.clone();
         // Move the optional level callback into the worker thread
         let level_cb = self.level_cb.clone();
-        // Move the optional real-time audio frame callback into the worker thread
-        let audio_cb = self.audio_cb.clone();
+        // Move the frame subscribers registered at construction into the worker
+        // thread (runtime subscribers arrive later via Cmd::AddSubscriber)
+        let subscribers = self.subscribers.clone();
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
         let stream_error = Arc::clone(&self.stream_error);
 
         let worker = std::thread::spawn(move || {
             let transport = Arc::new(CaptureTransportState::default());
-            let init_result = (|| -> Result<(cpal::Stream, u32, Consumer<f32>), String> {
-                let config_started = Instant::now();
-                let device_name = thread_device.name().unwrap_or_default();
-                let cached_config = config_cache
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
-                    .map(|(_, cfg)| cfg.clone());
-                let config_was_cached = cached_config.is_some();
-                let config = match cached_config {
-                    Some(cfg) => cfg,
-                    None => AudioRecorder::get_preferred_config(&thread_device)
-                        .map_err(|e| format!("Failed to fetch preferred config: {e}"))?,
-                };
-                let config_elapsed = config_started.elapsed();
+            let init_result =
+                (|| -> Result<(cpal::Stream, CaptureProcessor, Consumer<f32>), String> {
+                    let config_started = Instant::now();
+                    let device_name = thread_device.name().unwrap_or_default();
+                    let cached_config = config_cache
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
+                        .map(|(_, cfg)| cfg.clone());
+                    let config_was_cached = cached_config.is_some();
+                    let config = match cached_config {
+                        Some(cfg) => cfg,
+                        None => AudioRecorder::get_preferred_config(&thread_device)
+                            .map_err(|e| format!("Failed to fetch preferred config: {e}"))?,
+                    };
+                    let config_elapsed = config_started.elapsed();
 
-                let sample_rate = config.sample_rate().0;
-                let channels = config.channels() as usize;
+                    let sample_rate = config.sample_rate().0;
+                    let channels = config.channels() as usize;
 
-                log::info!(
-                    "Using device: {:?}\nSample rate: {}\nChannels: {}\nFormat: {:?}",
-                    thread_device.name(),
-                    sample_rate,
-                    channels,
-                    config.sample_format()
-                );
+                    log::info!(
+                        "Using device: {:?}\nSample rate: {}\nChannels: {}\nFormat: {:?}",
+                        thread_device.name(),
+                        sample_rate,
+                        channels,
+                        config.sample_format()
+                    );
 
-                if let Some(channel) = selected_channel {
-                    if channel < channels {
-                        log::info!("Using selected input channel: {}", channel + 1);
-                    } else {
-                        log::warn!(
+                    if let Some(channel) = selected_channel {
+                        if channel < channels {
+                            log::info!("Using selected input channel: {}", channel + 1);
+                        } else {
+                            log::warn!(
                             "Selected input channel {} is out of range for a {}-channel device; averaging all channels instead",
                             channel + 1,
                             channels
                         );
+                        }
+                    } else {
+                        log::info!("Averaging all {} input channels", channels);
                     }
-                } else {
-                    log::info!("Averaging all {} input channels", channels);
-                }
 
-                let build_started = Instant::now();
-                let (stream, sample_consumer) = match config.sample_format() {
-                    cpal::SampleFormat::U8 => AudioRecorder::build_stream::<u8>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    cpal::SampleFormat::I8 => AudioRecorder::build_stream::<i8>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    cpal::SampleFormat::I16 => AudioRecorder::build_stream::<i16>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    cpal::SampleFormat::I32 => AudioRecorder::build_stream::<i32>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    cpal::SampleFormat::F32 => AudioRecorder::build_stream::<f32>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    sample_format => {
-                        return Err(format!("Unsupported sample format: {sample_format:?}"));
+                    let build_started = Instant::now();
+                    let (stream, sample_consumer) = match config.sample_format() {
+                        cpal::SampleFormat::U8 => AudioRecorder::build_stream::<u8>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        cpal::SampleFormat::I8 => AudioRecorder::build_stream::<i8>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        cpal::SampleFormat::I16 => AudioRecorder::build_stream::<i16>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        cpal::SampleFormat::I32 => AudioRecorder::build_stream::<i32>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        cpal::SampleFormat::F32 => AudioRecorder::build_stream::<f32>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        sample_format => {
+                            return Err(format!("Unsupported sample format: {sample_format:?}"));
+                        }
                     }
-                }
-                .map_err(|e| format!("Failed to build input stream: {e}"))?;
-                let build_elapsed = build_started.elapsed();
+                    .map_err(|e| format!("Failed to build input stream: {e}"))?;
+                    let build_elapsed = build_started.elapsed();
 
-                let play_started = Instant::now();
-                stream
-                    .play()
-                    .map_err(|e| format!("Failed to start microphone stream: {e}"))?;
-                log::debug!(
+                    let play_started = Instant::now();
+                    stream
+                        .play()
+                        .map_err(|e| format!("Failed to start microphone stream: {e}"))?;
+                    log::debug!(
                     "mic worker init: fetch_config={:?} (cached={}) build_stream={:?} play={:?}",
                     config_elapsed,
                     config_was_cached,
@@ -306,28 +405,33 @@ impl AudioRecorder {
                     play_started.elapsed()
                 );
 
-                // The device accepted this config; remember it so the next
-                // open skips the HAL property queries entirely.
-                if !config_was_cached && !device_name.is_empty() {
-                    *config_cache.lock().unwrap() = Some((device_name, config));
-                }
+                    // The device accepted this config; remember it so the next
+                    // open skips the HAL property queries entirely.
+                    if !config_was_cached && !device_name.is_empty() {
+                        *config_cache.lock().unwrap() = Some((device_name, config));
+                    }
 
-                Ok((stream, sample_rate, sample_consumer))
-            })();
-
-            match init_result {
-                Ok((stream, sample_rate, sample_consumer)) => {
-                    let _ = init_tx.send(Ok(()));
                     // Timestamp for the play()-returned -> first-samples gap the
                     // init handshake can't see (hardware dependent).
                     let stream_running_at = Instant::now();
+                    // Build the capture pipeline now so a resampler the device's
+                    // sample rate cannot feed fails the open instead of panicking
+                    // or wedging the consumer thread after it reported success.
                     let processor = CaptureProcessor::new(
                         sample_rate,
                         vad,
                         level_cb,
-                        audio_cb,
+                        subscribers,
                         stream_running_at,
-                    );
+                    )
+                    .map_err(|e| format!("Failed to initialize the audio pipeline: {e}"))?;
+
+                    Ok((stream, processor, sample_consumer))
+                })();
+
+            match init_result {
+                Ok((stream, processor, sample_consumer)) => {
+                    let _ = init_tx.send(Ok(()));
                     run_consumer(
                         processor,
                         sample_consumer,
@@ -634,13 +738,15 @@ fn handle_frame(
     samples: &[f32],
     vad_policy: VadPolicy,
     vad: &Option<VadConfig>,
-    audio_cb: &Option<AudioFrameCallback>,
+    subscribers: &[FrameSubscriber],
     out_buf: &mut Vec<f32>,
 ) {
     let mut emit = |buf: &[f32]| {
         out_buf.extend_from_slice(buf);
-        if let Some(cb) = audio_cb {
-            cb(buf);
+        for subscriber in subscribers {
+            if subscriber.tap == FrameTap::Processed {
+                (subscriber.callback)(buf);
+            }
         }
     };
 
@@ -692,6 +798,10 @@ fn drain_available_samples(
 enum ChunkDisposition {
     /// Process as active recording audio, including during the final stop drain.
     Capture,
+    /// No dictation session is recording, but at least one subscriber asked for
+    /// idle frames (meeting capture): resample and deliver, without metering,
+    /// VAD, or filling the recording buffer.
+    Monitor,
     /// Consume idle audio without processing it.
     Discard,
 }
@@ -703,7 +813,9 @@ struct CaptureProcessor {
     in_sample_rate: u32,
     vad: Option<VadConfig>,
     level_cb: Option<LevelCallback>,
-    audio_cb: Option<AudioFrameCallback>,
+    /// Frame consumers of the shared mic stream. `Cmd::AddSubscriber` /
+    /// `Cmd::RemoveSubscriber` mutate this while the stream lives.
+    subscribers: Vec<FrameSubscriber>,
     stream_running_at: Instant,
     visualizer: AudioVisualiser,
     frame_resampler: FrameResampler,
@@ -724,9 +836,9 @@ impl CaptureProcessor {
         in_sample_rate: u32,
         vad: Option<VadConfig>,
         level_cb: Option<LevelCallback>,
-        audio_cb: Option<AudioFrameCallback>,
+        subscribers: Vec<FrameSubscriber>,
         stream_running_at: Instant,
-    ) -> Self {
+    ) -> Result<Self, ResamplerInitError> {
         // Resample into frames sized for the active VAD backend (30 ms when
         // no detector is attached) so the detector never sees a partial frame.
         let frame_samples = vad.as_ref().map_or(
@@ -739,7 +851,7 @@ impl CaptureProcessor {
             in_sample_rate as usize,
             constants::WHISPER_SAMPLE_RATE as usize,
             frame_duration,
-        );
+        )?;
 
         const BUCKETS: usize = 16;
         let target_window = (f64::from(in_sample_rate) / 30.0).round() as usize;
@@ -752,11 +864,11 @@ impl CaptureProcessor {
         let max_drain_samples =
             ((in_sample_rate as u128 * MAX_DRAIN_CHUNK.as_millis()) / 1_000).max(1) as usize;
 
-        Self {
+        Ok(Self {
             in_sample_rate,
             vad,
             level_cb,
-            audio_cb,
+            subscribers,
             stream_running_at,
             visualizer,
             frame_resampler,
@@ -768,7 +880,14 @@ impl CaptureProcessor {
             capture_ready_tx: None,
             total_dropped_samples: 0,
             overrun_warning_logged: false,
-        }
+        })
+    }
+
+    /// True when at least one subscriber asked for frames outside a dictation
+    /// session (meeting capture), which keeps the consumer resampling instead
+    /// of discarding chunks while idle.
+    fn monitors_while_idle(&self) -> bool {
+        self.subscribers.iter().any(|s| s.when_idle)
     }
 
     /// Reset per-recording state and arm the first-sample acknowledgement.
@@ -821,21 +940,46 @@ impl CaptureProcessor {
             return;
         }
 
-        if let Some(buckets) = self.visualizer.feed(raw) {
-            if let Some(callback) = &self.level_cb {
-                callback(buckets);
+        // The level meter is dictation-scoped (FR-001-05): monitoring between
+        // sessions feeds subscribers but never the overlay.
+        if disposition == ChunkDisposition::Capture {
+            if let Some(buckets) = self.visualizer.feed(raw) {
+                if let Some(callback) = &self.level_cb {
+                    callback(buckets);
+                }
             }
         }
 
         let vad_policy = self.vad_policy;
         self.frame_resampler.push(raw, |frame: &[f32]| {
-            handle_frame(
-                frame,
-                vad_policy,
-                &self.vad,
-                &self.audio_cb,
-                &mut self.processed_samples,
-            )
+            match disposition {
+                ChunkDisposition::Capture => {
+                    // Raw taps run ahead of VAD so subscribers (e.g. meeting
+                    // capture) receive every frame, including ones the active
+                    // VAD policy withholds from dictation outputs.
+                    for subscriber in &self.subscribers {
+                        if subscriber.tap == FrameTap::Raw {
+                            (subscriber.callback)(frame);
+                        }
+                    }
+                    handle_frame(
+                        frame,
+                        vad_policy,
+                        &self.vad,
+                        &self.subscribers,
+                        &mut self.processed_samples,
+                    );
+                }
+                ChunkDisposition::Monitor => {
+                    // Idle delivery is pre-VAD: the VAD policy belongs to a
+                    // dictation session and does not gate monitoring frames.
+                    for subscriber in self.subscribers.iter().filter(|s| s.when_idle) {
+                        (subscriber.callback)(frame);
+                    }
+                }
+                // `Discard` returns above; the resampler is never fed.
+                ChunkDisposition::Discard => {}
+            }
         });
 
         if let Some(started) = self.awaiting_first_captured_chunk.take() {
@@ -872,11 +1016,18 @@ impl CaptureProcessor {
     fn finish_recording(&mut self) -> Vec<f32> {
         let vad_policy = self.vad_policy;
         self.frame_resampler.finish(|frame: &[f32]| {
+            // The finish tail drains real audio from the resampler's delay
+            // line, so raw taps receive it exactly like a live frame.
+            for subscriber in &self.subscribers {
+                if subscriber.tap == FrameTap::Raw {
+                    (subscriber.callback)(frame);
+                }
+            }
             handle_frame(
                 frame,
                 vad_policy,
                 &self.vad,
-                &self.audio_cb,
+                &self.subscribers,
                 &mut self.processed_samples,
             )
         });
@@ -1007,6 +1158,18 @@ fn run_consumer(
                             return;
                         }
                     }
+                    Cmd::AddSubscriber(subscriber) => {
+                        log::debug!(
+                            "Mic frame subscriber {} attached (tap={:?}, when_idle={})",
+                            subscriber.id,
+                            subscriber.tap,
+                            subscriber.when_idle
+                        );
+                        processor.subscribers.push(subscriber);
+                    }
+                    Cmd::RemoveSubscriber(id) => {
+                        processor.subscribers.retain(|s| s.id != id);
+                    }
                     Cmd::Shutdown => {
                         transport.pause_requested.store(true, Ordering::Release);
                         return;
@@ -1023,6 +1186,8 @@ fn run_consumer(
 
         let disposition = if recording {
             ChunkDisposition::Capture
+        } else if processor.monitors_while_idle() {
+            ChunkDisposition::Monitor
         } else {
             ChunkDisposition::Discard
         };

@@ -1,8 +1,38 @@
-use rubato::{FftFixedIn, Resampler};
+use rubato::{FftFixedIn, Resampler, ResamplerConstructionError};
 use std::time::Duration;
 
 // Make this a constant you can tweak
 const RESAMPLER_CHUNK_SIZE: usize = 1024;
+
+/// Why a [`FrameResampler`] could not be constructed. Surfaced through
+/// `AudioRecorder::open` so an exotic device configuration fails the open with
+/// an explicit error instead of panicking the capture worker.
+#[derive(Debug)]
+pub enum ResamplerInitError {
+    /// `frame_dur` was too short to hold even one output sample.
+    FrameTooShort,
+    /// rubato rejected the input/output rate pair.
+    Construction(ResamplerConstructionError),
+}
+
+impl std::fmt::Display for ResamplerInitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FrameTooShort => {
+                write!(f, "resampler frame duration produces zero samples")
+            }
+            Self::Construction(err) => write!(f, "failed to create resampler: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for ResamplerInitError {}
+
+impl From<ResamplerConstructionError> for ResamplerInitError {
+    fn from(err: ResamplerConstructionError) -> Self {
+        Self::Construction(err)
+    }
+}
 
 pub struct FrameResampler {
     resampler: Option<FftFixedIn<f32>>,
@@ -19,19 +49,26 @@ pub struct FrameResampler {
 }
 
 impl FrameResampler {
-    pub fn new(in_hz: usize, out_hz: usize, frame_dur: Duration) -> Self {
+    pub fn new(
+        in_hz: usize,
+        out_hz: usize,
+        frame_dur: Duration,
+    ) -> Result<Self, ResamplerInitError> {
         let frame_samples = ((out_hz as f64 * frame_dur.as_secs_f64()).round()) as usize;
-        assert!(frame_samples > 0, "frame duration too short");
+        if frame_samples == 0 {
+            return Err(ResamplerInitError::FrameTooShort);
+        }
 
         // Use fixed chunk size instead of GCD-based
         let chunk_in = RESAMPLER_CHUNK_SIZE;
 
-        let resampler = (in_hz != out_hz).then(|| {
-            FftFixedIn::<f32>::new(in_hz, out_hz, chunk_in, 1, 1)
-                .expect("Failed to create resampler")
-        });
+        let resampler = if in_hz != out_hz {
+            Some(FftFixedIn::<f32>::new(in_hz, out_hz, chunk_in, 1, 1)?)
+        } else {
+            None
+        };
 
-        Self {
+        Ok(Self {
             resampler,
             chunk_in,
             in_buf: Vec::with_capacity(chunk_in),
@@ -41,7 +78,7 @@ impl FrameResampler {
             out_hz,
             in_count: 0,
             out_count: 0,
-        }
+        })
     }
 
     pub fn push(&mut self, mut src: &[f32], mut emit: impl FnMut(&[f32])) {
@@ -179,7 +216,8 @@ mod tests {
 
     #[test]
     fn reset_clears_in_buf_and_pending() {
-        let mut r = FrameResampler::new(48000, 16000, Duration::from_millis(30));
+        let mut r =
+            FrameResampler::new(48000, 16000, Duration::from_millis(30)).expect("resampler");
 
         // Push less than one chunk (1024 samples) to leave data in in_buf
         let partial = vec![0.5f32; 500];
@@ -201,7 +239,8 @@ mod tests {
 
     #[test]
     fn reset_clears_fft_overlap_buffers() {
-        let mut r = FrameResampler::new(48000, 16000, Duration::from_millis(30));
+        let mut r =
+            FrameResampler::new(48000, 16000, Duration::from_millis(30)).expect("resampler");
 
         // Push a loud 1kHz sine wave through the resampler (simulates recording 1)
         let sine = sine_wave(48000, 1000.0, 0.5); // 500ms of audio
@@ -227,7 +266,8 @@ mod tests {
 
     #[test]
     fn reset_between_recordings_no_crosstalk() {
-        let mut r = FrameResampler::new(48000, 16000, Duration::from_millis(30));
+        let mut r =
+            FrameResampler::new(48000, 16000, Duration::from_millis(30)).expect("resampler");
 
         // Recording 1: ascending ramp (distinctive pattern)
         let ramp: Vec<f32> = (0..48000).map(|i| i as f32 / 48000.0).collect(); // 1 second
@@ -262,7 +302,8 @@ mod tests {
     fn reset_passthrough_mode_clears_pending() {
         // When in_hz == out_hz, no rubato resampler is created (passthrough mode).
         // Reset should still clear the pending frame buffer.
-        let mut r = FrameResampler::new(16000, 16000, Duration::from_millis(30));
+        let mut r =
+            FrameResampler::new(16000, 16000, Duration::from_millis(30)).expect("resampler");
 
         // Push partial frame (less than 480 samples) to leave data in pending
         let partial = vec![1.0f32; 200];
@@ -289,7 +330,8 @@ mod tests {
     /// recovers the burst and emits floor(input*ratio) + output_delay samples,
     /// padded to whole 480-sample frames.
     fn assert_tail_burst_flushed(in_hz: usize, input_len: usize, expected_out: usize) {
-        let mut rs = FrameResampler::new(in_hz, 16000, Duration::from_millis(30));
+        let mut rs =
+            FrameResampler::new(in_hz, 16000, Duration::from_millis(30)).expect("resampler");
         let mut input = vec![0.0f32; input_len];
         input[input_len - 200..].fill(0.5);
 
@@ -329,7 +371,8 @@ mod tests {
     #[test]
     fn finish_does_not_leak_tail_into_next_session() {
         // 48kHz -> 16kHz, 30ms frames (480 output samples per frame).
-        let mut rs = FrameResampler::new(48000, 16000, Duration::from_millis(30));
+        let mut rs =
+            FrameResampler::new(48000, 16000, Duration::from_millis(30)).expect("resampler");
 
         // Leave a partial chunk buffered, then end the session.
         rs.push(&[0.5f32; 100], |_| {});
@@ -347,5 +390,51 @@ mod tests {
             emitted, 0,
             "stale resampler tail from finish() leaked into the next session"
         );
+    }
+
+    /// Feed a 500 ms, 1 kHz sine at `in_hz` through the resampler and assert the
+    /// 16 kHz output keeps the tone and lands within ~one frame of the
+    /// theoretical length (FR-002: any device rate must converge to 16 kHz).
+    fn assert_rate_converges_to_16khz(in_hz: usize) {
+        let mut rs =
+            FrameResampler::new(in_hz, 16000, Duration::from_millis(30)).expect("resampler");
+        let input = sine_wave(in_hz, 1000.0, 0.5);
+
+        let mut out = Vec::new();
+        rs.push(&input, |frame| out.extend_from_slice(frame));
+        rs.finish(|frame| out.extend_from_slice(frame));
+
+        let expected = input.len() * 16000 / in_hz;
+        let drift = out.len().abs_diff(expected);
+        // finish() drains the resampler's delay line and pads to whole
+        // 480-sample frames. The delay grows with the resampling ratio (an
+        // 8 kHz input upsampled 2x holds ~1120 output samples back), so bound
+        // the drift by ~250 ms of overhead rather than demanding exactness.
+        assert!(
+            drift <= 4000 + 480,
+            "{in_hz} Hz input produced {} output samples, expected ~{expected}",
+            out.len()
+        );
+
+        let max_abs = out.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        assert!(
+            max_abs > 0.5,
+            "{in_hz} Hz sine lost its amplitude (max_abs={max_abs})"
+        );
+    }
+
+    #[test]
+    fn resamples_common_input_rates_to_16khz() {
+        // Device defaults actually seen in the wild: BT hands-free (8/16k),
+        // USB mics (44.1/48k), and interfaces running 96/192k.
+        for in_hz in [8_000usize, 16_000, 44_100, 48_000, 96_000, 192_000] {
+            assert_rate_converges_to_16khz(in_hz);
+        }
+    }
+
+    #[test]
+    fn rejects_a_frame_duration_too_short_to_emit() {
+        let err = FrameResampler::new(16_000, 16_000, Duration::from_nanos(1));
+        assert!(matches!(err, Err(ResamplerInitError::FrameTooShort)));
     }
 }

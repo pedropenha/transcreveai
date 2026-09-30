@@ -160,3 +160,90 @@ impl AudioVisualiser {
         self.noise_floor.fill(-40.0);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RATE: u32 = 48_000;
+    const BUCKETS: usize = 16;
+
+    fn sine(amplitude: f32, freq: f32, len: usize) -> Vec<f32> {
+        (0..len)
+            .map(|i| amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / RATE as f32).sin())
+            .collect()
+    }
+
+    /// Mirror of `CaptureProcessor::new`: window closest to sample_rate/30 so
+    /// `feed` yields one emission per ~33 ms (FR-001-05's ~30 Hz level stream).
+    fn visualizer_for(rate: u32) -> AudioVisualiser {
+        let target_window = (rate as f64 / 30.0).round() as usize;
+        let window_size = [256usize, 512, 1024, 2048]
+            .into_iter()
+            .min_by_key(|w| w.abs_diff(target_window))
+            .expect("window list is non-empty");
+        AudioVisualiser::new(rate, window_size, BUCKETS, 400.0, 4000.0)
+    }
+
+    #[test]
+    fn feed_waits_for_a_full_window_before_emitting() {
+        let mut vis = visualizer_for(RATE);
+        assert!(vis.feed(&vec![0.0f32; 512]).is_none());
+    }
+
+    #[test]
+    fn feed_emits_at_roughly_30_hz() {
+        // 48 kHz -> 2048-sample window -> an emission every ~42.7 ms of audio
+        // input; emit_levels then caps IPC at ~30 Hz. One second of audio must
+        // produce a cadence in that ballpark, not one-per-callback bursts.
+        let mut vis = visualizer_for(RATE);
+        let chunk = vec![0.0f32; 480]; // 10 ms drains, as run_consumer produces
+        let mut emissions = 0;
+        for _ in 0..100 {
+            if vis.feed(&chunk).is_some() {
+                emissions += 1;
+            }
+        }
+        assert!(
+            (15..=50).contains(&emissions),
+            "expected ~30 Hz metering over one second, got {emissions} emissions"
+        );
+    }
+
+    #[test]
+    fn silence_stays_at_the_bars_floor() {
+        let mut vis = visualizer_for(RATE);
+        let buckets = vis
+            .feed(&vec![0.0f32; 2048])
+            .expect("a full window emits buckets");
+        assert_eq!(buckets.len(), BUCKETS);
+        assert!(
+            buckets.iter().all(|&b| b <= 0.05),
+            "silence should pin every bar near zero: {buckets:?}"
+        );
+    }
+
+    #[test]
+    fn a_voice_band_tone_lifts_some_bars() {
+        let mut vis = visualizer_for(RATE);
+        // 1 kHz sits inside the 400-4000 Hz metering band; a full-scale tone
+        // must visibly move at least one bar (AC-001-07).
+        let buckets = vis
+            .feed(&sine(0.8, 1000.0, 2048))
+            .expect("a full window emits buckets");
+        assert!(
+            buckets.iter().any(|&b| b > 0.2),
+            "a strong in-band tone should lift some bars: {buckets:?}"
+        );
+    }
+
+    #[test]
+    fn reset_discards_partially_accumulated_audio() {
+        let mut vis = visualizer_for(RATE);
+        assert!(vis.feed(&sine(0.8, 1000.0, 1024)).is_none());
+        vis.reset();
+        // If the partial window had survived reset, this 1024-sample feed
+        // would complete a window using stale audio.
+        assert!(vis.feed(&vec![0.0f32; 1024]).is_none());
+    }
+}

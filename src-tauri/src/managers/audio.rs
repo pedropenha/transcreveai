@@ -260,10 +260,63 @@ struct MuteState {
 /// The persisted microphone preference currently in effect. Clamshell and
 /// regular selections are kept distinct so losing a clamshell-only device does
 /// not erase the user's normal microphone preference.
+#[derive(Debug)]
 enum DesiredMicrophone {
     Default,
     Selected(String),
     Clamshell(String),
+}
+
+/// What `resolve_microphone_device` should open, decided purely from the
+/// persisted preference and the names enumeration returned — kept free of cpal
+/// so the FR-002-20 fallback policy is unit-testable without hardware.
+#[derive(Debug)]
+struct ResolutionPlan {
+    /// Name to look up among the enumerated devices; `None` opens the system
+    /// default input.
+    device_name: Option<String>,
+    /// The user's regular selected microphone was confirmed absent. Populated
+    /// only when enumeration *succeeded* (a transient backend error must not
+    /// erase the persisted preference) and only for `Selected`, never for the
+    /// transient clamshell override.
+    unavailable_selected: Option<String>,
+}
+
+/// FR-002-20: `_Padrão do sistema_` opens cpal's default input; a specific
+/// selection opens the enumerated device by name; when enumeration proves the
+/// selection is gone, fall back to the default and surface the device name so
+/// the caller can warn the user and persist the fallback.
+fn plan_microphone_resolution(
+    desired: &DesiredMicrophone,
+    enumerated_names: Option<&[String]>,
+) -> ResolutionPlan {
+    let (name, is_regular_selection) = match desired {
+        DesiredMicrophone::Default => {
+            return ResolutionPlan {
+                device_name: None,
+                unavailable_selected: None,
+            };
+        }
+        DesiredMicrophone::Selected(name) => (name, true),
+        DesiredMicrophone::Clamshell(name) => (name, false),
+    };
+
+    match enumerated_names {
+        Some(names) if names.iter().any(|n| n == name) => ResolutionPlan {
+            device_name: Some(name.clone()),
+            unavailable_selected: None,
+        },
+        Some(_) => ResolutionPlan {
+            device_name: None,
+            unavailable_selected: is_regular_selection.then(|| name.clone()),
+        },
+        // Enumeration failed: fall back to the default without warning — the
+        // device may reappear and the preference must survive the outage.
+        None => ResolutionPlan {
+            device_name: None,
+            unavailable_selected: None,
+        },
+    }
 }
 
 /// Result of resolving the persisted preference to a live cpal device.
@@ -473,7 +526,7 @@ impl AudioRecordingManager {
 
     fn resolve_microphone_device(&self, settings: &AppSettings) -> MicrophoneResolution {
         let desired = self.desired_microphone(settings);
-        let (device_name, selected_microphone) = match desired {
+        let device_name = match &desired {
             DesiredMicrophone::Default => {
                 debug!("device resolve: no mic configured -> system default");
                 return MicrophoneResolution {
@@ -481,14 +534,13 @@ impl AudioRecordingManager {
                     unavailable_selected_microphone: None,
                 };
             }
-            DesiredMicrophone::Selected(name) => (name.clone(), Some(name)),
-            DesiredMicrophone::Clamshell(name) => (name, None),
+            DesiredMicrophone::Selected(name) | DesiredMicrophone::Clamshell(name) => name,
         };
 
         // Cache hit: skip the full enumeration. A stale device (unplugged)
         // fails at open, where the caller invalidates and retries fresh.
         if let Some((cached_name, device)) = self.cached_device.lock().unwrap().as_ref() {
-            if *cached_name == device_name {
+            if cached_name == device_name {
                 debug!("device resolve: cache hit for '{}'", device_name);
                 return MicrophoneResolution {
                     device: Some(device.clone()),
@@ -497,40 +549,39 @@ impl AudioRecordingManager {
             }
         }
 
-        // Only report a selected microphone as unavailable when enumeration
-        // itself succeeded. A backend enumeration error may be transient and
-        // must not erase the user's persisted preference.
         let enumerate_started = Instant::now();
-        let (device, enumeration_succeeded) = match list_input_devices() {
-            Ok(devices) => (
-                devices
-                    .into_iter()
-                    .find(|d| d.name == device_name)
-                    .map(|d| d.device),
-                true,
-            ),
+        let devices = match list_input_devices() {
+            Ok(devices) => Some(devices),
             Err(e) => {
                 debug!("Failed to list devices, using default: {}", e);
-                (None, false)
+                None
             }
         };
+        let enumerated_names: Option<Vec<String>> = devices
+            .as_ref()
+            .map(|list| list.iter().map(|d| d.name.clone()).collect());
         debug!(
             "device resolve: enumerate={:?} (found={})",
             enumerate_started.elapsed(),
-            device.is_some()
+            enumerated_names
+                .as_ref()
+                .is_some_and(|names| names.iter().any(|n| n == device_name))
         );
-        if let Some(d) = &device {
-            *self.cached_device.lock().unwrap() = Some((device_name, d.clone()));
+
+        let plan = plan_microphone_resolution(&desired, enumerated_names.as_deref());
+        let device = match (devices, &plan.device_name) {
+            (Some(list), Some(name)) => {
+                list.into_iter().find(|d| d.name == *name).map(|d| d.device)
+            }
+            _ => None,
+        };
+        if let (Some(name), Some(d)) = (&plan.device_name, &device) {
+            *self.cached_device.lock().unwrap() = Some((name.clone(), d.clone()));
         }
 
-        let unavailable_selected_microphone = if enumeration_succeeded && device.is_none() {
-            selected_microphone
-        } else {
-            None
-        };
         MicrophoneResolution {
             device,
-            unavailable_selected_microphone,
+            unavailable_selected_microphone: plan.unavailable_selected,
         }
     }
 
@@ -1097,5 +1148,77 @@ impl AudioRecordingManager {
             }
             RecordingState::Idle => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{plan_microphone_resolution, DesiredMicrophone};
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn default_preference_always_opens_the_system_default() {
+        let plan = plan_microphone_resolution(
+            &DesiredMicrophone::Default,
+            Some(&names(&["Mic A", "Mic B"])),
+        );
+        assert!(plan.device_name.is_none());
+        assert!(plan.unavailable_selected.is_none());
+    }
+
+    #[test]
+    fn present_selection_is_opened_by_name() {
+        let plan = plan_microphone_resolution(
+            &DesiredMicrophone::Selected("Mic B".into()),
+            Some(&names(&["Mic A", "Mic B"])),
+        );
+        assert_eq!(plan.device_name.as_deref(), Some("Mic B"));
+        assert!(plan.unavailable_selected.is_none());
+    }
+
+    #[test]
+    fn vanished_selection_falls_back_to_default_and_warns() {
+        // FR-002-20: the specific device is gone -> open the default and
+        // report which selection was lost so the user can be warned.
+        let plan = plan_microphone_resolution(
+            &DesiredMicrophone::Selected("USB Mic".into()),
+            Some(&names(&["Mic A"])),
+        );
+        assert!(plan.device_name.is_none());
+        assert_eq!(plan.unavailable_selected.as_deref(), Some("USB Mic"));
+    }
+
+    #[test]
+    fn failed_enumeration_falls_back_silently() {
+        // A transient enumeration error must not erase the user's preference
+        // nor produce a spurious "device missing" warning.
+        let plan = plan_microphone_resolution(&DesiredMicrophone::Selected("USB Mic".into()), None);
+        assert!(plan.device_name.is_none());
+        assert!(plan.unavailable_selected.is_none());
+    }
+
+    #[test]
+    fn missing_clamshell_microphone_falls_back_without_warning() {
+        // Clamshell devices are transient (lid closed = expected); losing one
+        // must not touch the user's regular preference nor warn.
+        let plan = plan_microphone_resolution(
+            &DesiredMicrophone::Clamshell("Lid Mic".into()),
+            Some(&names(&["Mic A"])),
+        );
+        assert!(plan.device_name.is_none());
+        assert!(plan.unavailable_selected.is_none());
+    }
+
+    #[test]
+    fn present_clamshell_microphone_is_opened_by_name() {
+        let plan = plan_microphone_resolution(
+            &DesiredMicrophone::Clamshell("Lid Mic".into()),
+            Some(&names(&["Mic A", "Lid Mic"])),
+        );
+        assert_eq!(plan.device_name.as_deref(), Some("Lid Mic"));
+        assert!(plan.unavailable_selected.is_none());
     }
 }
