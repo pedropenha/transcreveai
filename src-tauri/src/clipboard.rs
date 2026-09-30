@@ -725,6 +725,7 @@ fn paste_direct(
 }
 
 pub(crate) fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Result<(), String> {
+    let _guard = crate::input::InjectionGuard::begin();
     match key_type {
         AutoSubmitKey::Enter => {
             enigo

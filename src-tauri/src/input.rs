@@ -1,6 +1,39 @@
 use enigo::{Enigo, Key, Keyboard, Mouse, Settings};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
+
+/// Depth of in-flight keystroke injections below (paste chords, direct
+/// typing, auto-submit). The injected events carry no marker a low-level
+/// hook can read (`LLKHF_INJECTED` is not exposed by handy-keys), so the
+/// shortcut manager consults this flag and drops raw events for the
+/// duration instead of letting our own synthetics re-enter the matcher.
+static INJECTION_DEPTH: AtomicUsize = AtomicUsize::new(0);
+
+/// True while `input` is synthesizing keystrokes. Events seen by the global
+/// hook in this window are (almost always) our own; the odd real keystroke
+/// inside the short window is dropped along with them — an accepted
+/// trade-off of the flag being shared rather than tagged per-event.
+pub(crate) fn is_injection_active() -> bool {
+    INJECTION_DEPTH.load(Ordering::SeqCst) > 0
+}
+
+/// RAII guard marking an injection window for [`is_injection_active`].
+/// Depth-counted so overlapping injections stay covered.
+pub(crate) struct InjectionGuard;
+
+impl InjectionGuard {
+    pub(crate) fn begin() -> Self {
+        INJECTION_DEPTH.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for InjectionGuard {
+    fn drop(&mut self) {
+        INJECTION_DEPTH.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 #[cfg(target_os = "macos")]
 mod macos {
@@ -177,6 +210,7 @@ pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
 /// against those. Callers that can detect a failed chord (e.g. the
 /// receipt-sequenced paste path) may use a much shorter hold.
 pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    let _guard = InjectionGuard::begin();
     // Platform-specific key definitions
     #[cfg(target_os = "macos")]
     let (modifier_key, v_key_code) = (Key::Meta, macos::command_v_key());
@@ -206,6 +240,7 @@ pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> 
 /// This is commonly used in terminal applications on Linux to paste without formatting.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
 pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    let _guard = InjectionGuard::begin();
     // Platform-specific key definitions
     #[cfg(target_os = "macos")]
     let (modifier_key, v_key_code) = (Key::Meta, macos::command_v_key());
@@ -241,6 +276,7 @@ pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), St
 /// This is more universal for terminal applications and legacy software.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
 pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    let _guard = InjectionGuard::begin();
     #[cfg(target_os = "windows")]
     let insert_key_code = Key::Other(0x2D); // VK_INSERT
     #[cfg(not(target_os = "windows"))]
@@ -266,6 +302,7 @@ pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), St
 /// Pastes text directly using the enigo text method.
 /// This tries to use system input methods if possible, otherwise simulates keystrokes one by one.
 pub fn paste_text_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
+    let _guard = InjectionGuard::begin();
     enigo
         .text(text)
         .map_err(|e| format!("Failed to send text directly: {}", e))?;

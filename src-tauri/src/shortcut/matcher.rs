@@ -114,9 +114,33 @@ impl HotkeyMatcher {
 
     /// Remove `binding_id`. Returns the hotkey it held so the caller can
     /// drop it from the suppression set; `None` when it was not registered.
+    ///
+    /// A binding removed while held loses its release edge silently — the
+    /// caller should emit it via [`release_binding`](Self::release_binding)
+    /// first when the hold is user-visible.
     pub fn unregister(&mut self, binding_id: &str) -> Option<Hotkey> {
         self.held.remove(binding_id);
         self.bindings.remove(binding_id).map(|reg| reg.hotkey)
+    }
+
+    /// If `binding_id` is currently held, clear the hold and emit `Released`.
+    /// Used before unregister/re-register so a held binding's release edge
+    /// is surfaced instead of silently dropped.
+    pub fn release_binding(&mut self, binding_id: &str) -> Option<HotkeyAction> {
+        self.held
+            .remove(binding_id)
+            .then(|| HotkeyAction::Released(binding_id.to_string()))
+    }
+
+    /// Emit `Released` for every held binding and clear all hold state.
+    /// Called when the event stream dies (watchdog respawn): a dead listener
+    /// can no longer deliver key-up edges, and without this a push-to-talk
+    /// binding would stay logically pressed forever.
+    pub fn release_all(&mut self) -> Vec<HotkeyAction> {
+        let mut released: Vec<String> = self.held.drain().collect();
+        // Deterministic order keeps multi-binding releases predictable.
+        released.sort_unstable();
+        released.into_iter().map(HotkeyAction::Released).collect()
     }
 
     /// The persisted hotkey string for a binding (for dispatch/logging).
@@ -444,7 +468,10 @@ mod tests {
         let err = m
             .register("b", hotkey, "ctrl+win".to_string())
             .expect_err("duplicate must be rejected");
-        assert!(err.contains("a"), "error should name the holder: {err}");
+        assert!(
+            err.contains("binding 'a'"),
+            "error should name the holder: {err}"
+        );
     }
 
     #[test]
@@ -488,5 +515,67 @@ mod tests {
         register(&mut m, "dictate", "ctrl+k");
         let up = key_event(Modifiers::CTRL_LEFT, Some(Key::K), false);
         assert!(m.feed(&up, now()).is_empty());
+    }
+
+    #[test]
+    fn release_all_emits_released_for_every_held_binding() {
+        // Mirrors the watchdog path: the event stream dies mid-hold, so the
+        // matcher must synthesize the release edges itself.
+        let mut m = HotkeyMatcher::new();
+        register(&mut m, "dictate", "ctrl+win");
+        register(&mut m, "command", "ctrl+win+alt");
+        register(&mut m, "cancel", "escape");
+
+        let combo = Modifiers::CTRL_LEFT | Modifiers::CMD_LEFT;
+        let win_down = modifier_event(combo, true, Modifiers::CMD_LEFT);
+        assert_eq!(
+            m.feed(&win_down, now()),
+            vec![HotkeyAction::Pressed("dictate".into())]
+        );
+        let alt_down = modifier_event(combo | Modifiers::OPT_LEFT, true, Modifiers::OPT_LEFT);
+        assert_eq!(
+            m.feed(&alt_down, now()),
+            vec![HotkeyAction::Pressed("command".into())]
+        );
+
+        // "cancel" was never pressed: only the two held bindings release.
+        assert_eq!(
+            m.release_all(),
+            vec![
+                HotkeyAction::Released("command".into()),
+                HotkeyAction::Released("dictate".into())
+            ]
+        );
+        assert!(m.release_all().is_empty());
+
+        // Late key-up edges for the dead stream emit nothing — the hold is gone.
+        let win_up = modifier_event(Modifiers::CTRL_LEFT, false, Modifiers::CMD_LEFT);
+        assert!(m.feed(&win_up, now()).is_empty());
+    }
+
+    #[test]
+    fn release_binding_emits_only_for_held_binding() {
+        let mut m = HotkeyMatcher::new();
+        register(&mut m, "dictate", "ctrl+win");
+        register(&mut m, "command", "alt+m");
+
+        assert!(m.release_binding("dictate").is_none());
+        assert!(m.release_binding("unknown").is_none());
+
+        let win_down = modifier_event(
+            Modifiers::CTRL_LEFT | Modifiers::CMD_LEFT,
+            true,
+            Modifiers::CMD_LEFT,
+        );
+        assert_eq!(
+            m.feed(&win_down, now()),
+            vec![HotkeyAction::Pressed("dictate".into())]
+        );
+
+        assert_eq!(
+            m.release_binding("dictate"),
+            Some(HotkeyAction::Released("dictate".into()))
+        );
+        assert!(m.release_binding("dictate").is_none());
     }
 }
