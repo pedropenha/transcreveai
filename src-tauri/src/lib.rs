@@ -16,6 +16,7 @@ mod memory;
 mod overlay;
 mod paste_tx;
 pub mod portable;
+mod secrets;
 mod secure_input;
 mod settings;
 mod shortcut;
@@ -622,34 +623,9 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     0
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
-    // Avoid ggml-metal residency-set teardown assertions when a native engine
-    // outlives the Tauri shutdown sequence (#1902). This must happen before
-    // transcribe-cpp initializes its Metal device. Advanced users can restore
-    // upstream residency behavior with TRANSCREVE_METAL_RESIDENCY=1.
-    #[cfg(target_os = "macos")]
-    if std::env::var("TRANSCREVE_METAL_RESIDENCY").as_deref() == Ok("1") {
-        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
-        // inherited value as well when explicitly opting back in.
-        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
-    } else {
-        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
-    }
-
-    // Pin glibc's dynamic mmap threshold before the first large allocation,
-    // so per-dictation transient buffers are returned to the OS on free
-    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
-    memory::init_allocator();
-
-    // Detect portable mode before anything else
-    portable::init();
-
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
-    let console_filter = build_console_filter();
-
-    let specta_builder = Builder::<tauri::Wry>::new()
+/// tauri-specta builder shared by `run()` and the bindings-export test.
+fn specta_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,
@@ -681,7 +657,9 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_post_process_enabled_setting,
             shortcut::change_experimental_enabled_setting,
             shortcut::change_post_process_base_url_setting,
-            shortcut::change_post_process_api_key_setting,
+            commands::secrets::secret_set,
+            commands::secrets::secret_clear,
+            commands::secrets::secret_hint,
             shortcut::change_post_process_model_setting,
             shortcut::set_post_process_provider,
             shortcut::fetch_post_process_models,
@@ -772,7 +750,37 @@ pub fn run(cli_args: CliArgs) {
             managers::history::HistoryUpdatePayload,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
-        ]);
+        ])
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run(cli_args: CliArgs) {
+    // Avoid ggml-metal residency-set teardown assertions when a native engine
+    // outlives the Tauri shutdown sequence (#1902). This must happen before
+    // transcribe-cpp initializes its Metal device. Advanced users can restore
+    // upstream residency behavior with TRANSCREVE_METAL_RESIDENCY=1.
+    #[cfg(target_os = "macos")]
+    if std::env::var("TRANSCREVE_METAL_RESIDENCY").as_deref() == Ok("1") {
+        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
+        // inherited value as well when explicitly opting back in.
+        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
+    } else {
+        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
+    }
+
+    // Pin glibc's dynamic mmap threshold before the first large allocation,
+    // so per-dictation transient buffers are returned to the OS on free
+    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
+    memory::init_allocator();
+
+    // Detect portable mode before anything else
+    portable::init();
+
+    // Parse console logging directives from RUST_LOG, falling back to info-level logging
+    // when the variable is unset
+    let console_filter = build_console_filter();
+
+    let specta_builder = specta_builder();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     specta_builder
@@ -796,6 +804,22 @@ pub fn run(cli_args: CliArgs) {
         .plugin(
             LogBuilder::new()
                 .level(log::LevelFilter::Trace) // Set to most verbose level globally
+                // Formatting runs once on the root dispatch, so every target —
+                // stdout, the log file and the webview `log://log` event —
+                // receives the same line. Redacting here is therefore the
+                // single choke point that keeps API keys and auth headers out
+                // of all log outputs (FR-011-03).
+                .format(|out, message, record| {
+                    let timestamp = chrono::Utc::now().format("[%Y-%m-%d][%H:%M:%S]");
+                    let message = crate::secrets::redact_sensitive(&message.to_string());
+                    out.finish(format_args!(
+                        "{}[{}][{}] {}",
+                        timestamp,
+                        record.target(),
+                        record.level(),
+                        message
+                    ))
+                })
                 .max_file_size(500_000)
                 .rotation_strategy(RotationStrategy::KeepOne)
                 .clear_targets()

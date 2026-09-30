@@ -119,7 +119,11 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
-async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
+async fn post_process_transcription(
+    app: &AppHandle,
+    settings: &AppSettings,
+    transcription: &str,
+) -> Option<String> {
     if is_blank_transcription(transcription) {
         debug!("Post-processing skipped because the transcription is empty");
         return None;
@@ -180,11 +184,9 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         provider.id, model
     );
 
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
+    // The key lives only in the OS credential vault (FR-011-01); it is pulled
+    // transiently to build the request and never reaches settings or the UI.
+    let api_key = crate::secrets::provider_api_key(app, &provider.id).unwrap_or_default();
 
     // Ask these providers to skip reasoning/thinking — post-processing rarely
     // benefits from it and it adds seconds of latency. llm_client picks the
@@ -441,7 +443,8 @@ pub(crate) async fn process_transcription_output(
     }
 
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
+        if let Some(processed_text) = post_process_transcription(app, &settings, &final_text).await
+        {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 

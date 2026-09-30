@@ -21,6 +21,9 @@ interface SettingsStore {
   outputDevices: AudioDevice[];
   customSounds: { start: boolean; stop: boolean };
   postProcessModelOptions: Record<string, string[]>;
+  // Masked hints ("••••1234") for vaulted provider API keys. Absent provider =
+  // no key saved. The real key is never readable from the frontend (FR-011-02).
+  apiKeyHints: Record<string, string>;
   // null until loadUpdateChecksLocked() resolves
   updateChecksLocked: boolean | null;
 
@@ -48,6 +51,8 @@ interface SettingsStore {
     providerId: string,
     value: string,
   ) => Promise<void>;
+  refreshApiKeyHint: (providerId: string) => Promise<void>;
+  refreshApiKeyHints: () => Promise<void>;
   updatePostProcessBaseUrl: (
     providerId: string,
     baseUrl: string,
@@ -206,6 +211,7 @@ export const useSettingsStore = create<SettingsStore>()(
     outputDevices: [],
     customSounds: { start: false, stop: false },
     postProcessModelOptions: {},
+    apiKeyHints: {},
     updateChecksLocked: null,
 
     // Internal setters
@@ -489,7 +495,9 @@ export const useSettingsStore = create<SettingsStore>()(
         if (settingType === "base_url") {
           await commands.changePostProcessBaseUrlSetting(providerId, value);
         } else if (settingType === "api_key") {
-          await commands.changePostProcessApiKeySetting(providerId, value);
+          // Keys go to the OS credential vault, never to settings.json.
+          await get().updatePostProcessApiKey(providerId, value);
+          return;
         } else if (settingType === "model") {
           await commands.changePostProcessModelSetting(providerId, value);
         }
@@ -550,7 +558,38 @@ export const useSettingsStore = create<SettingsStore>()(
       }
     },
 
+    // Refresh the masked hint for one provider — the only read-back the
+    // frontend ever gets of a vaulted key.
+    refreshApiKeyHint: async (providerId) => {
+      try {
+        const result = await commands.secretHint(providerId);
+        if (result.status === "ok") {
+          set((state) => {
+            const apiKeyHints = { ...state.apiKeyHints };
+            if (result.data) {
+              apiKeyHints[providerId] = result.data;
+            } else {
+              delete apiKeyHints[providerId];
+            }
+            return { apiKeyHints };
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load API key hint:", error);
+      }
+    },
+
+    refreshApiKeyHints: async () => {
+      const providers = get().settings?.post_process_providers ?? [];
+      await Promise.all(
+        providers.map((provider) => get().refreshApiKeyHint(provider.id)),
+      );
+    },
+
     updatePostProcessApiKey: async (providerId, apiKey) => {
+      const { setUpdating } = get();
+      const updateKey = `post_process_api_key:${providerId}`;
+
       // Clear cached models when API key changes - user should click refresh after
       set((state) => ({
         postProcessModelOptions: {
@@ -558,7 +597,26 @@ export const useSettingsStore = create<SettingsStore>()(
           [providerId]: [],
         },
       }));
-      return get().updatePostProcessSetting("api_key", providerId, apiKey);
+
+      setUpdating(updateKey, true);
+
+      try {
+        // Writes go to the OS vault; an empty value clears the key.
+        const result = await commands.secretSet(providerId, apiKey);
+        if (result.status === "error") {
+          console.error("Failed to save API key:", result.error);
+          toast.error(result.error);
+        } else if (result.data) {
+          // Non-blocking format warning from the backend (FR-011-05).
+          toast.warning(result.data);
+        }
+      } catch (error) {
+        console.error("Failed to save API key:", error);
+      } finally {
+        setUpdating(updateKey, false);
+        // Reflect the new vault state (hint or cleared) in the UI.
+        await get().refreshApiKeyHint(providerId);
+      }
     },
 
     updatePostProcessModel: async (providerId, model) => {
@@ -645,6 +703,9 @@ export const useSettingsStore = create<SettingsStore>()(
         checkCustomSounds(),
         loadUpdateChecksLocked(),
       ]);
+
+      // Load masked key hints after settings so the provider list is known.
+      await get().refreshApiKeyHints();
 
       // Re-fetch settings when the backend changes them (e.g. language
       // reset during model switch). The backend is the source of truth.

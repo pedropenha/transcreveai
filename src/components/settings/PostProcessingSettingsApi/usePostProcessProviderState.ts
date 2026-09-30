@@ -14,7 +14,8 @@ type PostProcessProviderState = {
   baseUrl: string;
   handleBaseUrlChange: (value: string) => void;
   isBaseUrlUpdating: boolean;
-  apiKey: string;
+  // Masked vault hint ("••••1234") shown in the field — never the real key.
+  apiKeyHint: string;
   handleApiKeyChange: (value: string) => void;
   isApiKeyUpdating: boolean;
   model: string;
@@ -40,6 +41,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     updatePostProcessModel,
     fetchPostProcessModels,
     postProcessModelOptions,
+    apiKeyHints,
   } = useSettings();
 
   // Settings are guaranteed to have providers after migration
@@ -62,7 +64,8 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
 
   // Use settings directly as single source of truth
   const baseUrl = selectedProvider?.base_url ?? "";
-  const apiKey = settings?.post_process_api_keys?.[selectedProviderId] ?? "";
+  // The real key is never sent to the frontend — only this masked hint.
+  const apiKeyHint = apiKeyHints[selectedProviderId] ?? "";
   const model = settings?.post_process_models?.[selectedProviderId] ?? "";
 
   const providerOptions = useMemo<DropdownOption[]>(() => {
@@ -98,9 +101,8 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       // to avoid unnecessary backend errors.
       if (providerId !== APPLE_PROVIDER_ID) {
         const provider = providers.find((p) => p.id === providerId);
-        const apiKey = settings?.post_process_api_keys?.[providerId] ?? "";
         const hasBaseUrl = (provider?.base_url ?? "").trim() !== "";
-        const hasApiKey = apiKey.trim() !== "";
+        const hasApiKey = Boolean(apiKeyHints[providerId]);
 
         if (provider?.id === "custom" ? hasBaseUrl : hasApiKey) {
           void fetchPostProcessModels(providerId);
@@ -112,7 +114,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       setPostProcessProvider,
       fetchPostProcessModels,
       providers,
-      settings,
+      apiKeyHints,
     ],
   );
 
@@ -131,12 +133,14 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
 
   const handleApiKeyChange = useCallback(
     (value: string) => {
+      // Blurring the untouched mask is a no-op; an empty value clears the key
+      // and anything else replaces it — all write-only via `secret_set`.
       const trimmed = value.trim();
-      if (trimmed !== apiKey) {
+      if (trimmed !== apiKeyHint) {
         void updatePostProcessApiKey(selectedProviderId, trimmed);
       }
     },
-    [apiKey, selectedProviderId, updatePostProcessApiKey],
+    [apiKeyHint, selectedProviderId, updatePostProcessApiKey],
   );
 
   const handleModelChange = useCallback(
@@ -219,7 +223,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     baseUrl,
     handleBaseUrlChange,
     isBaseUrlUpdating,
-    apiKey,
+    apiKeyHint,
     handleApiKeyChange,
     isApiKeyUpdating,
     model,

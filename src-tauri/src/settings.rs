@@ -4,7 +4,6 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
 use std::collections::HashMap;
-use std::fmt;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
@@ -325,34 +324,6 @@ pub enum VadBackend {
     Earshot,
 }
 
-#[derive(Clone, Serialize, Deserialize, Type)]
-#[serde(transparent)]
-pub(crate) struct SecretMap(HashMap<String, String>);
-
-impl fmt::Debug for SecretMap {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let redacted: HashMap<&String, &str> = self
-            .0
-            .iter()
-            .map(|(k, v)| (k, if v.is_empty() { "" } else { "[REDACTED]" }))
-            .collect();
-        redacted.fmt(f)
-    }
-}
-
-impl std::ops::Deref for SecretMap {
-    type Target = HashMap<String, String>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for SecretMap {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 /* still handy for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -449,8 +420,9 @@ pub struct AppSettings {
     pub post_process_provider_id: String,
     #[serde(default = "default_post_process_providers")]
     pub post_process_providers: Vec<PostProcessProvider>,
-    #[serde(default = "default_post_process_api_keys")]
-    pub post_process_api_keys: SecretMap,
+    // NOTE: provider API keys are NOT a settings field — they live in the OS
+    // credential vault (`secrets` module). `post_process_api_keys` is only read
+    // from the raw store JSON during the one-time keyring migration.
     #[serde(default = "default_post_process_models")]
     pub post_process_models: HashMap<String, String>,
     #[serde(default = "default_post_process_prompts")]
@@ -738,14 +710,6 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
     providers
 }
 
-fn default_post_process_api_keys() -> SecretMap {
-    let mut map = HashMap::new();
-    for provider in default_post_process_providers() {
-        map.insert(provider.id, String::new());
-    }
-    SecretMap(map)
-}
-
 fn default_model_for_provider(provider_id: &str) -> String {
     if provider_id == APPLE_INTELLIGENCE_PROVIDER_ID {
         return APPLE_INTELLIGENCE_DEFAULT_MODEL_ID.to_string();
@@ -824,13 +788,6 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                 settings.post_process_providers.push(provider.clone());
                 changed = true;
             }
-        }
-
-        if !settings.post_process_api_keys.contains_key(&provider.id) {
-            settings
-                .post_process_api_keys
-                .insert(provider.id.clone(), String::new());
-            changed = true;
         }
 
         let default_model = default_model_for_provider(&provider.id);
@@ -944,7 +901,6 @@ pub fn get_default_settings() -> AppSettings {
         post_process_enabled: default_post_process_enabled(),
         post_process_provider_id: default_post_process_provider_id(),
         post_process_providers: default_post_process_providers(),
-        post_process_api_keys: default_post_process_api_keys(),
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
@@ -1018,7 +974,21 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 
     // Settings reads also persist one-time migrations. Migration helpers are
     // idempotent, so this converges after the first read of an older store.
-    let mut settings = if let Some(settings_value) = store.get("settings") {
+    let mut settings = if let Some(mut settings_value) = store.get("settings") {
+        // T-016 / FR-011-01: move plaintext `post_process_api_keys` into the OS
+        // credential vault before anything else touches the stored JSON. Keys
+        // whose vault write fails stay in `settings_value` (they must never be
+        // lost) and are re-attached to every settings write below.
+        if crate::secrets::migrate_plaintext_api_keys(
+            &mut settings_value,
+            crate::secrets::secret_store().as_ref(),
+        ) {
+            store.set("settings", settings_value.clone());
+        }
+        let pending_api_keys = settings_value
+            .get(crate::secrets::LEGACY_API_KEYS_FIELD)
+            .cloned();
+
         let (mut settings, mut updated) =
             match serde_json::from_value::<AppSettings>(settings_value.clone()) {
                 Ok(settings) => (settings, false),
@@ -1042,7 +1012,9 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         }
 
         if updated {
-            store.set("settings", serde_json::to_value(&settings).unwrap());
+            let mut value = serde_json::to_value(&settings).unwrap();
+            crate::secrets::reattach_pending_api_keys(&mut value, pending_api_keys.as_ref());
+            store.set("settings", value);
         }
 
         settings
@@ -1053,10 +1025,26 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     };
 
     if ensure_post_process_defaults(&mut settings) {
-        store.set("settings", serde_json::to_value(&settings).unwrap());
+        let mut value = serde_json::to_value(&settings).unwrap();
+        crate::secrets::reattach_pending_api_keys(
+            &mut value,
+            pending_api_keys_in_store(&store).as_ref(),
+        );
+        store.set("settings", value);
     }
 
     settings
+}
+
+/// Plaintext `post_process_api_keys` still in the store — leftovers whose
+/// vault write hasn't succeeded yet. They ride along on every settings write
+/// so they are never dropped (and get another migration attempt next load).
+fn pending_api_keys_in_store(
+    store: &tauri_plugin_store::Store<tauri::Wry>,
+) -> Option<serde_json::Value> {
+    store
+        .get("settings")
+        .and_then(|v| v.get(crate::secrets::LEGACY_API_KEYS_FIELD).cloned())
 }
 
 /// Rebuilds settings from a store value that failed to deserialize as a whole.
@@ -1215,7 +1203,12 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
 
-    store.set("settings", serde_json::to_value(&settings).unwrap());
+    let mut value = serde_json::to_value(&settings).unwrap();
+    crate::secrets::reattach_pending_api_keys(
+        &mut value,
+        pending_api_keys_in_store(&store).as_ref(),
+    );
+    store.set("settings", value);
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
@@ -1708,31 +1701,12 @@ mod tests {
     }
 
     #[test]
-    fn debug_output_redacts_api_keys() {
-        let mut settings = get_default_settings();
-        settings
-            .post_process_api_keys
-            .insert("openai".to_string(), "sk-proj-secret-key-12345".to_string());
-        settings.post_process_api_keys.insert(
-            "anthropic".to_string(),
-            "sk-ant-secret-key-67890".to_string(),
-        );
-        settings
-            .post_process_api_keys
-            .insert("empty_provider".to_string(), "".to_string());
-
-        let debug_output = format!("{:?}", settings);
-
-        assert!(!debug_output.contains("sk-proj-secret-key-12345"));
-        assert!(!debug_output.contains("sk-ant-secret-key-67890"));
-        assert!(debug_output.contains("[REDACTED]"));
-    }
-
-    #[test]
-    fn secret_map_debug_redacts_values() {
-        let map = SecretMap(HashMap::from([("key".into(), "secret".into())]));
-        let out = format!("{:?}", map);
-        assert!(!out.contains("secret"));
-        assert!(out.contains("[REDACTED]"));
+    fn serialized_settings_never_contain_api_keys() {
+        // FR-011-03/AC-011-01: the settings JSON must carry no secret material.
+        // There is deliberately no `post_process_api_keys` field anymore, so
+        // this can never regress silently.
+        let json = serde_json::to_value(get_default_settings()).unwrap();
+        assert!(json.get("post_process_api_keys").is_none());
+        assert!(!json.to_string().contains("api_key"));
     }
 }
