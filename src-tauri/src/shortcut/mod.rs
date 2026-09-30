@@ -707,6 +707,9 @@ pub fn change_debug_mode_setting(app: AppHandle, enabled: bool) -> Result<(), St
     // Keep webview log streaming in sync: the live log viewer only exists in
     // debug mode, so logs are forwarded to the frontend only while it is on.
     crate::WEBVIEW_LOG_STREAMING.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    // Same runtime gate for content-level diagnostics (utils::redact_text):
+    // transcribed text only reaches the logs while debug mode is on (AC-011-03).
+    crate::utils::set_debug_mode_enabled(enabled);
 
     // Emit event to notify frontend of debug mode change
     let _ = app.emit(
