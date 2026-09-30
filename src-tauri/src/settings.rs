@@ -1298,15 +1298,18 @@ fn apply_settings_migrations(
         // transcribe.cpp 0.2 replaced integer registry indices with opaque
         // process-local handles. Clear every old index once.
         settings.transcribe_gpu_device = default_transcribe_gpu_device();
-        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
         updated = true;
     }
-    if stored_schema_version < 3 {
-        // v1 ships only en + pt-BR locales (ADR-0002). Fold any other stored UI
-        // language — including the retired bare "pt" locale — onto the closest
-        // supported code.
-        settings.app_language = normalize_app_language(&settings.app_language);
-        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+
+    // Per-load normalization, not version-gated: a store already at v3 can
+    // still carry an unsupported language (manual edit, downgrade, a build
+    // that shipped more locales). v1 ships only en + pt-BR (ADR-0002), so
+    // fold anything else — including the retired bare "pt" — onto the
+    // closest supported code. Idempotent: `updated` only flips when the
+    // stored value actually changes.
+    let normalized_language = normalize_app_language(&settings.app_language);
+    if normalized_language != settings.app_language {
+        settings.app_language = normalized_language;
         updated = true;
     }
 
@@ -1334,6 +1337,12 @@ fn apply_settings_migrations(
         } else {
             OverlayStyle::Live
         };
+        updated = true;
+    }
+
+    // Stamp the current schema version once, after all migration blocks.
+    if stored_schema_version < u64::from(CURRENT_SETTINGS_SCHEMA_VERSION) {
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
         updated = true;
     }
 
@@ -1999,6 +2008,49 @@ mod tests {
                 settings.settings_schema_version,
                 CURRENT_SETTINGS_SCHEMA_VERSION
             );
+        }
+    }
+
+    /// A store already at the current schema but carrying an unsupported
+    /// language (manual edit, downgrade, a build that shipped more locales)
+    /// is still folded onto en/pt-BR: the normalization is per-load, not
+    /// migration-gated.
+    #[test]
+    fn app_language_is_normalized_on_every_load() {
+        for (stored_language, expected) in [("de-DE", "en"), ("EN", "en"), ("pt_br", "pt-BR")] {
+            let mut stored = default_settings_json();
+            stored["app_language"] = serde_json::json!(stored_language);
+
+            let mut settings: AppSettings =
+                serde_json::from_value(stored.clone()).expect("current store must parse");
+
+            assert!(
+                apply_settings_migrations(&mut settings, &stored),
+                "{stored_language} should mark the store for rewrite"
+            );
+            assert_eq!(settings.app_language, expected, "{stored_language}");
+            assert_eq!(
+                settings.settings_schema_version,
+                CURRENT_SETTINGS_SCHEMA_VERSION
+            );
+        }
+    }
+
+    /// Normalizing an already-supported language must not dirty the store.
+    #[test]
+    fn normalized_app_language_does_not_mark_store_updated() {
+        for supported in ["en", "pt-BR"] {
+            let mut stored = default_settings_json();
+            stored["app_language"] = serde_json::json!(supported);
+
+            let mut settings: AppSettings =
+                serde_json::from_value(stored.clone()).expect("current store must parse");
+
+            assert!(
+                !apply_settings_migrations(&mut settings, &stored),
+                "{supported} is already normalized and must not rewrite"
+            );
+            assert_eq!(settings.app_language, supported);
         }
     }
 
