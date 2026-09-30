@@ -53,7 +53,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [ ] **T-002** [P] **Estender** CI do Handy. Hoje: `cargo test` só no Ubuntu, ESLint, Prettier, checagem de traduções, smoke de Playwright e builds por plataforma. Acrescentar: job `windows-latest`, `clippy -D warnings`, cobertura (`cargo llvm-cov` + testes do frontend) com catraca sobre a baseline da T-001a, `cargo audit`, `cargo deny check`. Depende de: T-001a. — Refs: FR-011-26
 - [ ] **T-003** [P] **Adaptar** logging (`log` + `tauri-plugin-log`): auditar os logs herdados para garantir que não gravam texto transcrito, prompts nem chaves; configurar o caminho `%LOCALAPPDATA%\br.com.creator4all.transcreve.ai\logs` (`app_log_dir` do Tauri). — Refs: FR-011-03, AC-011-03
 - [ ] **T-004** [P] **Adaptar** SQLite (`rusqlite` + `rusqlite_migration`, `managers/history.rs`): alinhar o schema ao [data-model](architecture/data-model.md) com migrações novas, sem perder o histórico; domínios novos com repositórios por trait. — Refs: [data-model](architecture/data-model.md)
-- [ ] **T-005** [P] **Adaptar** settings (`settings.rs`, `settings.json` via `tauri-plugin-store`) para o schema versionado do data-model; i18n: o Handy tem `pt` e mais 25 idiomas. Manter **só pt-BR e en** (decisão do ADR-0002); remover os demais locales (skill `i18n-sync`). — Refs: NFR-010-03
+- [x] **T-005** [P] **Adaptar** settings (`settings.rs`, `settings.json` via `tauri-plugin-store`) para o schema versionado do data-model; i18n: o Handy tem `pt` e mais 25 idiomas. Manter **só pt-BR e en** (decisão do ADR-0002); remover os demais locales (skill `i18n-sync`). — Refs: NFR-010-03
 - [ ] **T-006** [P] **Adaptar** IPC: `tauri-specta` já gera `src/bindings.ts`; alinhar comandos e erros ao envelope `ok/error` do contrato. — Refs: [contracts §5](architecture/contracts.md#5-ipc-tauri)
 - [ ] **T-007** **Adaptar** instância única, autostart e bandeja (já existem no Handy): verificar contra os AC e ajustar o menu à FR-010-14. — Refs: FR-010-13..15, FR-010-18
 - [x] **T-008** [P] **Direção de design** (`rules/web/design-quality.md`): estilo, paleta, tipografia e tokens a partir dos prints do Wispr, com as skills `frontend-design-direction` / `design-system`. Saída: `DESIGN.md` + tokens. Antes de T-040/T-042. — Refs: F001, NFR-010-05
@@ -74,7 +74,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 
 ### Atalhos e sessão
 
-- [ ] **T-020** **Adaptar** hook de teclado (`handy-keys` numa thread dedicada, fallback Tauri): verificar watchdog e callback < 1 ms. — Refs: NFR-002-01, NFR-002-03
+- [x] **T-020** **Adaptar** hook de teclado (`handy-keys` numa thread dedicada, fallback Tauri): verificar watchdog e callback < 1 ms. — Refs: NFR-002-01, NFR-002-03
 - [ ] **T-021** **Estender** matcher (`shortcut/`): combos só de modificadores e cancelamento dinâmico já existem. Faltam promoção de modo por prefixo, duplo toque, supressão e menu mask key. — Refs: FR-002-01..08, AC-002-01..08
 - [ ] **T-022** **Estender** `transcription_coordinator.rs` (`Idle/Recording/Processing` + toque pendente) para a máquina completa (`Arming`, `Transcribing`, `Inserting`…), fila FIFO de N sessões (N = 5 pendentes, padrão), limite de duração (padrão 5 min, configurável 1–20 no Avançado), preservação de áudio e comando "enviar" (partir de `auto_submit`). — Refs: FR-002-09..19, AC-002-09..11
 
