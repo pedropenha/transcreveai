@@ -1,8 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Utc};
 use log::{debug, error, info};
-use rusqlite::{params, Connection, OptionalExtension};
-use rusqlite_migration::{Migrations, M};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
@@ -10,29 +9,14 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_specta::Event;
 
-/// Database migrations for transcription history.
-/// Each migration is applied in order. The library tracks which migrations
-/// have been applied using SQLite's user_version pragma.
-///
-/// Note: For users upgrading from tauri-plugin-sql, migrate_from_tauri_plugin_sql()
-/// converts the old _sqlx_migrations table tracking to the user_version pragma,
-/// ensuring migrations don't re-run on existing databases.
-static MIGRATIONS: &[M] = &[
-    M::up(
-        "CREATE TABLE IF NOT EXISTS transcription_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_name TEXT NOT NULL,
-            timestamp INTEGER NOT NULL,
-            saved BOOLEAN NOT NULL DEFAULT 0,
-            title TEXT NOT NULL,
-            transcription_text TEXT NOT NULL
-        );",
-    ),
-    M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
-    M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
-    M::up("ALTER TABLE transcription_history ADD COLUMN post_process_requested BOOLEAN NOT NULL DEFAULT 0;"),
-];
+use crate::db::dictations::{
+    Dictation, DictationRepository, NewDictation, SqliteDictationRepository,
+};
 
+/// IPC shape of a dictation row, kept stable for the frontend.
+/// Field names map onto the `dictations` table:
+/// `file_name`→`audio_path`, `timestamp`→`created_at`, `saved`→`flagged`,
+/// `transcription_text`→`raw_text`, `post_process_prompt`→`instruction`.
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PaginatedHistory {
     pub entries: Vec<HistoryEntry>,
@@ -65,6 +49,22 @@ pub struct HistoryEntry {
     pub post_process_requested: bool,
 }
 
+impl From<Dictation> for HistoryEntry {
+    fn from(d: Dictation) -> Self {
+        Self {
+            id: d.id,
+            file_name: d.audio_path.unwrap_or_default(),
+            timestamp: d.created_at,
+            saved: d.flagged,
+            title: d.title,
+            transcription_text: d.raw_text,
+            post_processed_text: d.post_processed_text,
+            post_process_prompt: d.instruction,
+            post_process_requested: d.post_process_requested,
+        }
+    }
+}
+
 pub struct HistoryManager {
     app_handle: AppHandle,
     recordings_dir: PathBuf,
@@ -76,7 +76,8 @@ impl HistoryManager {
         // Create recordings directory in app data dir
         let app_data_dir = crate::portable::app_data_dir(app_handle)?;
         let recordings_dir = app_data_dir.join("recordings");
-        let db_path = app_data_dir.join("history.db");
+        // Adopts the legacy history.db file when transcreve-ai.db is absent.
+        let db_path = crate::db::database_path(&app_data_dir)?;
 
         // Ensure recordings directory exists
         if !recordings_dir.exists() {
@@ -98,116 +99,12 @@ impl HistoryManager {
 
     fn init_database(&self) -> Result<()> {
         info!("Initializing database at {:?}", self.db_path);
-
-        let mut conn = Connection::open(&self.db_path)?;
-
-        // Handle migration from tauri-plugin-sql to rusqlite_migration
-        // tauri-plugin-sql used _sqlx_migrations table, rusqlite_migration uses user_version pragma
-        self.migrate_from_tauri_plugin_sql(&conn)?;
-
-        // Create migrations object and run to latest version
-        let migrations = Migrations::new(MIGRATIONS.to_vec());
-
-        // Validate migrations in debug builds
-        #[cfg(debug_assertions)]
-        migrations.validate().expect("Invalid migrations");
-
-        // Get current version before migration
-        let version_before: i32 =
-            conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        debug!("Database version before migration: {}", version_before);
-
-        // Apply any pending migrations
-        migrations.to_latest(&mut conn)?;
-
-        // Get version after migration
-        let version_after: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-
-        if version_after > version_before {
-            info!(
-                "Database migrated from version {} to {}",
-                version_before, version_after
-            );
-        } else {
-            debug!("Database already at latest version {}", version_after);
-        }
-
-        Ok(())
-    }
-
-    /// Migrate from tauri-plugin-sql's migration tracking to rusqlite_migration's.
-    /// tauri-plugin-sql used a _sqlx_migrations table, while rusqlite_migration uses
-    /// SQLite's user_version pragma. This function checks if the old system was in use
-    /// and sets the user_version accordingly so migrations don't re-run.
-    fn migrate_from_tauri_plugin_sql(&self, conn: &Connection) -> Result<()> {
-        // Check if the old _sqlx_migrations table exists
-        let has_sqlx_migrations: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='_sqlx_migrations'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-
-        if !has_sqlx_migrations {
-            return Ok(());
-        }
-
-        // Check current user_version
-        let current_version: i32 =
-            conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-
-        if current_version > 0 {
-            // Already migrated to rusqlite_migration system
-            return Ok(());
-        }
-
-        // Get the highest version from the old migrations table
-        let old_version: i32 = conn
-            .query_row(
-                "SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations WHERE success = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        if old_version > 0 {
-            info!(
-                "Migrating from tauri-plugin-sql (version {}) to rusqlite_migration",
-                old_version
-            );
-
-            // Set user_version to match the old migration state
-            conn.pragma_update(None, "user_version", old_version)?;
-
-            // Optionally drop the old migrations table (keeping it doesn't hurt)
-            // conn.execute("DROP TABLE IF EXISTS _sqlx_migrations", [])?;
-
-            info!(
-                "Migration tracking converted: user_version set to {}",
-                old_version
-            );
-        }
-
-        Ok(())
+        let mut conn = self.get_connection()?;
+        crate::db::run_migrations(&mut conn)
     }
 
     fn get_connection(&self) -> Result<Connection> {
-        Ok(Connection::open(&self.db_path)?)
-    }
-
-    fn map_history_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
-        Ok(HistoryEntry {
-            id: row.get("id")?,
-            file_name: row.get("file_name")?,
-            timestamp: row.get("timestamp")?,
-            saved: row.get("saved")?,
-            title: row.get("title")?,
-            transcription_text: row.get("transcription_text")?,
-            post_processed_text: row.get("post_processed_text")?,
-            post_process_prompt: row.get("post_process_prompt")?,
-            post_process_requested: row.get("post_process_requested")?,
-        })
+        crate::db::open_connection(&self.db_path)
     }
 
     pub fn recordings_dir(&self) -> &std::path::Path {
@@ -228,40 +125,16 @@ impl HistoryManager {
         let title = self.format_timestamp_title(timestamp);
 
         let conn = self.get_connection()?;
-        conn.execute(
-            "INSERT INTO transcription_history (
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                &file_name,
-                timestamp,
-                false,
-                &title,
-                &transcription_text,
-                &post_processed_text,
-                &post_process_prompt,
-                post_process_requested,
-            ],
-        )?;
+        let repo = SqliteDictationRepository::new(&conn);
 
-        let entry = HistoryEntry {
-            id: conn.last_insert_rowid(),
-            file_name,
-            timestamp,
-            saved: false,
-            title,
-            transcription_text,
-            post_processed_text,
-            post_process_prompt,
-            post_process_requested,
-        };
+        let mut new = NewDictation::new(transcription_text, Some(file_name));
+        new.created_at = Some(timestamp);
+        new.title = title;
+        new.post_processed_text = post_processed_text;
+        new.instruction = post_process_prompt;
+        new.post_process_requested = post_process_requested;
+
+        let entry = HistoryEntry::from(repo.insert(&new)?);
 
         debug!("Saved history entry with id {}", entry.id);
 
@@ -288,31 +161,20 @@ impl HistoryManager {
         post_process_prompt: Option<String>,
     ) -> Result<HistoryEntry> {
         let conn = self.get_connection()?;
-        let updated = conn.execute(
-            "UPDATE transcription_history
-             SET transcription_text = ?1,
-                 post_processed_text = ?2,
-                 post_process_prompt = ?3
-             WHERE id = ?4",
-            params![
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                id
-            ],
-        )?;
+        let repo = SqliteDictationRepository::new(&conn);
 
-        if updated == 0 {
-            return Err(anyhow!("History entry {} not found", id));
-        }
+        repo.update_text(
+            id,
+            &transcription_text,
+            post_processed_text.as_deref(),
+            post_process_prompt.as_deref(),
+        )
+        .map_err(|e| anyhow!("Failed to update history entry {}: {}", id, e))?;
 
-        let entry = conn
-            .query_row(
-                "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
-                 FROM transcription_history WHERE id = ?1",
-                params![id],
-                Self::map_history_entry,
-            )?;
+        let entry = HistoryEntry::from(
+            repo.get(id)?
+                .ok_or_else(|| anyhow!("History entry {} not found", id))?,
+        );
 
         debug!("Updated transcription for history entry {}", id);
 
@@ -347,29 +209,29 @@ impl HistoryManager {
         }
     }
 
-    fn delete_entries_and_files(&self, entries: &[(i64, String)]) -> Result<usize> {
+    fn delete_entries_and_files(&self, entries: &[Dictation]) -> Result<usize> {
         if entries.is_empty() {
             return Ok(0);
         }
 
         let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
         let mut deleted_count = 0;
 
-        for (id, file_name) in entries {
-            // Delete database entry
-            conn.execute(
-                "DELETE FROM transcription_history WHERE id = ?1",
-                params![id],
-            )?;
+        for entry in entries {
+            // Delete database row
+            repo.delete(entry.id)?;
 
             // Delete WAV file
-            let file_path = self.recordings_dir.join(file_name);
-            if file_path.exists() {
-                if let Err(e) = fs::remove_file(&file_path) {
-                    error!("Failed to delete WAV file {}: {}", file_name, e);
-                } else {
-                    debug!("Deleted old WAV file: {}", file_name);
-                    deleted_count += 1;
+            if let Some(file_name) = &entry.audio_path {
+                let file_path = self.recordings_dir.join(file_name);
+                if file_path.exists() {
+                    if let Err(e) = fs::remove_file(&file_path) {
+                        error!("Failed to delete WAV file {}: {}", file_name, e);
+                    } else {
+                        debug!("Deleted old WAV file: {}", file_name);
+                        deleted_count += 1;
+                    }
                 }
             }
         }
@@ -379,24 +241,13 @@ impl HistoryManager {
 
     fn cleanup_by_count(&self, limit: usize) -> Result<()> {
         let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
 
-        // Get all entries that are not saved, ordered by timestamp desc
-        let mut stmt = conn.prepare(
-            "SELECT id, file_name FROM transcription_history WHERE saved = 0 ORDER BY timestamp DESC"
-        )?;
-
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>("id")?, row.get::<_, String>("file_name")?))
-        })?;
-
-        let mut entries: Vec<(i64, String)> = Vec::new();
-        for row in rows {
-            entries.push(row?);
-        }
+        // All unflagged entries, newest first
+        let entries = repo.unflagged(None)?;
 
         if entries.len() > limit {
-            let entries_to_delete = &entries[limit..];
-            let deleted_count = self.delete_entries_and_files(entries_to_delete)?;
+            let deleted_count = self.delete_entries_and_files(&entries[limit..])?;
 
             if deleted_count > 0 {
                 debug!("Cleaned up {} old history entries by count", deleted_count);
@@ -411,6 +262,7 @@ impl HistoryManager {
         retention_period: crate::settings::RecordingRetentionPeriod,
     ) -> Result<()> {
         let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
 
         // Calculate cutoff timestamp (current time minus retention period)
         let now = Utc::now().timestamp();
@@ -421,21 +273,8 @@ impl HistoryManager {
             _ => unreachable!("Should not reach here"),
         };
 
-        // Get all unsaved entries older than the cutoff timestamp
-        let mut stmt = conn.prepare(
-            "SELECT id, file_name FROM transcription_history WHERE saved = 0 AND timestamp < ?1",
-        )?;
-
-        let rows = stmt.query_map(params![cutoff_timestamp], |row| {
-            Ok((row.get::<_, i64>("id")?, row.get::<_, String>("file_name")?))
-        })?;
-
-        let mut entries_to_delete: Vec<(i64, String)> = Vec::new();
-        for row in rows {
-            entries_to_delete.push(row?);
-        }
-
-        let deleted_count = self.delete_entries_and_files(&entries_to_delete)?;
+        let entries = repo.unflagged(Some(cutoff_timestamp))?;
+        let deleted_count = self.delete_entries_and_files(&entries)?;
 
         if deleted_count > 0 {
             debug!(
@@ -453,48 +292,16 @@ impl HistoryManager {
         limit: Option<usize>,
     ) -> Result<PaginatedHistory> {
         let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
         let limit = limit.map(|l| l.min(100));
 
-        let mut entries: Vec<HistoryEntry> = match (cursor, limit) {
-            (Some(cursor_id), Some(lim)) => {
-                let fetch_count = (lim + 1) as i64;
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
-                     FROM transcription_history
-                     WHERE id < ?1
-                     ORDER BY id DESC
-                     LIMIT ?2",
-                )?;
-                let result = stmt
-                    .query_map(params![cursor_id, fetch_count], Self::map_history_entry)?
-                    .collect::<std::result::Result<Vec<_>, _>>()?;
-                result
-            }
-            (None, Some(lim)) => {
-                let fetch_count = (lim + 1) as i64;
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
-                     FROM transcription_history
-                     ORDER BY id DESC
-                     LIMIT ?1",
-                )?;
-                let result = stmt
-                    .query_map(params![fetch_count], Self::map_history_entry)?
-                    .collect::<std::result::Result<Vec<_>, _>>()?;
-                result
-            }
-            (_, None) => {
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
-                     FROM transcription_history
-                     ORDER BY id DESC",
-                )?;
-                let result = stmt
-                    .query_map([], Self::map_history_entry)?
-                    .collect::<std::result::Result<Vec<_>, _>>()?;
-                result
-            }
-        };
+        // Fetch one extra row to know whether a next page exists.
+        let fetch_count = limit.map(|l| (l + 1) as i64);
+        let mut entries: Vec<HistoryEntry> = repo
+            .list_desc(cursor, fetch_count)?
+            .into_iter()
+            .map(HistoryEntry::from)
+            .collect();
 
         let has_more = limit.is_some_and(|lim| entries.len() > lim);
         if has_more {
@@ -506,24 +313,8 @@ impl HistoryManager {
 
     #[cfg(test)]
     fn get_latest_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
-             FROM transcription_history
-             ORDER BY timestamp DESC
-             LIMIT 1",
-        )?;
-
-        let entry = stmt.query_row([], Self::map_history_entry).optional()?;
-        Ok(entry)
+        let repo = SqliteDictationRepository::new(conn);
+        Ok(repo.latest()?.map(HistoryEntry::from))
     }
 
     /// Get the latest entry with non-empty transcription text.
@@ -533,43 +324,19 @@ impl HistoryManager {
     }
 
     fn get_latest_completed_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
-             FROM transcription_history
-             WHERE transcription_text != ''
-             ORDER BY timestamp DESC
-             LIMIT 1",
-        )?;
-
-        let entry = stmt.query_row([], Self::map_history_entry).optional()?;
-        Ok(entry)
+        let repo = SqliteDictationRepository::new(conn);
+        Ok(repo.latest_completed()?.map(HistoryEntry::from))
     }
 
     pub async fn toggle_saved_status(&self, id: i64) -> Result<()> {
         let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
 
-        // Get current saved status
-        let current_saved: bool = conn.query_row(
-            "SELECT saved FROM transcription_history WHERE id = ?1",
-            params![id],
-            |row| row.get("saved"),
-        )?;
-
-        let new_saved = !current_saved;
-
-        conn.execute(
-            "UPDATE transcription_history SET saved = ?1 WHERE id = ?2",
-            params![new_saved, id],
-        )?;
+        let entry = repo
+            .get(id)?
+            .ok_or_else(|| anyhow!("History entry {} not found", id))?;
+        let new_saved = !entry.flagged;
+        repo.set_flagged(id, new_saved)?;
 
         debug!("Toggled saved status for entry {}: {}", id, new_saved);
 
@@ -587,46 +354,30 @@ impl HistoryManager {
 
     pub async fn get_entry_by_id(&self, id: i64) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
-             FROM transcription_history
-             WHERE id = ?1",
-        )?;
-
-        let entry = stmt.query_row([id], Self::map_history_entry).optional()?;
-
-        Ok(entry)
+        let repo = SqliteDictationRepository::new(&conn);
+        Ok(repo.get(id)?.map(HistoryEntry::from))
     }
 
     pub async fn delete_entry(&self, id: i64) -> Result<()> {
         let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
 
         // Get the entry to find the file name
-        if let Some(entry) = self.get_entry_by_id(id).await? {
+        if let Some(entry) = repo.get(id)? {
             // Delete the audio file first
-            let file_path = self.get_audio_file_path(&entry.file_name);
-            if file_path.exists() {
-                if let Err(e) = fs::remove_file(&file_path) {
-                    error!("Failed to delete audio file {}: {}", entry.file_name, e);
-                    // Continue with database deletion even if file deletion fails
+            if let Some(file_name) = &entry.audio_path {
+                let file_path = self.get_audio_file_path(file_name);
+                if file_path.exists() {
+                    if let Err(e) = fs::remove_file(&file_path) {
+                        error!("Failed to delete audio file {}: {}", file_name, e);
+                        // Continue with database deletion even if file deletion fails
+                    }
                 }
             }
         }
 
         // Delete from database
-        conn.execute(
-            "DELETE FROM transcription_history WHERE id = ?1",
-            params![id],
-        )?;
+        repo.delete(id)?;
 
         debug!("Deleted history entry with id: {}", id);
 
@@ -652,51 +403,24 @@ impl HistoryManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::{params, Connection};
+    use crate::db::run_migrations;
 
     fn setup_conn() -> Connection {
-        let conn = Connection::open_in_memory().expect("open in-memory db");
-        conn.execute_batch(
-            "CREATE TABLE transcription_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_name TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                saved BOOLEAN NOT NULL DEFAULT 0,
-                title TEXT NOT NULL,
-                transcription_text TEXT NOT NULL,
-                post_processed_text TEXT,
-                post_process_prompt TEXT,
-                post_process_requested BOOLEAN NOT NULL DEFAULT 0
-            );",
-        )
-        .expect("create transcription_history table");
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        run_migrations(&mut conn).expect("run migrations");
         conn
     }
 
     fn insert_entry(conn: &Connection, timestamp: i64, text: &str, post_processed: Option<&str>) {
-        conn.execute(
-            "INSERT INTO transcription_history (
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                format!("transcreve-ai-{}.wav", timestamp),
-                timestamp,
-                false,
-                format!("Recording {}", timestamp),
-                text,
-                post_processed,
-                Option::<String>::None,
-                false,
-            ],
-        )
-        .expect("insert history entry");
+        let repo = SqliteDictationRepository::new(conn);
+        let mut new = NewDictation::new(
+            text.to_string(),
+            Some(format!("transcreve-ai-{}.wav", timestamp)),
+        );
+        new.created_at = Some(timestamp);
+        new.title = format!("Recording {}", timestamp);
+        new.post_processed_text = post_processed.map(str::to_string);
+        repo.insert(&new).expect("insert history entry");
     }
 
     #[test]
