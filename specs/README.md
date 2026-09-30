@@ -26,26 +26,26 @@ Detalhes em [constitution.md](constitution.md#0-hierarquia-de-autoridade). Se um
 
 ## Índice
 
-| Documento                                                                        | Conteúdo                                                      | Release |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------- |
-| [constitution.md](constitution.md)                                               | Hierarquia e princípios de produto                            | —       |
-| [product/research-wispr-flow.md](product/research-wispr-flow.md)                 | Como o Wispr Flow funciona (pesquisa + prints)                | —       |
-| [product/product-spec.md](product/product-spec.md)                               | Visão, personas, escopo, jornadas, glossário                  | —       |
-| [architecture/plan.md](architecture/plan.md)                                     | Stack, módulos, janelas, fluxos, riscos, mapa de rules/skills | —       |
-| [architecture/data-model.md](architecture/data-model.md)                         | SQLite, arquivos, retenção                                    | —       |
-| [architecture/contracts.md](architecture/contracts.md)                           | Traits de provedores, APIs externas, IPC                      | —       |
-| [features/001-flow-bar](features/001-flow-bar/spec.md)                           | Barra flutuante (idle, hover com 2 opções, estados)           | v1      |
-| [features/002-hotkeys-dictation](features/002-hotkeys-dictation/spec.md)         | Atalhos globais e sessão de ditado                            | v1      |
-| [features/003-transcription-engines](features/003-transcription-engines/spec.md) | Motores locais e em nuvem, modelos, chaves                    | v1 (local) · v1.1+ (nuvem) |
+| Documento                                                                        | Conteúdo                                                      | Release                           |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------- |
+| [constitution.md](constitution.md)                                               | Hierarquia e princípios de produto                            | —                                 |
+| [product/research-wispr-flow.md](product/research-wispr-flow.md)                 | Como o Wispr Flow funciona (pesquisa + prints)                | —                                 |
+| [product/product-spec.md](product/product-spec.md)                               | Visão, personas, escopo, jornadas, glossário                  | —                                 |
+| [architecture/plan.md](architecture/plan.md)                                     | Stack, módulos, janelas, fluxos, riscos, mapa de rules/skills | —                                 |
+| [architecture/data-model.md](architecture/data-model.md)                         | SQLite, arquivos, retenção                                    | —                                 |
+| [architecture/contracts.md](architecture/contracts.md)                           | Traits de provedores, APIs externas, IPC                      | —                                 |
+| [features/001-flow-bar](features/001-flow-bar/spec.md)                           | Barra flutuante (idle, hover com 2 opções, estados)           | v1                                |
+| [features/002-hotkeys-dictation](features/002-hotkeys-dictation/spec.md)         | Atalhos globais e sessão de ditado                            | v1                                |
+| [features/003-transcription-engines](features/003-transcription-engines/spec.md) | Motores locais e em nuvem, modelos, chaves                    | v1 (local) · v1.1+ (nuvem)        |
 | [features/004-text-pipeline](features/004-text-pipeline/spec.md)                 | Limpeza, dicionário, snippets, estilos                        | v1 (determinístico) · v1.1+ (LLM) |
-| [features/005-text-insertion](features/005-text-insertion/spec.md)               | Inserir texto no app com foco                                 | v1      |
-| [features/006-command-mode](features/006-command-mode/spec.md)                   | Editar texto selecionado por voz                              | v1.1+   |
-| [features/007-notes-scratchpad](features/007-notes-scratchpad/spec.md)           | Notas por voz (Scratchpad)                                    | v1.1+   |
-| [features/008-meeting-detection](features/008-meeting-detection/spec.md)         | Detectar reunião e mostrar popup                              | v1      |
-| [features/009-meeting-notetaker](features/009-meeting-notetaker/spec.md)         | Gravar, transcrever e resumir reuniões                        | v1      |
-| [features/010-hub-settings](features/010-hub-settings/spec.md)                   | Hub, histórico, configurações, onboarding, bandeja            | v1      |
-| [features/011-security-privacy](features/011-security-privacy/spec.md)           | Segredos, dados, rede, consentimento                          | v1      |
-| [tasks.md](tasks.md)                                                             | Plano de implementação por fases                              | —       |
+| [features/005-text-insertion](features/005-text-insertion/spec.md)               | Inserir texto no app com foco                                 | v1                                |
+| [features/006-command-mode](features/006-command-mode/spec.md)                   | Editar texto selecionado por voz                              | v1.1+                             |
+| [features/007-notes-scratchpad](features/007-notes-scratchpad/spec.md)           | Notas por voz (Scratchpad)                                    | v1.1+                             |
+| [features/008-meeting-detection](features/008-meeting-detection/spec.md)         | Detectar reunião e mostrar popup                              | v1                                |
+| [features/009-meeting-notetaker](features/009-meeting-notetaker/spec.md)         | Gravar, transcrever e resumir reuniões                        | v1                                |
+| [features/010-hub-settings](features/010-hub-settings/spec.md)                   | Hub, histórico, configurações, onboarding, bandeja            | v1                                |
+| [features/011-security-privacy](features/011-security-privacy/spec.md)           | Segredos, dados, rede, consentimento                          | v1                                |
+| [tasks.md](tasks.md)                                                             | Plano de implementação por fases                              | —                                 |
 
 ## Convenções
 

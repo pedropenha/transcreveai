@@ -17,17 +17,17 @@ Ponto de entrada visual sempre presente, independente do app em uso. Em repouso 
 
 ### Estados visuais
 
-| Estado                     | Visual de referência (prints do Wispr)                                                                                                                  | Tamanho aprox. |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `hidden`                   | Nada                                                                                                                                                    | —              |
-| `idle`                     | Pílula arredondada escura, discreta, com borda sutil (print 1)                                                                                          | 48 × 8 px      |
-| `hover`                    | Cápsula com 2 botões circulares 28 px: 🎤 **Ditar** e ◉ **Notas de reunião**; tooltip acima do botão focado com nome + atalho (ex.: "Ditar Ctrl + Win") | 88 × 36 px     |
-| `recording`                | Cápsula com 7 barras de onda animadas pelo nível do mic, botão ✕ (cancelar) à esquerda e ■ (parar) à direita; em PTT, os botões aparecem só no hover    | 128 × 36 px    |
-| `recording_command`        | Igual a `recording` com rótulo/ícone "Comando" (cor de destaque diferente)                                                                              | 150 × 36 px    |
-| `processing`               | Três pontos pulsando ou shimmer                                                                                                                         | 64 × 24 px     |
-| `done`                     | ✓ breve (600 ms), volta a `idle`                                                                                                                        | 48 × 24 px     |
-| `error`                    | Contorno vermelho + ícone ⚠; hover mostra mensagem curta; clique abre detalhes/"Tentar novamente"                                                      | 64 × 24 px     |
-| `meeting_recording`        | Ponto vermelho pulsando + cronômetro `12:34` ao lado da pílula; clique abre a janela da reunião                                                         | 96 × 24 px     |
+| Estado              | Visual de referência (prints do Wispr)                                                                                                                  | Tamanho aprox. |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `hidden`            | Nada                                                                                                                                                    | —              |
+| `idle`              | Pílula arredondada escura, discreta, com borda sutil (print 1)                                                                                          | 48 × 8 px      |
+| `hover`             | Cápsula com 2 botões circulares 28 px: 🎤 **Ditar** e ◉ **Notas de reunião**; tooltip acima do botão focado com nome + atalho (ex.: "Ditar Ctrl + Win") | 88 × 36 px     |
+| `recording`         | Cápsula com 7 barras de onda animadas pelo nível do mic, botão ✕ (cancelar) à esquerda e ■ (parar) à direita; em PTT, os botões aparecem só no hover    | 128 × 36 px    |
+| `recording_command` | Igual a `recording` com rótulo/ícone "Comando" (cor de destaque diferente)                                                                              | 150 × 36 px    |
+| `processing`        | Três pontos pulsando ou shimmer                                                                                                                         | 64 × 24 px     |
+| `done`              | ✓ breve (600 ms), volta a `idle`                                                                                                                        | 48 × 24 px     |
+| `error`             | Contorno vermelho + ícone ⚠; hover mostra mensagem curta; clique abre detalhes/"Tentar novamente"                                                      | 64 × 24 px     |
+| `meeting_recording` | Ponto vermelho pulsando + cronômetro `12:34` ao lado da pílula; clique abre a janela da reunião                                                         | 96 × 24 px     |
 
 Os tamanhos aproximam o Wispr. Cores, tipografia, raios e animações saem da direção de design (tarefa T-008), feita conforme `rules/web/design-quality.md` usando os prints do Wispr como referência.
 

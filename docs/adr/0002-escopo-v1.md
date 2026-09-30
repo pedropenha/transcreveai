@@ -12,21 +12,21 @@ O plano original (`specs/tasks.md`, fases 1–4) previa quatro releases incremen
 
 O **v1** entrega: ditado completo (PTT, mãos livres, Flow Bar, inserção), notetaker de reuniões (detecção, gravação mic+sistema, transcrição, resumo) e todas as telas do Hub, no visual da T-008. Sem provedores de STT em nuvem. Decisões de produto fixas:
 
-| Tema | Decisão |
-|---|---|
-| Escopo v1 | Ditado + notetaker de reuniões + todas as telas; estilo da T-008 |
-| Locales | Só pt-BR + en (demais removidos na T-005) |
-| STT em nuvem | Nenhum na v1 (T-014 adiada para v1.1+) |
-| Modelo first-run | Usuário escolhe no onboarding; `large-v3-turbo` (Turbo) é o default recomendado |
-| Inserção | `auto` é o padrão; janela elevada (UIPI) → `clipboard_only` + aviso |
-| Retenção | "Apagar todos os dados" inclui o áudio preservado de sessões falhas (T-022) |
-| Fila de sessões | N = 5 pendentes; limite de 5 min por gravação; configurável no Avançado |
-| Limpeza | `light` determinística: muletas pt-BR ("né", "tipo", "aí", "ahn/ééé", "então assim", repetições) + pontuação/capitalização; lista editável na tela Dicionário (T-044). LLM fica para v1.1+ |
-| Flow Bar | Posição inferior-centro; sons ligados por padrão; soneca 15/30/60 min |
-| Resumo de reunião | LLM BYOK (T-050 + T-016 keyring). Sem chave: transcrição e notas funcionam, resumo desabilitado |
-| Apps detectados (T-061) | Zoom, Teams, Meet (navegador), Webex |
-| Verificação | Testes mockados/automatizados; smokes reais viram checklist manual de entrega |
-| Release | `bun run tauri build` local (NSIS sem assinatura/updater — T-049 não se aplica) |
+| Tema                    | Decisão                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Escopo v1               | Ditado + notetaker de reuniões + todas as telas; estilo da T-008                                                                                                                           |
+| Locales                 | Só pt-BR + en (demais removidos na T-005)                                                                                                                                                  |
+| STT em nuvem            | Nenhum na v1 (T-014 adiada para v1.1+)                                                                                                                                                     |
+| Modelo first-run        | Usuário escolhe no onboarding; `large-v3-turbo` (Turbo) é o default recomendado                                                                                                            |
+| Inserção                | `auto` é o padrão; janela elevada (UIPI) → `clipboard_only` + aviso                                                                                                                        |
+| Retenção                | "Apagar todos os dados" inclui o áudio preservado de sessões falhas (T-022)                                                                                                                |
+| Fila de sessões         | N = 5 pendentes; limite de 5 min por gravação; configurável no Avançado                                                                                                                    |
+| Limpeza                 | `light` determinística: muletas pt-BR ("né", "tipo", "aí", "ahn/ééé", "então assim", repetições) + pontuação/capitalização; lista editável na tela Dicionário (T-044). LLM fica para v1.1+ |
+| Flow Bar                | Posição inferior-centro; sons ligados por padrão; soneca 15/30/60 min                                                                                                                      |
+| Resumo de reunião       | LLM BYOK (T-050 + T-016 keyring). Sem chave: transcrição e notas funcionam, resumo desabilitado                                                                                            |
+| Apps detectados (T-061) | Zoom, Teams, Meet (navegador), Webex                                                                                                                                                       |
+| Verificação             | Testes mockados/automatizados; smokes reais viram checklist manual de entrega                                                                                                              |
+| Release                 | `bun run tauri build` local (NSIS sem assinatura/updater — T-049 não se aplica)                                                                                                            |
 
 Tasks do v1 (~33): T-002–T-007, T-009 (+fixtures WAV pt-BR), T-010–T-013, T-015, T-016, T-020–T-022, T-030, T-031, T-035, T-040–T-046, T-050, T-060–T-069. Adiadas para v1.1+: T-014, T-017, T-032, T-049, T-051–T-057, T-080–T-085. T-043 vira "só modelos locais"; T-069 vira roteiro manual parcial (só os pontos automatizáveis viram teste).
 

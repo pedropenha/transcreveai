@@ -8,16 +8,16 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
 
 ## Estrutura do Hub (barra lateral)
 
-| Seção                    | Release                          | Conteúdo                              |
-| ------------------------ | -------------------------------- | ------------------------------------- |
-| **Início**               | v1                               | Histórico de ditados + estatísticas   |
-| **Notas**                | v1.1+                            | Scratchpad (F007)                     |
-| **Reuniões**             | v1                               | Lista e detalhes (F009)               |
-| **Dicionário**           | v1 (vocab + muletas) / v1.1+     | Termos, muletas e substituições       |
-| **Snippets**             | v1.1+                            | Gatilhos e expansões                  |
-| **Estilos**              | v1.1+                            | Perfis de app, nível de limpeza       |
-| **Modelos & Provedores** | v1 (só modelos locais)           | F003; provedores em nuvem na v1.1+    |
-| **Configurações**        | v1                               | Geral, Sistema, Privacidade, Avançado |
+| Seção                    | Release                      | Conteúdo                              |
+| ------------------------ | ---------------------------- | ------------------------------------- |
+| **Início**               | v1                           | Histórico de ditados + estatísticas   |
+| **Notas**                | v1.1+                        | Scratchpad (F007)                     |
+| **Reuniões**             | v1                           | Lista e detalhes (F009)               |
+| **Dicionário**           | v1 (vocab + muletas) / v1.1+ | Termos, muletas e substituições       |
+| **Snippets**             | v1.1+                        | Gatilhos e expansões                  |
+| **Estilos**              | v1.1+                        | Perfis de app, nível de limpeza       |
+| **Modelos & Provedores** | v1 (só modelos locais)       | F003; provedores em nuvem na v1.1+    |
+| **Configurações**        | v1                           | Geral, Sistema, Privacidade, Avançado |
 
 ## Requisitos funcionais
 

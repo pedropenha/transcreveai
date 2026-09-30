@@ -20,13 +20,13 @@ Escrever na velocidade da fala, em qualquer aplicativo, com privacidade. E nunca
 
 ## 4. Objetivos e métricas
 
-| Objetivo       | Métrica                                                       | Meta v1                                                  |
-| -------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
-| Ditado rápido  | Tempo entre soltar o atalho e o texto aparecer (fala de 10 s) | p50 ≤ 1,5 s (local GPU)                                  |
-| Ditado preciso | WER no conjunto de fixtures pt-BR                             | ≤ 8 % com large-v3-turbo                                 |
-| Sem atrito     | % de sessões inseridas sem erro                               | ≥ 99 %                                                   |
-| Reuniões úteis | Resumo pronto após parar (reunião de 30 min)                  | ≤ 2 min (LLM em nuvem, BYOK) · ≤ 6 min (LLM local)       |
-| Leve           | RAM ociosa sem modelo carregado                               | ≤ 150 MB                                                 |
+| Objetivo       | Métrica                                                       | Meta v1                                            |
+| -------------- | ------------------------------------------------------------- | -------------------------------------------------- |
+| Ditado rápido  | Tempo entre soltar o atalho e o texto aparecer (fala de 10 s) | p50 ≤ 1,5 s (local GPU)                            |
+| Ditado preciso | WER no conjunto de fixtures pt-BR                             | ≤ 8 % com large-v3-turbo                           |
+| Sem atrito     | % de sessões inseridas sem erro                               | ≥ 99 %                                             |
+| Reuniões úteis | Resumo pronto após parar (reunião de 30 min)                  | ≤ 2 min (LLM em nuvem, BYOK) · ≤ 6 min (LLM local) |
+| Leve           | RAM ociosa sem modelo carregado                               | ≤ 150 MB                                           |
 
 ## 5. Escopo por release
 
