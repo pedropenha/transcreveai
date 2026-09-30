@@ -37,7 +37,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
   - Toolchain Windows (conforme o `BUILD.md` do Handy), documentada no README: Rust stable (rustup), Bun, Visual Studio Build Tools 2022 com a carga "Desenvolvimento para desktop com C++" (MSVC), CMake no `PATH` e Vulkan SDK (LunarG; define `VULKAN_SDK`, usado pelo backend Vulkan do whisper). Após instalar, abrir um terminal novo.
   - **Portão (smoke manual no Windows 11)**: `bun run tauri dev` sobe; ditado local chega ao Bloco de Notas, ao Chrome e ao VS Code; o clipboard anterior é restaurado; o overlay não rouba o foco; `cargo test` passa. Se falhar de forma estrutural, reabrir o ADR-0001.
   - Depende de: T-000.
-- [ ] **T-001a** **Baseline ECC do código herdado.**
+- [x] **T-001a** **Baseline ECC do código herdado.**
   - `cargo llvm-cov` e cobertura do frontend para registrar a baseline.
   - `clippy -D warnings`: corrigir, ou usar `allow` com justificativa.
   - Configurar `cargo deny` (fontes git permitidas explicitamente e pinadas por `rev`) e `cargo audit`.
