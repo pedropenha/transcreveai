@@ -19,11 +19,11 @@
 - [x] **T-020** — merge `c9a53f2`. `shortcut/matcher.rs` novo (matcher puro); watchdog com backoff; fallback Tauri real. Security review achou 1 HIGH (watchdog flapping no Windows) + 2 MEDIUM → fix-forward na lane `fix/review-t005-t020` @ `ecc-fix-review`.
 - [x] **T-004** — merge (ver git log). Schema v9: `dictations` + 11 tabelas novas + 3 FTS5 + triggers; repos por domínio em `src-tauri/src/db/`; `history.rs` reescrito sobre `dictations` sem mudar `HistoryEntry`/IPC. 315 testes.
 - [x] **T-010** — merge (ver git log). Evento `audio://level {rms}` (FR-001-05); fan-out `Vec<FrameSubscriber>` com `FrameTap::{Raw,Processed}`+`when_idle` p/ T-063; `ResamplerInitError`; `plan_microphone_resolution` puro. 299 testes.
+- [x] **T-012** — merge (ver git log). `managers/transcription.rs` → diretório (engine/inference/language/postprocess/streaming) + `stt/` (trait `SttProvider`, `SttOrchestrator` c/ retry+fallback, `LocalSttProvider`). FR-003-16 implementada. 294 testes.
 
 ## Em andamento (lanes)
 
 - **T-016** `feat/t-016-keyring-secrets` @ `ecc-t016` (70b66b95)
-- **T-012** `feat/t-012-stt-provider` @ `ecc-t012` (b58f96b6)
 - **fix/review-t005-t020** @ `ecc-fix-review` (95aab676) — watchdog backoff/held/release_all, validate_shortcut vs acordes de colagem, timeout do recording_loop, normalização idempotente de app_language
 
 ## Próximas na DAG (prontas para lanes)
