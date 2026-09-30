@@ -84,6 +84,8 @@ transcribe-cpp = { version = "0.2.4", default-features = false }
 handy-keys = "0.3.4"
 ferrous-opencc = "0.2.3"
 clap = { version = "4", features = ["derive"] }
+async-trait = "0.1"
+thiserror = "2"
 specta = "=2.0.0-rc.22"
 specta-typescript = "0.0.9"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
