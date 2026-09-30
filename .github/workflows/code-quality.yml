@@ -52,8 +52,16 @@ jobs:
       - name: Check model language coverage
         run: bun run check:model-languages
 
-      - name: Test keyboard utilities
-        run: bun run test:keyboard
+      # test:unit supersedes the old test:keyboard step — it runs all
+      # standalone unit tests including keyboard.test.ts.
+      - name: Run unit tests
+        run: bun run test:unit
+
+      # T-002 / ADR-0001 ratchet 2: the four baseline modules loaded by
+      # scripts/unit-coverage.test.ts must stay at >= 96.61% lines and
+      # >= 92.86% functions (mean of per-file percentages).
+      - name: Check frontend coverage ratchet
+        run: bun scripts/check-frontend-coverage.ts
 
       - name: Run ESLint
         run: bun run lint

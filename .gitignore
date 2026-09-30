@@ -46,3 +46,7 @@ result
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Coverage reports (bun lcov / cargo-llvm-cov)
+coverage/
+llvm-cov.json
