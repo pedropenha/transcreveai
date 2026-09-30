@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use clap::Parser;
-use handy_app_lib::CliArgs;
+use transcreve_ai_app_lib::CliArgs;
 
 fn main() {
     let cli_args = CliArgs::parse();
@@ -19,11 +19,11 @@ fn main() {
         // Avoid overlay/capture layer crashes (#2049). Set before backend
         // initialization, preserving user overrides.
         if std::env::var_os("VK_LOADER_LAYERS_DISABLE").is_none()
-            && !handy_app_lib::env_flag_enabled("HANDY_KEEP_VULKAN_IMPLICIT_LAYERS")
+            && !transcreve_ai_app_lib::env_flag_enabled("TRANSCREVE_KEEP_VULKAN_IMPLICIT_LAYERS")
         {
             std::env::set_var("VK_LOADER_LAYERS_DISABLE", "~implicit~");
         }
     }
 
-    handy_app_lib::run(cli_args)
+    transcreve_ai_app_lib::run(cli_args)
 }

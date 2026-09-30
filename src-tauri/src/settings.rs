@@ -1190,16 +1190,20 @@ fn apply_settings_migrations(
 }
 
 /// Update checks are forced off (without touching the persisted setting) when
-/// `HANDY_DISABLE_UPDATER` is set — e.g. by the Nix package, since self-update
-/// can't work against an immutable /nix/store install.
+/// this build has no release channel of its own yet (see `updater_policy`), or
+/// when `TRANSCREVE_DISABLE_UPDATER` is set — e.g. by the Nix package, since
+/// self-update can't work against an immutable /nix/store install.
 pub fn update_checks_forced_disabled() -> bool {
     use std::sync::OnceLock;
     static IS_UPDATER_DISABLED: OnceLock<bool> = OnceLock::new();
-    *IS_UPDATER_DISABLED.get_or_init(|| utils::env_flag_enabled("HANDY_DISABLE_UPDATER"))
+    *IS_UPDATER_DISABLED.get_or_init(|| {
+        !crate::updater_policy::build_has_release_channel()
+            || utils::env_flag_enabled("TRANSCREVE_DISABLE_UPDATER")
+    })
 }
 
 /// Effective updater state: the user's stored preference, overridden to `false`
-/// while `HANDY_DISABLE_UPDATER` is set. Callers deciding whether to actually
+/// while `TRANSCREVE_DISABLE_UPDATER` is set. Callers deciding whether to actually
 /// check for updates must use this rather than reading `update_checks_enabled`
 /// directly, so the forced-off state never leaks into the persisted setting.
 pub fn update_checks_effectively_enabled(settings: &AppSettings) -> bool {

@@ -119,8 +119,8 @@ fn configure_layer_shell_surface(
 /// Returns true if layer shell was successfully initialized, false otherwise
 #[cfg(target_os = "linux")]
 fn init_gtk_layer_shell(overlay_window: &tauri::webview::WebviewWindow) -> bool {
-    if utils::env_flag_enabled("HANDY_NO_GTK_LAYER_SHELL") {
-        debug!("Skipping GTK layer shell init (HANDY_NO_GTK_LAYER_SHELL is enabled)");
+    if utils::env_flag_enabled("TRANSCREVE_NO_GTK_LAYER_SHELL") {
+        debug!("Skipping GTK layer shell init (TRANSCREVE_NO_GTK_LAYER_SHELL is enabled)");
         return false;
     }
 
@@ -453,27 +453,30 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     if let Some((x, y)) = calculate_overlay_position(app_handle, OVERLAY_WIDTH, OVERLAY_HEIGHT) {
         // PanelBuilder creates a Tauri window then converts it to NSPanel.
         // The window remains registered, so get_webview_window() still works.
-        match PanelBuilder::<_, RecordingOverlayPanel>::new(app_handle, crate::window_labels::FLOWBAR)
-            .url(WebviewUrl::App("src/overlay/index.html".into()))
-            .title("Recording")
-            .position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
-            .level(PanelLevel::Status)
-            .size(tauri::Size::Logical(tauri::LogicalSize {
-                width: OVERLAY_WIDTH,
-                height: OVERLAY_HEIGHT,
-            }))
-            .has_shadow(false)
-            .transparent(true)
-            .no_activate(true)
-            .corner_radius(0.0)
-            .style_mask(StyleMask::empty().borderless().nonactivating_panel())
-            .with_window(|w| w.decorations(false).transparent(true).focusable(false))
-            .collection_behavior(
-                CollectionBehavior::new()
-                    .can_join_all_spaces()
-                    .full_screen_auxiliary(),
-            )
-            .build()
+        match PanelBuilder::<_, RecordingOverlayPanel>::new(
+            app_handle,
+            crate::window_labels::FLOWBAR,
+        )
+        .url(WebviewUrl::App("src/overlay/index.html".into()))
+        .title("Recording")
+        .position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
+        .level(PanelLevel::Status)
+        .size(tauri::Size::Logical(tauri::LogicalSize {
+            width: OVERLAY_WIDTH,
+            height: OVERLAY_HEIGHT,
+        }))
+        .has_shadow(false)
+        .transparent(true)
+        .no_activate(true)
+        .corner_radius(0.0)
+        .style_mask(StyleMask::empty().borderless().nonactivating_panel())
+        .with_window(|w| w.decorations(false).transparent(true).focusable(false))
+        .collection_behavior(
+            CollectionBehavior::new()
+                .can_join_all_spaces()
+                .full_screen_auxiliary(),
+        )
+        .build()
         {
             Ok(panel) => {
                 panel.hide();
@@ -728,7 +731,7 @@ pub fn update_overlay_enabled_cache(enabled: bool) {
 }
 
 pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
-    // Skip emission when the overlay is disabled. The recording_overlay
+    // Skip emission when the overlay is disabled. The flowbar
     // window is created at boot regardless of overlay_style, so without this
     // guard a hidden overlay's WebKit subprocess still
     // processes every event. Each event drives some kind of WebKit

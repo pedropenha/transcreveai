@@ -494,7 +494,7 @@
       "updateChecks": {
         "label": "Check for Updates",
         "description": "Automatically check for new versions of Transcreve.ai",
-        "lockedDescription": "Disabled by system configuration (TRANSCREVE_DISABLE_UPDATER)"
+        "lockedDescription": "Unavailable in this build, or disabled by system configuration (TRANSCREVE_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Preview What's New",

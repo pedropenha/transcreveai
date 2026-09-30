@@ -984,7 +984,7 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
         use std::thread;
 
         let script_path = std::env::temp_dir().join(format!(
-            "handy-external-script-{}-{}.sh",
+            "transcreve-ai-external-script-{}-{}.sh",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

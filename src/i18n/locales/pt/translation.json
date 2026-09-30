@@ -494,7 +494,7 @@
       "updateChecks": {
         "label": "Verificar Atualizações",
         "description": "Verificar automaticamente novas versões do Transcreve.ai",
-        "lockedDescription": "Desativado pela configuração do sistema (TRANSCREVE_DISABLE_UPDATER)"
+        "lockedDescription": "Indisponível nesta versão, ou desativado pela configuração do sistema (TRANSCREVE_DISABLE_UPDATER)"
       },
       "soundTheme": {
         "label": "Tema de Som",
