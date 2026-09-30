@@ -14,8 +14,8 @@ yanked = "deny"
 unmaintained = "all"
 unsound = "all"
 ignore = [
-  { id = "RUSTSEC-2026-0194", reason = "Inherited build-time quick-xml through plist/Tauri; no compatible plist release supports quick-xml 0.41 yet" },
-  { id = "RUSTSEC-2026-0195", reason = "Inherited build-time quick-xml through plist/Tauri; no compatible plist release supports quick-xml 0.41 yet" },
+  { id = "RUSTSEC-2026-0194", reason = "Inherited build-time quick-xml through plist/Tauri and wayland-scanner; no compatible upstream release supports 0.41 yet" },
+  { id = "RUSTSEC-2026-0195", reason = "Inherited build-time quick-xml through plist/Tauri and wayland-scanner; no compatible upstream release supports 0.41 yet" },
   { id = "RUSTSEC-2025-0141", reason = "Inherited transitive bincode dependency; replacement requires upstream migration" },
   { id = "RUSTSEC-2025-0057", reason = "Inherited transitive fxhash dependency; replacement requires upstream migration" },
   { id = "RUSTSEC-2024-0422", reason = "Linux-only GTK3 layer-shell integration retained until the planned Linux port" },
