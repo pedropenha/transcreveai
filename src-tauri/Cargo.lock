@@ -7226,6 +7226,7 @@ name = "transcreve-ai"
 version = "0.9.7"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "clap",
  "cpal",
@@ -7284,6 +7285,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-specta",
  "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "transcribe-cpp",
  "transcribe-rs",
