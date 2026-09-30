@@ -67,14 +67,17 @@ src-tauri/src/
 └── platform/windows/         # [novo] Win32 que não couber nos módulos acima (UIA, ConsentStore, elevação)
 ```
 
-Frontend (herdado: `src/components/`, `src/overlay/`, `src/stores/`, `src/i18n/locales/*`, `src/bindings.ts`). As janelas novas (`toast`, `meeting`) seguem o padrão de `src/overlay/` (entrada HTML própria).
+Frontend: mantém-se a estrutura do Handy. As janelas novas (`toast`, `meeting`) seguem o padrão de `src/overlay/` (entrada HTML própria).
 
 ```
 src/                           # frontend React
-├── windows/flowbar/  toast/  hub/  meeting/  onboarding/
-├── components/  (ui kit)
-├── lib/ipc.ts                 # wrappers tipados de invoke/listen
-└── i18n/ pt-BR.json en.json
+├── components/               # [herdado → estender] telas do Hub, configurações, onboarding (F010)
+├── overlay/                  # [herdado → estender] Flow Bar (F001)
+├── toast/                    # [novo] reunião detectada, avisos (F008)
+├── meeting/                  # [novo] janela da reunião (F009)
+├── stores/                   # [herdado] Zustand
+├── i18n/locales/             # [herdado] pt, en e demais idiomas (seleção na T-005)
+└── bindings.ts               # [herdado] tipos gerados pelo tauri-specta (IPC)
 ```
 
 ## 4. Visão de componentes

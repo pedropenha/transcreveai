@@ -41,6 +41,8 @@ A T-000 ([specs/tasks.md](../../specs/tasks.md)) pede a decisão entre fazer um 
 
 Fazemos **fork do Handy** (`29bd2c0`) como base, renomeado para **Sussurro**, em modo **divergente**. Mantemos um remote `upstream` e fazemos **cherry-pick seletivo** das correções nas áreas ainda compartilhadas (áudio, `paste_tx`, catálogo de modelos, bumps de transcribe-cpp/transcribe-rs, correções de Windows), revisando as releases do Handy uma vez por mês. As ECC rules valem integralmente para código **novo ou alterado**. Para o código herdado, uma tarefa de **baseline** (nova T-001a) mede cobertura, liga os gates de CI e registra as exceções. Um arquivo herdado com mais de 800 linhas é dividido quando for alterado, e a cobertura total sobe em catraca até ≥ 80%.
 
+**Exceção às rules aprovada** pelo dono do produto em 2026-09-30: para o código **herdado**, o mínimo de 80% de cobertura (`rules/common/testing.md`) é atingido em catraca e não antes das features. Nenhum PR pode reduzir a cobertura. Código novo ou alterado cumpre as rules integralmente.
+
 ## Alternatives Considered
 
 ### Alternativa 1: Começar do zero (scaffold Tauri 2 + React)
