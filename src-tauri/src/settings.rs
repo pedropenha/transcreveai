@@ -4,6 +4,7 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
 use std::collections::HashMap;
+use std::fmt;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
