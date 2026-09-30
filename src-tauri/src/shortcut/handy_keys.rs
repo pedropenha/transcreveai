@@ -110,6 +110,55 @@ pub struct FrontendKeyEvent {
 const RESTART_BACKOFF_MAX: Duration = Duration::from_secs(5);
 /// Initial delay before respawning a dead listener.
 const RESTART_BACKOFF_INIT: Duration = Duration::from_millis(100);
+/// How long a register/unregister call may wait for the manager thread.
+const COMMAND_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Hard cap on UI key-capture mode so a wedged recording session can't keep
+/// broadcasting keystrokes (or leave every shortcut suspended) forever.
+const RECORDING_TIMEOUT: Duration = Duration::from_secs(30);
+/// Event emitted once when the watchdog gives up restarting the hook.
+const HOOK_DEAD_EVENT: &str = "shortcut://hook-dead";
+
+/// Exponential-backoff policy for respawning the keyboard listener after its
+/// hook thread dies or a respawn fails. Pure and clock-free: callers report
+/// how long the just-dead listener had been alive.
+///
+/// Backing off on *deaths* — not only on spawn failures — matters on
+/// Windows, where `new_with_blocking` returns `Ok` even when the hook could
+/// not be installed: the hook thread dies right away, and without a growing
+/// delay the watchdog would re-create the listener every poll cycle.
+struct RestartBackoff {
+    consecutive_failures: u32,
+}
+
+impl RestartBackoff {
+    /// Consecutive failures after which the watchdog stops trying.
+    const MAX_FAILURES: u32 = 10;
+    /// Uptime that marks a listener as stable; a death after it first resets
+    /// the failure count so a fresh failure restarts quickly.
+    const STABLE_UPTIME: Duration = Duration::from_secs(30);
+
+    fn new() -> Self {
+        Self {
+            consecutive_failures: 0,
+        }
+    }
+
+    /// Record a listener death or a failed respawn and return the delay
+    /// before the next attempt — `None` once the failure cap is reached.
+    /// `alive_for` is how long the just-dead listener ran (`None` for a
+    /// spawn failure); a stable run resets the count first.
+    fn next_delay(&mut self, alive_for: Option<Duration>) -> Option<Duration> {
+        if alive_for.is_some_and(|uptime| uptime >= Self::STABLE_UPTIME) {
+            self.consecutive_failures = 0;
+        }
+        self.consecutive_failures += 1;
+        if self.consecutive_failures >= Self::MAX_FAILURES {
+            return None;
+        }
+        let delay = RESTART_BACKOFF_INIT * 2u32.saturating_pow(self.consecutive_failures - 1);
+        Some(delay.min(RESTART_BACKOFF_MAX))
+    }
+}
 
 impl HandyKeysState {
     /// Create a new HandyKeysState
@@ -154,12 +203,15 @@ impl HandyKeysState {
         info!("handy-keys manager thread started");
 
         let mut listener = Some(listener);
+        let mut listener_alive_since = Instant::now();
         let mut matcher = HotkeyMatcher::new();
         // Watchdog state: when the listener's event channel disconnects its
         // hook thread has died, so we respawn it (reinstalling the OS hooks)
-        // with exponential backoff.
-        let mut restart_backoff = RESTART_BACKOFF_INIT;
+        // under RestartBackoff — which also gives up after too many
+        // consecutive failures.
+        let mut backoff = RestartBackoff::new();
         let mut next_restart = Instant::now();
+        let mut hook_gave_up = false;
 
         loop {
             // Drain raw key events into the matcher and dispatch actions.
@@ -170,6 +222,13 @@ impl HandyKeysState {
                     // Timeout/Disconnected distinction that try_recv loses.
                     match l.recv_timeout(Duration::from_millis(0)) {
                         Ok(event) => {
+                            // Drop events while we inject a paste/submit
+                            // chord ourselves: they are our own synthetics,
+                            // which must never perturb matcher state (e.g.
+                            // an injected key-up releasing a held binding).
+                            if crate::input::is_injection_active() {
+                                continue;
+                            }
                             for action in matcher.feed(&event, Instant::now()) {
                                 Self::dispatch(&app, &matcher, action);
                             }
@@ -188,26 +247,51 @@ impl HandyKeysState {
                 // so this is instant). The shared blocking set survives, so
                 // suppression resumes unchanged once the listener is back.
                 listener = None;
-                next_restart = Instant::now();
+                // Any binding still held loses its release edge with the
+                // dead stream — emit it so push-to-talk can't stay stuck on.
+                for action in matcher.release_all() {
+                    Self::dispatch(&app, &matcher, action);
+                }
+                match backoff.next_delay(Some(listener_alive_since.elapsed())) {
+                    Some(delay) => {
+                        warn!(
+                            "handy-keys: hook thread died; restarting listener in {:?}",
+                            delay
+                        );
+                        next_restart = Instant::now() + delay;
+                    }
+                    None => {
+                        Self::notify_hook_dead(&app);
+                        hook_gave_up = true;
+                    }
+                }
             }
 
             // Watchdog: respawn a dead listener. Re-creating it runs the
             // platform spawn path again, reinstalling the OS-level hooks.
-            if listener.is_none() && Instant::now() >= next_restart {
+            // The backoff only resets once a listener survives past
+            // RestartBackoff::STABLE_UPTIME — a respawn that dies quickly
+            // keeps backing off instead of looping tightly.
+            if listener.is_none() && !hook_gave_up && Instant::now() >= next_restart {
                 match KeyboardListener::new_with_blocking(Arc::clone(&blocking_hotkeys)) {
                     Ok(l) => {
                         warn!("handy-keys: keyboard listener restarted after hook thread death");
                         listener = Some(l);
-                        restart_backoff = RESTART_BACKOFF_INIT;
+                        listener_alive_since = Instant::now();
                     }
-                    Err(e) => {
-                        error!(
-                            "handy-keys: failed to restart keyboard listener (retry in {:?}): {}",
-                            restart_backoff, e
-                        );
-                        next_restart = Instant::now() + restart_backoff;
-                        restart_backoff = (restart_backoff * 2).min(RESTART_BACKOFF_MAX);
-                    }
+                    Err(e) => match backoff.next_delay(None) {
+                        Some(delay) => {
+                            error!(
+                                "handy-keys: failed to restart keyboard listener (retry in {:?}): {}",
+                                delay, e
+                            );
+                            next_restart = Instant::now() + delay;
+                        }
+                        None => {
+                            Self::notify_hook_dead(&app);
+                            hook_gave_up = true;
+                        }
+                    },
                 }
             }
 
@@ -220,6 +304,7 @@ impl HandyKeysState {
                         response,
                     } => {
                         let result = Self::do_register(
+                            &app,
                             &mut matcher,
                             &blocking_hotkeys,
                             &binding_id,
@@ -232,7 +317,7 @@ impl HandyKeysState {
                         response,
                     } => {
                         let result =
-                            Self::do_unregister(&mut matcher, &blocking_hotkeys, &binding_id);
+                            Self::do_unregister(&app, &mut matcher, &blocking_hotkeys, &binding_id);
                         let _ = response.send(result);
                     }
                     ManagerCommand::Shutdown => {
@@ -253,20 +338,46 @@ impl HandyKeysState {
         info!("handy-keys manager thread stopped");
     }
 
+    /// The hook is unrecoverable: log loudly and notify the UI once. If a
+    /// fallback implementation is registered the matcher keeps working there.
+    fn notify_hook_dead(app: &AppHandle) {
+        error!(
+            "handy-keys: keyboard hook failed {} times in a row; giving up on restart",
+            RestartBackoff::MAX_FAILURES
+        );
+        if let Err(e) = app.emit(HOOK_DEAD_EVENT, ()) {
+            warn!("handy-keys: failed to emit {}: {}", HOOK_DEAD_EVENT, e);
+        }
+    }
+
     /// Dispatch one matcher action to the shared shortcut handler.
     fn dispatch(app: &AppHandle, matcher: &HotkeyMatcher, action: HotkeyAction) {
-        let binding_id = action.binding_id();
+        let binding_id = action.binding_id().to_string();
         let is_pressed = matches!(action, HotkeyAction::Pressed(_));
-        let hotkey_string = matcher.hotkey_string(binding_id).unwrap_or_default();
+        let hotkey_string = matcher
+            .hotkey_string(&binding_id)
+            .unwrap_or_default()
+            .to_string();
         debug!(
             "handy-keys event: binding={}, hotkey={}, pressed={}",
             binding_id, hotkey_string, is_pressed
         );
-        handle_shortcut_event(app, binding_id, hotkey_string, is_pressed);
+        // A panicking handler must not take the manager thread down with it:
+        // nothing supervises or respawns it.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            handle_shortcut_event(app, &binding_id, &hotkey_string, is_pressed);
+        }));
+        if result.is_err() {
+            error!(
+                "handy-keys: shortcut handler panicked for binding '{}'",
+                binding_id
+            );
+        }
     }
 
     /// Register a hotkey in the matcher and the hook's suppression set
     fn do_register(
+        app: &AppHandle,
         matcher: &mut HotkeyMatcher,
         blocking_hotkeys: &BlockingHotkeys,
         binding_id: &str,
@@ -276,24 +387,23 @@ impl HandyKeysState {
             .parse()
             .map_err(|e| format!("Failed to parse hotkey '{}': {}", hotkey_string, e))?;
 
+        let mut set = blocking_hotkeys.lock().map_err(|_| {
+            format!("handy-keys: suppression set lock poisoned registering '{binding_id}'")
+        })?;
+
+        // Re-registering a held binding discards its hold state — emit the
+        // release edge instead of silently dropping it.
+        if let Some(action) = matcher.release_binding(binding_id) {
+            Self::dispatch(app, matcher, action);
+        }
+
         let previous = matcher
             .register(binding_id, hotkey, hotkey_string.to_string())
             .map_err(|e| format!("Failed to register hotkey: {}", e))?;
-
-        match blocking_hotkeys.lock() {
-            Ok(mut set) => {
-                if let Some(old) = previous {
-                    set.remove(&old);
-                }
-                set.insert(hotkey);
-            }
-            Err(_) => {
-                error!(
-                    "handy-keys: suppression set lock poisoned; '{}' will fire but not be suppressed",
-                    binding_id
-                );
-            }
+        if let Some(old) = previous {
+            set.remove(&old);
         }
+        set.insert(hotkey);
 
         debug!(
             "Registered handy-keys shortcut: {} -> {:?}",
@@ -304,22 +414,21 @@ impl HandyKeysState {
 
     /// Unregister a hotkey from the matcher and the suppression set
     fn do_unregister(
+        app: &AppHandle,
         matcher: &mut HotkeyMatcher,
         blocking_hotkeys: &BlockingHotkeys,
         binding_id: &str,
     ) -> Result<(), String> {
+        // A held binding loses its release edge on unregister — emit it
+        // first, while dispatch can still look up its hotkey string.
+        if let Some(action) = matcher.release_binding(binding_id) {
+            Self::dispatch(app, matcher, action);
+        }
         if let Some(hotkey) = matcher.unregister(binding_id) {
-            match blocking_hotkeys.lock() {
-                Ok(mut set) => {
-                    set.remove(&hotkey);
-                }
-                Err(_) => {
-                    error!(
-                        "handy-keys: suppression set lock poisoned; '{}' may keep being suppressed",
-                        binding_id
-                    );
-                }
-            }
+            let mut set = blocking_hotkeys.lock().map_err(|_| {
+                format!("handy-keys: suppression set lock poisoned unregistering '{binding_id}'")
+            })?;
+            set.remove(&hotkey);
             debug!("Unregistered handy-keys shortcut: {}", binding_id);
         }
         Ok(())
@@ -338,8 +447,8 @@ impl HandyKeysState {
             })
             .map_err(|_| "Failed to send register command")?;
 
-        rx.recv()
-            .map_err(|_| "Failed to receive register response")?
+        rx.recv_timeout(COMMAND_RESPONSE_TIMEOUT)
+            .map_err(|e| format!("Failed to receive register response: {}", e))?
     }
 
     /// Unregister a shortcut binding
@@ -354,8 +463,8 @@ impl HandyKeysState {
             })
             .map_err(|_| "Failed to send unregister command")?;
 
-        rx.recv()
-            .map_err(|_| "Failed to receive unregister response")?
+        rx.recv_timeout(COMMAND_RESPONSE_TIMEOUT)
+            .map_err(|e| format!("Failed to receive unregister response: {}", e))?
     }
 
     /// Start recording mode for a specific binding
@@ -399,7 +508,23 @@ impl HandyKeysState {
 
     /// Recording loop - emits key events to frontend during recording
     fn recording_loop(app: AppHandle, running: Arc<AtomicBool>) {
+        let started = Instant::now();
         while running.load(Ordering::SeqCst) {
+            // Safety net: a capture session abandoned by the frontend must
+            // not keep broadcasting keystrokes — or leave every shortcut
+            // suspended — forever.
+            if started.elapsed() >= RECORDING_TIMEOUT {
+                info!(
+                    "handy-keys: key recording timed out after {:?}; stopping",
+                    RECORDING_TIMEOUT
+                );
+                if let Some(state) = app.try_state::<HandyKeysState>() {
+                    let _ = state.stop_recording();
+                }
+                super::resume_all_shortcuts(&app);
+                break;
+            }
+
             let event = {
                 let state = match app.try_state::<HandyKeysState>() {
                     Some(s) => s,
@@ -421,8 +546,12 @@ impl HandyKeysState {
                         .unwrap_or_default(),
                 };
 
-                // Emit to frontend
-                if let Err(e) = app.emit("handy-keys-event", &frontend_event) {
+                // Emit only to the hub window, which hosts the capture UI.
+                if let Err(e) = app.emit_to(
+                    crate::window_labels::HUB,
+                    "handy-keys-event",
+                    &frontend_event,
+                ) {
                     error!("Failed to emit key event: {}", e);
                 }
             } else {
@@ -507,6 +636,53 @@ fn modifiers_to_strings(modifiers: handy_keys::Modifiers) -> Vec<String> {
     result
 }
 
+/// Keystroke shapes the app injects itself when pasting a transcript or
+/// auto-submitting (see `crate::input`). Each entry is one event state an
+/// injection produces — every modifier press plus the final chord — and a
+/// binding matching any of them would fire off our own synthetic input,
+/// potentially re-triggering dictation or releasing a hold early. The
+/// injected events carry no marker the hook could filter on, so such
+/// bindings are rejected at validation time instead.
+fn injected_paste_states() -> [Hotkey; 6] {
+    use handy_keys::{Key, Modifiers};
+
+    // input.rs injects Cmd on macOS, Ctrl elsewhere.
+    #[cfg(target_os = "macos")]
+    let primary = Modifiers::CMD;
+    #[cfg(not(target_os = "macos"))]
+    let primary = Modifiers::CTRL;
+
+    [
+        // Ctrl+V (Cmd+V on macOS): modifier press, then the chord.
+        Hotkey {
+            modifiers: primary,
+            key: None,
+        },
+        Hotkey {
+            modifiers: primary,
+            key: Some(Key::V),
+        },
+        // Ctrl+Shift+V: Shift added, then the chord.
+        Hotkey {
+            modifiers: primary | Modifiers::SHIFT,
+            key: None,
+        },
+        Hotkey {
+            modifiers: primary | Modifiers::SHIFT,
+            key: Some(Key::V),
+        },
+        // Shift+Insert.
+        Hotkey {
+            modifiers: Modifiers::SHIFT,
+            key: None,
+        },
+        Hotkey {
+            modifiers: Modifiers::SHIFT,
+            key: Some(Key::Insert),
+        },
+    ]
+}
+
 /// Validate a shortcut string for the HandyKeys implementation.
 /// HandyKeys is more permissive: allows modifier-only combos and the fn key.
 pub fn validate_shortcut(raw: &str) -> Result<(), String> {
@@ -515,9 +691,22 @@ pub fn validate_shortcut(raw: &str) -> Result<(), String> {
     }
     // HandyKeys accepts modifier-only, key-only, and modifier+key combos
     // Just verify the string is parseable
-    raw.parse::<Hotkey>()
-        .map(|_| ())
-        .map_err(|e| format!("Invalid shortcut for HandyKeys: {}", e))
+    let hotkey: Hotkey = raw
+        .parse()
+        .map_err(|e| format!("Invalid shortcut for HandyKeys: {}", e))?;
+
+    // Reject bindings that match any state of our own paste injection —
+    // those keys come back through the hook indistinguishable from real
+    // input (see `injected_paste_states`).
+    if injected_paste_states()
+        .iter()
+        .any(|injected| hotkey.key == injected.key && hotkey.modifiers.matches(injected.modifiers))
+    {
+        return Err(format!(
+            "Shortcut '{raw}' is reserved: it collides with a keystroke Transcreve.ai injects itself when pasting transcripts"
+        ));
+    }
+    Ok(())
 }
 
 /// Initialize handy-keys shortcuts
@@ -670,4 +859,97 @@ pub fn stop_handy_keys_recording(app: AppHandle) -> Result<(), String> {
     let result = state.stop_recording();
     super::resume_all_shortcuts(&app);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backoff_grows_exponentially_and_caps() {
+        let mut backoff = RestartBackoff::new();
+        for ms in [100, 200, 400, 800, 1600, 3200, 5000, 5000, 5000] {
+            assert_eq!(
+                backoff.next_delay(None),
+                Some(Duration::from_millis(ms)),
+                "delay #{ms}"
+            );
+        }
+    }
+
+    #[test]
+    fn backoff_gives_up_at_the_failure_cap() {
+        let mut backoff = RestartBackoff::new();
+        for _ in 0..RestartBackoff::MAX_FAILURES - 1 {
+            assert!(backoff.next_delay(None).is_some());
+        }
+        assert_eq!(backoff.next_delay(None), None);
+        // Once given up, it stays given up.
+        assert_eq!(backoff.next_delay(None), None);
+        assert_eq!(backoff.next_delay(Some(Duration::from_secs(1))), None);
+    }
+
+    #[test]
+    fn backoff_resets_after_a_stable_listener_run() {
+        let mut backoff = RestartBackoff::new();
+        assert_eq!(backoff.next_delay(None), Some(RESTART_BACKOFF_INIT));
+        assert_eq!(
+            backoff.next_delay(Some(RestartBackoff::STABLE_UPTIME)),
+            Some(RESTART_BACKOFF_INIT),
+            "a listener that survived the stable window resets the count"
+        );
+    }
+
+    #[test]
+    fn backoff_keeps_growing_below_stable_uptime() {
+        // The Windows failure mode this fixes: spawn returns Ok, the hook
+        // thread dies right away, and the next death must not restart the
+        // delay at the minimum — that was the tight respawn loop.
+        let mut backoff = RestartBackoff::new();
+        let below_stable = RestartBackoff::STABLE_UPTIME - Duration::from_secs(1);
+        assert_eq!(backoff.next_delay(None), Some(RESTART_BACKOFF_INIT));
+        assert_eq!(
+            backoff.next_delay(Some(below_stable)),
+            Some(RESTART_BACKOFF_INIT * 2)
+        );
+        assert_eq!(
+            backoff.next_delay(Some(below_stable)),
+            Some(RESTART_BACKOFF_INIT * 4)
+        );
+    }
+
+    #[test]
+    fn validate_rejects_injected_paste_chords() {
+        #[cfg(target_os = "macos")]
+        let reserved = [
+            "command+v",
+            "command+shift+v",
+            "shift+insert",
+            // The injected modifier presses by themselves.
+            "command",
+            "command+shift",
+            "shift",
+        ];
+        #[cfg(not(target_os = "macos"))]
+        let reserved = [
+            "ctrl+v",
+            "ctrl+shift+v",
+            "shift+insert",
+            "ctrl",
+            "ctrl+shift",
+            "shift",
+            "ctrl_left+v",
+        ];
+        for chord in reserved {
+            let err = validate_shortcut(chord).expect_err(&format!("{chord} must be rejected"));
+            assert!(err.contains("reserved"), "{chord}: {err}");
+        }
+    }
+
+    #[test]
+    fn validate_accepts_non_colliding_shortcuts() {
+        for ok in ["ctrl+space", "ctrl+win+space", "f5", "ctrl+alt+v"] {
+            assert!(validate_shortcut(ok).is_ok(), "{ok} must be accepted");
+        }
+    }
 }
