@@ -28,7 +28,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 ## Fase 0 — Fundação
 
 - [x] **T-000** **Avaliar fork do Handy × começar do zero.** Resultado: **fork divergente** do Handy (commit `29bd2c0`) com cherry-pick seletivo das correções do upstream. A avaliação dos 6 critérios está no [ADR-0001](../docs/adr/0001-fork-do-handy-como-base.md). Foi feita só lendo o código (sem toolchain Rust na máquina), por isso a T-001 tem um portão de execução.
-- [ ] **T-001** **Fork + rebranding + portão no Windows.**
+- [x] **T-001** **Fork + rebranding + portão no Windows.**
   - Criar o repositório a partir do Handy em `29bd2c0`, com remote `upstream`.
   - Renomear para **Transcreve.ai** (`identifier` `br.com.creator4all.transcreve.ai`; slug `transcreve-ai`; variáveis de ambiente `TRANSCREVE_*`): nome, ícones e logo (barras de som), textos, `sponsor-images/`. Updater: remover o endpoint e a chave do Handy e deixar o updater desligado até a T-049. Manter o `LICENSE` MIT com o copyright do Handy e acrescentar `Copyright (c) 2026 Creator4all`. O empacotamento Linux/macOS herdado (incluindo Nix) é mantido e renomeado, não removido.
   - Janela principal do Handy = `hub`; overlay `recording_overlay` = `flowbar`.

@@ -93,6 +93,6 @@ Fazemos **fork do Handy** (`29bd2c0`) como base, renomeado para **Transcreve.ai*
 | `cargo test` no código herdado (antes do rebranding) | **273 passando, 0 falhas** |
 | `cargo test` depois do rebranding | **281 passando** (273 + testes novos de rótulos de janela e da política do updater) |
 | Build nativo (`transcribe-cpp-sys` com Vulkan) | Falhou com `MSB1009`: o MSBuild da máquina não abre projetos através da junction em `%LOCALAPPDATA%\tcs` criada sem admin. Contornado com `scripts/windows-dev-env.ps1 -BypassJunction` (sem junction + `CARGO_TARGET_DIR` curto). Não é falha estrutural do fork; documentado no BUILD.md |
-| Smoke manual (`tauri dev`, ditado no Bloco de Notas, Chrome e VS Code, clipboard restaurado, overlay sem roubar foco) | _pendente — preencher após o teste manual_ |
+| Smoke manual (`tauri dev`, ditado no Bloco de Notas, Chrome e VS Code, clipboard restaurado, overlay sem roubar foco) | **Aprovado** |
 
 Nada até aqui pede reabrir esta decisão.
