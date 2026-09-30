@@ -403,7 +403,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     // LogicalPosition before the overlay is shown.
     let mut builder = WebviewWindowBuilder::new(
         app_handle,
-        "recording_overlay",
+        crate::window_labels::FLOWBAR,
         tauri::WebviewUrl::App("src/overlay/index.html".into()),
     )
     .title("Recording")
@@ -453,7 +453,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     if let Some((x, y)) = calculate_overlay_position(app_handle, OVERLAY_WIDTH, OVERLAY_HEIGHT) {
         // PanelBuilder creates a Tauri window then converts it to NSPanel.
         // The window remains registered, so get_webview_window() still works.
-        match PanelBuilder::<_, RecordingOverlayPanel>::new(app_handle, "recording_overlay")
+        match PanelBuilder::<_, RecordingOverlayPanel>::new(app_handle, crate::window_labels::FLOWBAR)
             .url(WebviewUrl::App("src/overlay/index.html".into()))
             .title("Recording")
             .position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
@@ -510,7 +510,7 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
 fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
     // Size the overlay for this state (compact vs. streaming), then position it.
     let (width, height) = overlay_dimensions(state);
-    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+    if let Some(overlay_window) = app_handle.get_webview_window(crate::window_labels::FLOWBAR) {
         // Invalidate any delayed hide still in flight from a previous session
         // (see `hide_recording_overlay`).
         OVERLAY_SHOW_GENERATION.fetch_add(1, Ordering::SeqCst);
@@ -606,7 +606,7 @@ pub fn emit_recording_ready(app_handle: &AppHandle) {
     // and then get reset back to the arming state by the frontend.
     let handle = app_handle.clone();
     let _ = app_handle.run_on_main_thread(move || {
-        let _ = handle.emit_to("recording_overlay", "recording-ready", ());
+        let _ = handle.emit_to(crate::window_labels::FLOWBAR, "recording-ready", ());
     });
 }
 
@@ -639,7 +639,7 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
 }
 
 fn update_overlay_position_on_main(app_handle: &AppHandle) {
-    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+    if let Some(overlay_window) = app_handle.get_webview_window(crate::window_labels::FLOWBAR) {
         #[cfg(target_os = "linux")]
         if LAYER_SHELL_ACTIVE.load(Ordering::SeqCst) {
             let position = settings::get_settings(app_handle).overlay_position;
@@ -689,7 +689,7 @@ static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
-    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+    if let Some(overlay_window) = app_handle.get_webview_window(crate::window_labels::FLOWBAR) {
         // Snapshot before doing anything observable, so any show that lands
         // after this point invalidates the delayed hide below.
         let scheduled_at = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
@@ -763,7 +763,7 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // `emit_to` with the overlay's window label produces a single
     // eval_script call per callback, cutting the per-callback WebKit
     // dispatch work in half.
-    let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
+    let _ = app_handle.emit_to(crate::window_labels::FLOWBAR, "mic-level", levels);
 }
 
 #[cfg(test)]

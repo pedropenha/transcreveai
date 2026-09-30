@@ -620,7 +620,7 @@ pub fn apply_window_theme(app: &AppHandle, theme: Theme) {
         Theme::Light => Some(tauri::Theme::Light),
         Theme::Dark => Some(tauri::Theme::Dark),
     };
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window(crate::window_labels::HUB) {
         if let Err(e) = window.set_theme(window_theme) {
             warn!("Failed to apply window theme: {}", e);
         }

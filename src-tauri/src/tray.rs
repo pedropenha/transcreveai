@@ -150,7 +150,7 @@ pub fn get_current_theme(app: &AppHandle) -> AppTheme {
         }
 
         // On other platforms, map system theme to our app theme
-        if let Some(main_window) = app.get_webview_window("main") {
+        if let Some(main_window) = app.get_webview_window(crate::window_labels::HUB) {
             match main_window.theme().unwrap_or(Theme::Dark) {
                 Theme::Light => AppTheme::Light,
                 Theme::Dark => AppTheme::Dark,

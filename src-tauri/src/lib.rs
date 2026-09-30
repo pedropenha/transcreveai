@@ -24,6 +24,7 @@ mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod utils;
+mod window_labels;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -95,7 +96,7 @@ fn build_console_filter() -> env_filter::Filter {
 }
 
 fn show_main_window(app: &AppHandle) {
-    if let Some(main_window) = app.get_webview_window("main") {
+    if let Some(main_window) = app.get_webview_window(window_labels::HUB) {
         if let Err(e) = main_window.unminimize() {
             log::error!("Failed to unminimize webview window: {}", e);
         }
@@ -942,7 +943,7 @@ pub fn run(cli_args: CliArgs) {
             // Create main window programmatically so we can set data_directory
             // for portable mode (redirects WebView2 cache to portable Data dir)
             let mut win_builder =
-                tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
+                tauri::WebviewWindowBuilder::new(app, window_labels::HUB, tauri::WebviewUrl::App("/".into()))
                     .title("Handy")
                     .inner_size(680.0, 570.0)
                     .min_inner_size(680.0, 570.0)
@@ -1103,7 +1104,7 @@ pub fn run(cli_args: CliArgs) {
             // already visible this is just a focus request and the tray is
             // left alone.
             let window_visible = app
-                .get_webview_window("main")
+                .get_webview_window(window_labels::HUB)
                 .and_then(|w| w.is_visible().ok())
                 .unwrap_or(false);
             if !window_visible {
