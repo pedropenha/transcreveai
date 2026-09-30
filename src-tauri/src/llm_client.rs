@@ -406,6 +406,9 @@ pub async fn send_chat_completion_with_schema(
         let error_text = response.text().await.unwrap_or_else(|e| {
             report_reqwest_error("Failed to read reasoning rejection response", &e)
         });
+        // The body comes back from the provider and may echo auth material —
+        // scrub known secret patterns before it lands in the log (FR-011-03).
+        let error_text = crate::utils::redact_secret_patterns(&error_text);
         info!(
             "Endpoint rejected request with reasoning disabled (status {}): {}. Retrying without reasoning fields",
             status, error_text
@@ -440,6 +443,9 @@ pub async fn send_chat_completion_with_schema(
             .text()
             .await
             .unwrap_or_else(|e| report_reqwest_error("Failed to read API error response", &e));
+        // Provider response bodies are logged by callers; redact secret
+        // patterns so an echoed credential can never reach a log (FR-011-03).
+        let error_text = crate::utils::redact_secret_patterns(&error_text);
         return Err(format!(
             "API request failed with status {}: {}",
             status, error_text
@@ -488,6 +494,7 @@ pub async fn fetch_models(
             .text()
             .await
             .unwrap_or_else(|e| report_reqwest_error("Failed to read model list error", &e));
+        let error_text = crate::utils::redact_secret_patterns(&error_text);
         return Err(format!(
             "Model list request failed ({}): {}",
             status, error_text

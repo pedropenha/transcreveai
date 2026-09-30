@@ -92,7 +92,13 @@ fn build_console_filter() -> env_filter::Filter {
             }
         }
         _ => {
-            builder.filter_level(log::LevelFilter::Info);
+            // Per-environment default (T-003): dev builds are noisy on purpose,
+            // release builds stay at info unless RUST_LOG says otherwise.
+            builder.filter_level(if cfg!(debug_assertions) {
+                log::LevelFilter::Debug
+            } else {
+                log::LevelFilter::Info
+            });
         }
     }
 
@@ -840,6 +846,11 @@ pub fn run(cli_args: CliArgs) {
                         move |metadata| console_filter.enabled(metadata)
                     }),
                     // File logs respect the user's settings (stored in FILE_LOG_LEVEL atomic)
+                    // LogDir resolves to the Tauri app_log_dir — on Windows
+                    // %LOCALAPPDATA%\br.com.creator4all.transcreve.ai\logs (the
+                    // identifier in tauri.conf.json); portable mode redirects it
+                    // to <exe>/Data/logs. Rotation keeps one previous file at
+                    // 500 KB each (KeepOne + max_file_size above).
                     Target::new(if let Some(data_dir) = portable::data_dir() {
                         TargetKind::Folder {
                             path: data_dir.join("logs"),
@@ -1034,6 +1045,9 @@ pub fn run(cli_args: CliArgs) {
             // viewer is the sole consumer and only exists in debug mode). This also
             // honors the runtime `--debug` override applied to `settings` above.
             WEBVIEW_LOG_STREAMING.store(settings.debug_mode, Ordering::Relaxed);
+            // Gate content-level diagnostics (transcribed text) on the same
+            // runtime flag — see utils::redact_text.
+            utils::set_debug_mode_enabled(settings.debug_mode);
             let app_handle = app.handle().clone();
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 

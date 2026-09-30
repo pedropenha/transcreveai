@@ -86,11 +86,27 @@ pub struct ShortcutBinding {
     pub current_binding: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+#[derive(Serialize, Deserialize, Clone, Type)]
 pub struct LLMPrompt {
     pub id: String,
     pub name: String,
     pub prompt: String,
+}
+
+// The prompt body is user-authored instruction text — it must never land in
+// logs (e.g. the `Loaded settings` dump in `load_or_create_app_settings`), so
+// only its length is exposed (T-003 / FR-011-03).
+impl fmt::Debug for LLMPrompt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LLMPrompt")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field(
+                "prompt",
+                &format_args!("[REDACTED len={}]", self.prompt.len()),
+            )
+            .finish()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
@@ -661,8 +677,14 @@ fn default_debug_mode() -> bool {
     false
 }
 
+/// Per-environment default file log level (T-003): debug in dev builds, info
+/// in release. The user can still override it via the Log Level setting.
 fn default_log_level() -> LogLevel {
-    LogLevel::Debug
+    if cfg!(debug_assertions) {
+        LogLevel::Debug
+    } else {
+        LogLevel::Info
+    }
 }
 
 fn default_word_correction_threshold() -> f64 {
@@ -2060,5 +2082,39 @@ mod tests {
             settings.dictation_provider_id.as_deref(),
             Some("local_whisper")
         );
+    }
+
+    /// FR-011-03 / AC-011-03: the `Loaded settings` debug dump
+    /// (`load_or_create_app_settings` logs `{:?}` of the whole `AppSettings`)
+    /// must never contain API key values or post-processing prompt bodies.
+    /// Keys go through `SecretMap`'s redacted `Debug`; prompt text is replaced
+    /// by its length in `LLMPrompt`'s `Debug`.
+    #[test]
+    fn settings_debug_dump_redacts_secrets_and_prompts() {
+        let mut settings = get_default_settings();
+        settings
+            .post_process_api_keys
+            .insert("openai".into(), "sk-super-secret-value-123".into());
+        settings.post_process_prompts = vec![LLMPrompt {
+            id: "p1".into(),
+            name: "Resumo".into(),
+            prompt: "instrução confidencial do usuário".into(),
+        }];
+
+        let dump = format!("{settings:?}");
+
+        assert!(
+            !dump.contains("sk-super-secret-value-123"),
+            "API key leaked into settings debug dump"
+        );
+        assert!(
+            !dump.contains("instrução confidencial do usuário"),
+            "post-process prompt body leaked into settings debug dump"
+        );
+        // Redaction markers are present so the fields are still diagnosable.
+        assert!(dump.contains("[REDACTED]"));
+        assert!(dump.contains("[REDACTED len="));
+        // Non-sensitive metadata (ids, names) stays visible.
+        assert!(dump.contains("Resumo"));
     }
 }
