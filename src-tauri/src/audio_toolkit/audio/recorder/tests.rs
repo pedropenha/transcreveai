@@ -1,6 +1,7 @@
 use super::{
     is_microphone_access_denied, is_no_input_device_error, run_consumer, AudioRecorder,
-    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, VadConfig, VadPolicy,
+    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, FrameSubscriber, FrameTap,
+    VadConfig, VadPolicy,
 };
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use rtrb::RingBuffer;
@@ -55,11 +56,15 @@ fn resampler_frame_size_follows_the_vad_backend() {
         16_000,
         Some(vad),
         None,
-        Some(Arc::new(move |frame: &[f32]| {
-            observed.lock().unwrap().push(frame.len())
-        })),
+        vec![FrameSubscriber {
+            id: 1,
+            tap: FrameTap::Processed,
+            when_idle: false,
+            callback: Arc::new(move |frame: &[f32]| observed.lock().unwrap().push(frame.len())),
+        }],
         Instant::now(),
-    );
+    )
+    .expect("processor");
 
     let (ready_tx, _ready_rx) = mpsc::channel();
     processor.begin_recording(VadPolicy::Offline, ready_tx);
@@ -72,7 +77,8 @@ fn resampler_frame_size_follows_the_vad_backend() {
 
 #[test]
 fn idle_chunks_are_discarded_without_reaching_the_recording() {
-    let mut processor = CaptureProcessor::new(16_000, None, None, None, Instant::now());
+    let mut processor =
+        CaptureProcessor::new(16_000, None, None, Vec::new(), Instant::now()).expect("processor");
     processor.process_raw_chunk(&[1.0; 480], ChunkDisposition::Discard);
     assert!(processor.finish_recording().is_empty());
 }
@@ -84,7 +90,8 @@ fn shutdown_is_processed_without_audio_samples() {
     let (done_tx, done_rx) = mpsc::channel();
     let worker = thread::spawn(move || {
         run_consumer(
-            CaptureProcessor::new(48_000, None, None, None, Instant::now()),
+            CaptureProcessor::new(48_000, None, None, Vec::new(), Instant::now())
+                .expect("processor"),
             consumer,
             cmd_rx,
             Arc::new(CaptureTransportState::default()),
@@ -245,11 +252,17 @@ fn repeated_start_stop_cycles_resume_capture_without_leaking_samples() {
             16_000,
             None,
             None,
-            Some(Arc::new(move |frame: &[f32]| {
-                streamed_cb.lock().unwrap().extend_from_slice(frame)
-            })),
+            vec![FrameSubscriber {
+                id: 1,
+                tap: FrameTap::Processed,
+                when_idle: false,
+                callback: Arc::new(move |frame: &[f32]| {
+                    streamed_cb.lock().unwrap().extend_from_slice(frame)
+                }),
+            }],
             Instant::now(),
-        );
+        )
+        .expect("processor");
         run_consumer(
             processor,
             consumer,
@@ -356,7 +369,8 @@ fn missing_callback_at_stop_marks_stream_for_rebuild_and_returns_samples() {
     let worker_transport = Arc::clone(&transport);
     let worker = thread::spawn(move || {
         run_consumer(
-            CaptureProcessor::new(16_000, None, None, None, Instant::now()),
+            CaptureProcessor::new(16_000, None, None, Vec::new(), Instant::now())
+                .expect("processor"),
             consumer,
             cmd_rx,
             worker_transport,
@@ -377,6 +391,239 @@ fn missing_callback_at_stop_marks_stream_for_rebuild_and_returns_samples() {
     assert!(samples.is_empty());
     worker.join().expect("consumer exits after pause timeout");
     assert!(observed_error.load(Ordering::Acquire));
+}
+
+/// VAD that withholds every frame, to prove raw taps see audio that the
+/// post-VAD path gates out of a dictation session.
+struct SwallowVad;
+
+impl VoiceActivityDetector for SwallowVad {
+    fn push_frame<'a>(&'a mut self, _frame: &'a [f32]) -> anyhow::Result<VadFrame<'a>> {
+        Ok(VadFrame::Noise)
+    }
+
+    fn frame_samples(&self) -> usize {
+        480
+    }
+}
+
+fn subscriber(
+    id: u64,
+    tap: FrameTap,
+    when_idle: bool,
+    sink: Arc<Mutex<Vec<f32>>>,
+) -> FrameSubscriber {
+    FrameSubscriber {
+        id,
+        tap,
+        when_idle,
+        callback: Arc::new(move |frame: &[f32]| sink.lock().unwrap().extend_from_slice(frame)),
+    }
+}
+
+#[test]
+fn fan_out_delivers_each_frame_to_every_subscriber() {
+    let raw_a = Arc::new(Mutex::new(Vec::new()));
+    let raw_b = Arc::new(Mutex::new(Vec::new()));
+    let processed = Arc::new(Mutex::new(Vec::new()));
+    let mut processor = CaptureProcessor::new(
+        16_000,
+        None,
+        None,
+        vec![
+            subscriber(1, FrameTap::Raw, false, Arc::clone(&raw_a)),
+            subscriber(2, FrameTap::Raw, false, Arc::clone(&raw_b)),
+            subscriber(3, FrameTap::Processed, false, Arc::clone(&processed)),
+        ],
+        Instant::now(),
+    )
+    .expect("processor");
+
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Disabled, ready_tx);
+    processor.process_raw_chunk(&[0.5f32; 480], ChunkDisposition::Capture);
+
+    // A single stream feeds all consumers: the raw taps and every processed
+    // tap each received the whole frame.
+    assert_eq!(raw_a.lock().unwrap().as_slice(), &[0.5f32; 480]);
+    assert_eq!(raw_b.lock().unwrap().as_slice(), &[0.5f32; 480]);
+    assert_eq!(processed.lock().unwrap().as_slice(), &[0.5f32; 480]);
+}
+
+#[test]
+fn raw_tap_sees_frames_the_vad_withholds() {
+    let raw = Arc::new(Mutex::new(Vec::new()));
+    let processed = Arc::new(Mutex::new(Vec::new()));
+    let vad = VadConfig {
+        detector: Arc::new(Mutex::new(Box::new(SwallowVad))),
+        frame_samples: 480,
+        offline_hangover_frames: 0,
+        streaming_hangover_frames: 0,
+    };
+    let mut processor = CaptureProcessor::new(
+        16_000,
+        Some(vad),
+        None,
+        vec![
+            subscriber(1, FrameTap::Raw, false, Arc::clone(&raw)),
+            subscriber(2, FrameTap::Processed, false, Arc::clone(&processed)),
+        ],
+        Instant::now(),
+    )
+    .expect("processor");
+
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Offline, ready_tx);
+    processor.process_raw_chunk(&[0.5f32; 480], ChunkDisposition::Capture);
+    let samples = processor.finish_recording();
+
+    assert_eq!(raw.lock().unwrap().as_slice(), &[0.5f32; 480]);
+    assert!(processed.lock().unwrap().is_empty());
+    assert!(samples.is_empty());
+}
+
+#[test]
+fn monitor_subscriber_receives_frames_while_idle_and_recording_stays_clean() {
+    let (mut producer, consumer) = RingBuffer::<f32>::new(16_000);
+    let transport = Arc::new(CaptureTransportState::default());
+    let (cmd_tx, cmd_rx) = mpsc::channel();
+    let monitored = Arc::new(Mutex::new(Vec::new()));
+    let monitored_sink = Arc::clone(&monitored);
+    let worker_transport = Arc::clone(&transport);
+    let worker = thread::spawn(move || {
+        let processor = CaptureProcessor::new(
+            16_000,
+            None,
+            None,
+            vec![subscriber(1, FrameTap::Raw, true, monitored_sink)],
+            Instant::now(),
+        )
+        .expect("processor");
+        run_consumer(
+            processor,
+            consumer,
+            cmd_rx,
+            worker_transport,
+            Arc::new(AtomicBool::new(false)),
+        );
+    });
+
+    let wait_for_monitored = |min: usize| {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while monitored.lock().unwrap().len() < min {
+            assert!(
+                Instant::now() < deadline,
+                "idle frames never reached the monitor subscriber"
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+    };
+
+    // Idle audio flows to the subscriber without any recording session.
+    AudioRecorder::write_input_to_ring(&[0.5f32; 480], 1, None, &mut producer, &transport);
+    wait_for_monitored(480);
+
+    // A dictation started afterwards must not inherit the monitored audio:
+    // begin_recording resets the resampler, so the recording only contains
+    // what arrived after Cmd::Start.
+    let (ready_tx, ready_rx) = mpsc::channel();
+    cmd_tx
+        .send(Cmd::Start(VadPolicy::Disabled, Instant::now(), ready_tx))
+        .expect("start");
+    AudioRecorder::write_input_to_ring(&[0.75f32; 480], 1, None, &mut producer, &transport);
+    ready_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("capture ready");
+
+    let (reply_tx, reply_rx) = mpsc::channel();
+    cmd_tx.send(Cmd::Stop(reply_tx)).expect("stop");
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !transport.pause_requested.load(Ordering::Acquire) {
+        assert!(Instant::now() < deadline, "pause was not requested");
+        thread::sleep(Duration::from_millis(1));
+    }
+    AudioRecorder::write_input_to_ring(&[0.9f32], 1, None, &mut producer, &transport);
+    let samples = reply_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("stop reply");
+
+    assert!(
+        !samples.contains(&0.5),
+        "idle monitoring leaked into the recording"
+    );
+    assert!(samples.contains(&0.75));
+
+    cmd_tx.send(Cmd::Shutdown).expect("shutdown");
+    worker.join().expect("consumer worker");
+}
+
+#[test]
+fn subscribers_attach_and_detach_on_a_live_stream() {
+    let (mut producer, consumer) = RingBuffer::<f32>::new(16_000);
+    let transport = Arc::new(CaptureTransportState::default());
+    let (cmd_tx, cmd_rx) = mpsc::channel();
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let worker_transport = Arc::clone(&transport);
+    let worker = thread::spawn(move || {
+        let processor = CaptureProcessor::new(16_000, None, None, Vec::new(), Instant::now())
+            .expect("processor");
+        run_consumer(
+            processor,
+            consumer,
+            cmd_rx,
+            worker_transport,
+            Arc::new(AtomicBool::new(false)),
+        );
+    });
+
+    // Before subscribing, idle audio is discarded: nothing is observed even
+    // after pushing a full frame.
+    AudioRecorder::write_input_to_ring(&[0.1f32; 480], 1, None, &mut producer, &transport);
+    thread::sleep(Duration::from_millis(50));
+    assert!(observed.lock().unwrap().is_empty());
+
+    cmd_tx
+        .send(Cmd::AddSubscriber(subscriber(
+            7,
+            FrameTap::Raw,
+            true,
+            Arc::clone(&observed),
+        )))
+        .expect("add subscriber");
+    AudioRecorder::write_input_to_ring(&[0.5f32; 480], 1, None, &mut producer, &transport);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while observed.lock().unwrap().len() < 480 {
+        assert!(
+            Instant::now() < deadline,
+            "frames never reached the runtime subscriber"
+        );
+        thread::sleep(Duration::from_millis(2));
+    }
+
+    cmd_tx
+        .send(Cmd::RemoveSubscriber(7))
+        .expect("remove subscriber");
+    // Give the consumer a poll cycle to apply the removal, then push again.
+    thread::sleep(Duration::from_millis(50));
+    let observed_len = observed.lock().unwrap().len();
+    AudioRecorder::write_input_to_ring(&[0.25f32; 480], 1, None, &mut producer, &transport);
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        observed.lock().unwrap().len(),
+        observed_len,
+        "detached subscriber still received frames"
+    );
+
+    cmd_tx.send(Cmd::Shutdown).expect("shutdown");
+    worker.join().expect("consumer worker");
+}
+
+#[test]
+fn subscribe_requires_an_open_stream() {
+    let recorder = AudioRecorder::new().expect("recorder");
+    let result = recorder.subscribe(FrameTap::Raw, true, Arc::new(|_| {}));
+    assert!(result.is_err());
+    assert!(recorder.unsubscribe(1).is_err());
 }
 
 #[test]

@@ -99,17 +99,20 @@ const RecordingOverlay: React.FC = () => {
         setCaptureReady(true);
       });
 
-      const unlistenLevel = await listen<number[]>("mic-level", (event) => {
-        const newLevels = event.payload as number[];
-        // Exponential smoothing across the 16 buckets, then take the first N
-        // bars for the shared waveform.
-        const smoothed = smoothedLevelsRef.current.map((prev, i) => {
-          const target = newLevels[i] || 0;
-          return prev * 0.7 + target * 0.3;
-        });
-        smoothedLevelsRef.current = smoothed;
-        setLevels(smoothed.slice(0, WAVE_BARS));
-      });
+      const unlistenLevel = await listen<{ rms: number[] }>(
+        "audio://level",
+        (event) => {
+          const newLevels = event.payload.rms;
+          // Exponential smoothing across the 16 buckets, then take the first N
+          // bars for the shared waveform.
+          const smoothed = smoothedLevelsRef.current.map((prev, i) => {
+            const target = newLevels[i] || 0;
+            return prev * 0.7 + target * 0.3;
+          });
+          smoothedLevelsRef.current = smoothed;
+          setLevels(smoothed.slice(0, WAVE_BARS));
+        },
+      );
 
       const unlistenStream = await events.streamTextEvent.listen((event) => {
         setStreamText(event.payload);
