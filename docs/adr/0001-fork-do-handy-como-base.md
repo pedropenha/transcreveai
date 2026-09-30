@@ -10,7 +10,7 @@ A T-000 ([specs/tasks.md](../../specs/tasks.md)) pede a decisão entre fazer um 
 
 ### Avaliação dos 6 critérios
 
-**(a) Licença**: MIT. É obrigatório manter o aviso `Copyright (c) 2025 CJ Pais` no `LICENSE` e em cópias substanciais. O README proíbe usar a marca: *"forks … must use their own branding"*. Então o fork precisa trocar nome, ícones, logo, bundle identifier, endpoint do updater e `sponsor-images/`. O nome do produto é **Sussurro**.
+**(a) Licença**: MIT. É obrigatório manter o aviso `Copyright (c) 2025 CJ Pais` no `LICENSE` e em cópias substanciais. O README proíbe usar a marca: *"forks … must use their own branding"*. Então o fork precisa trocar nome, ícones, logo, bundle identifier, endpoint do updater e `sponsor-images/`. O nome do produto é **Transcreve.ai**.
 
 **(b) Saúde**: projeto muito ativo. Tem 32,5 mil estrelas e 3 mil forks. Nos últimos 90 dias foram 182 commits de 68 autores, e sai uma release por mês (v0.7.0 em jan/26 → v0.9.7 em set/26). Há 185 issues abertas, sendo 62 com label `bug` e 48 mencionando Windows. O CI tem `cargo test` (só Ubuntu), ESLint, Prettier, checagem de traduções, um smoke de Playwright e builds por plataforma. Riscos: **fator ônibus** (CJ Pais fez cerca de 95% dos commits) e **dependências via git** (forks de `rdev`, `vad-rs`, `rodio`, `hf-hub`, `tao`).
 
@@ -39,7 +39,7 @@ A T-000 ([specs/tasks.md](../../specs/tasks.md)) pede a decisão entre fazer um 
 
 ## Decision
 
-Fazemos **fork do Handy** (`29bd2c0`) como base, renomeado para **Sussurro**, em modo **divergente**. Mantemos um remote `upstream` e fazemos **cherry-pick seletivo** das correções nas áreas ainda compartilhadas (áudio, `paste_tx`, catálogo de modelos, bumps de transcribe-cpp/transcribe-rs, correções de Windows), revisando as releases do Handy uma vez por mês. As ECC rules valem integralmente para código **novo ou alterado**. Para o código herdado, uma tarefa de **baseline** (nova T-001a) mede cobertura, liga os gates de CI e registra as exceções. Um arquivo herdado com mais de 800 linhas é dividido quando for alterado, e a cobertura total sobe em catraca até ≥ 80%.
+Fazemos **fork do Handy** (`29bd2c0`) como base, renomeado para **Transcreve.ai**, em modo **divergente**. Mantemos um remote `upstream` e fazemos **cherry-pick seletivo** das correções nas áreas ainda compartilhadas (áudio, `paste_tx`, catálogo de modelos, bumps de transcribe-cpp/transcribe-rs, correções de Windows), revisando as releases do Handy uma vez por mês. As ECC rules valem integralmente para código **novo ou alterado**. Para o código herdado, uma tarefa de **baseline** (nova T-001a) mede cobertura, liga os gates de CI e registra as exceções. Um arquivo herdado com mais de 800 linhas é dividido quando for alterado, e a cobertura total sobe em catraca até ≥ 80%.
 
 **Exceção às rules aprovada** pelo dono do produto em 2026-09-30: para o código **herdado**, o mínimo de 80% de cobertura (`rules/common/testing.md`) é atingido em catraca e não antes das features. Nenhum PR pode reduzir a cobertura. Código novo ou alterado cumpre as rules integralmente.
 

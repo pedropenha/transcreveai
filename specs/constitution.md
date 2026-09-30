@@ -1,4 +1,4 @@
-# Constituição do Sussurro
+# Constituição do Transcreve.ai
 
 ## 0. Hierarquia de autoridade
 
@@ -30,7 +30,7 @@ Flow Bar e toasts são janelas não-ativáveis. O texto vai sempre para onde o c
 Latência é requisito de produto (metas em [plan.md](architecture/plan.md#8-orçamentos-de-desempenho)). Sempre há caminho degradado (texto sem limpeza se o LLM falhar; fallback se a nuvem falhar) e a fala do usuário nunca é perdida por erro.
 
 ### VI. Windows primeiro
-Plataforma inicial: Windows 11. macOS depois.
+O produto roda em Windows, macOS e Linux. O MVP (v0.1–v0.3) é entregue e validado primeiro no Windows 11; o suporte multiplataforma herdado do Handy não é removido, só deixa de ser validado até o port (T-084).
 
 ### VII. Consentimento em reuniões
 O app lembra o usuário de informar os participantes, nunca entra na chamada como bot e captura áudio só localmente.

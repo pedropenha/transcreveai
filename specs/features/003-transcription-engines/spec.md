@@ -75,7 +75,7 @@ Catálogo (`resources/catalog.json`) guarda para cada modelo: id, motor, URL de 
 - **AC-003-03** *Quando* colo uma chave inválida da OpenAI e clico em Testar, *então* vejo "Chave inválida" em ≤ 5 s e a chave não é salva até eu confirmar.
 - **AC-003-04** *Dado* OpenAI como principal e whisper local como fallback, *quando* a OpenAI retorna 503 duas vezes, *então* o texto é transcrito localmente e o histórico registra o provedor de fallback.
 - **AC-003-05** *Dado* 3 s de silêncio gravado, *então* nada é inserido e nenhum texto como "Legendas pela comunidade Amara.org" aparece.
-- **AC-003-06** *Dado* "Kubernetes" e "Sussurro" no dicionário, *quando* dito "suba o sussurro no kubernetes", *então* os termos saem com a grafia do dicionário em ≥ 90 % das fixtures.
+- **AC-003-06** *Dado* "Kubernetes" e "Transcreve.ai" no dicionário, *quando* dito "suba o transcreve ai no kubernetes", *então* os termos saem com a grafia do dicionário em ≥ 90 % das fixtures.
 - **AC-003-07** *Dado* uma gravação de 25 min enviada à OpenAI, *então* ela é dividida em blocos < 25 MB e o texto final está completo e em ordem.
 - **AC-003-08** *Dado* o download interrompido em 60 %, *quando* reabro o app e retomo, *então* o download continua de onde parou.
 

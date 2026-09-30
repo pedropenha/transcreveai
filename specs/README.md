@@ -1,6 +1,6 @@
-# Sussurro — Especificações (SDD)
+# Transcreve.ai — Especificações (SDD)
 
-> **Sussurro** é o nome provisório de um app de ditado por voz + notas de reunião que replica o comportamento do **Wispr Flow**, com transcrição **local** (whisper.cpp / Parakeet) ou via **API paga com chave própria** (OpenAI, Groq, Deepgram ou endpoint compatível com OpenAI).
+> **Transcreve.ai** é um app de ditado por voz + notas de reunião que replica o comportamento do **Wispr Flow**, com transcrição **local** (whisper.cpp / Parakeet) ou via **API paga com chave própria** (OpenAI, Groq, Deepgram ou endpoint compatível com OpenAI).
 
 ## Hierarquia
 

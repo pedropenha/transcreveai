@@ -1,4 +1,4 @@
-# Spec de Produto — Sussurro
+# Spec de Produto — Transcreve.ai
 
 ## 1. Visão
 
@@ -49,7 +49,7 @@ Escrever na velocidade da fala, em qualquer aplicativo, com privacidade. E nunca
 - Notetaker: mic + áudio do sistema, transcrição, resumo, exportação — [F009](../features/009-meeting-notetaker/spec.md)
 
 ### v1.0 — Polimento
-- Parakeet local, diarização, builds com GPU, assinatura de código, auto-update, macOS, acessibilidade completa.
+- Parakeet local, diarização, builds com GPU, assinatura de código, auto-update, macOS e Linux, acessibilidade completa.
 
 ### Fora de escopo (v1)
 - Qualquer funcionalidade que o Wispr Flow não tenha, exceto a transcrição local / com chave própria (constituição, princípios I e II).

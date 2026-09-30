@@ -3,8 +3,8 @@
 ## 1. Arquivos em disco
 
 ```
-%APPDATA%\Sussurro\
-├── sussurro.db                 # SQLite (WAL)
+%APPDATA%\br.com.creator4all.transcreve.ai\   # pasta do identifier (app_data_dir do Tauri)
+├── transcreve-ai.db            # SQLite (WAL)
 ├── settings.json               # configurações (sem segredos), schema versionado
 ├── models\
 │   ├── whisper\ggml-large-v3-turbo-q5_0.bin
@@ -17,7 +17,7 @@
 └── logs\sussurro-YYYY-MM-DD.log
 ```
 
-Chaves de API: **fora daqui**, no cofre do SO (entrada `Sussurro/provider/<provider_id>`).
+Chaves de API: **fora daqui**, no cofre do SO (entrada `Transcreve.ai/provider/<provider_id>`).
 
 ## 2. Esquema SQLite
 
@@ -76,7 +76,7 @@ CREATE VIRTUAL TABLE dictations_fts USING fts5(final_text, raw_text, content='di
 -- Dicionário
 CREATE TABLE dictionary_entries (
   id            TEXT PRIMARY KEY,
-  term          TEXT NOT NULL,                  -- forma correta (ex.: "Kubernetes", "Sussurro")
+  term          TEXT NOT NULL,                  -- forma correta (ex.: "Kubernetes", "Transcreve.ai")
   kind          TEXT NOT NULL CHECK (kind IN ('vocab','replacement')),
   match_text    TEXT,                           -- para 'replacement': o que o ASR costuma errar (ex.: "cuber netes")
   case_sensitive INTEGER NOT NULL DEFAULT 0,

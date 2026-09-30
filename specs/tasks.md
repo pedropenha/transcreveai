@@ -29,7 +29,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [x] **T-000** **Avaliar fork do Handy × começar do zero.** Resultado: **fork divergente** do Handy (commit `29bd2c0`) com cherry-pick seletivo das correções do upstream. A avaliação dos 6 critérios está no [ADR-0001](../docs/adr/0001-fork-do-handy-como-base.md). Foi feita só lendo o código (sem toolchain Rust na máquina), por isso a T-001 tem um portão de execução.
 - [ ] **T-001** **Fork + rebranding + portão no Windows.**
   - Criar o repositório a partir do Handy em `29bd2c0`, com remote `upstream`.
-  - Renomear para **Sussurro**: nome, `identifier` do bundle, ícones, logo, textos, `sponsor-images/`, endpoint e chave do updater. Manter o `LICENSE` MIT com o copyright do Handy e acrescentar o nosso.
+  - Renomear para **Transcreve.ai** (`identifier` `br.com.creator4all.transcreve.ai`; slug `transcreve-ai`; variáveis de ambiente `TRANSCREVE_*`): nome, ícones e logo (barras de som), textos, `sponsor-images/`. Updater: remover o endpoint e a chave do Handy e deixar o updater desligado até a T-049. Manter o `LICENSE` MIT com o copyright do Handy e acrescentar `Copyright (c) 2026 Creator4all`. O empacotamento Linux/macOS herdado (incluindo Nix) é mantido e renomeado, não removido.
   - Janela principal do Handy = `hub`; overlay `recording_overlay` = `flowbar`.
   - Instruções para agentes: o `CLAUDE.md` herdado aponta para o `AGENTS.md` do Handy. Reescrever o `CLAUDE.md` para apontar para `specs/` e para a hierarquia da [constituição](constitution.md) (ECC rules > specs). Do `AGENTS.md`, manter os comandos e a visão da arquitetura; remover o fluxo de PR/issues do repositório do Handy. Avaliar remover o `CRUSH.md`.
   - Bloquear push acidental para o Handy: `git remote set-url --push upstream no_push`.
@@ -45,7 +45,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
   - Saída: seção "Exceções herdadas" no ADR-0001 e a meta de catraca.
   - Depende de: T-001. — Refs: `rules/common/testing.md`, `rules/common/code-review.md`, `rules/rust/*`
 - [ ] **T-002** [P] **Estender** CI do Handy. Hoje: `cargo test` só no Ubuntu, ESLint, Prettier, checagem de traduções, smoke de Playwright e builds por plataforma. Acrescentar: job `windows-latest`, `clippy -D warnings`, cobertura (`cargo llvm-cov` + testes do frontend) com catraca sobre a baseline da T-001a, `cargo audit`, `cargo deny check`. Depende de: T-001a. — Refs: FR-011-26
-- [ ] **T-003** [P] **Adaptar** logging (`log` + `tauri-plugin-log`): auditar os logs herdados para garantir que não gravam texto transcrito, prompts nem chaves; configurar o caminho `%APPDATA%\Sussurro\logs`. — Refs: FR-011-03, AC-011-03
+- [ ] **T-003** [P] **Adaptar** logging (`log` + `tauri-plugin-log`): auditar os logs herdados para garantir que não gravam texto transcrito, prompts nem chaves; configurar o caminho `%LOCALAPPDATA%\br.com.creator4all.transcreve.ai\logs` (`app_log_dir` do Tauri). — Refs: FR-011-03, AC-011-03
 - [ ] **T-004** [P] **Adaptar** SQLite (`rusqlite` + `rusqlite_migration`, `managers/history.rs`): alinhar o schema ao [data-model](architecture/data-model.md) com migrações novas, sem perder o histórico; domínios novos com repositórios por trait. — Refs: [data-model](architecture/data-model.md)
 - [ ] **T-005** [P] **Adaptar** settings (`settings.rs`, `settings.json` via `tauri-plugin-store`) para o schema versionado do data-model; i18n: o Handy tem `pt` e mais 25 idiomas. Revisar para pt-BR e `en` e decidir quais locales manter (skill `i18n-sync`). — Refs: NFR-010-03
 - [ ] **T-006** [P] **Adaptar** IPC: `tauri-specta` já gera `src/bindings.ts`; alinhar comandos e erros ao envelope `ok/error` do contrato. — Refs: [contracts §5](architecture/contracts.md#5-ipc-tauri)
@@ -120,7 +120,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [ ] **T-081** [P] **Adaptar** whisper com Vulkan (herdado: `transcribe-cpp` com backends dinâmicos no x86_64, dispositivo `Auto` com fallback para CPU): verificar o fallback automático, o log e o rótulo na UI. — Refs: FR-003-10
 - [ ] **T-082** [P] Diarização da trilha `system` + deduplicação de eco. — Refs: FR-003-19, FR-009-11
 - [ ] **T-083** [P] Provedor Deepgram. — Refs: F003
-- [ ] **T-084** Port macOS.
+- [ ] **T-084** Port macOS e Linux (validar build, atalhos, colagem e overlay; o código herdado já compila nas duas plataformas).
 - [ ] **T-085** Auditoria de acessibilidade (`accessibility`) e latência (`latency-critical-systems`, `benchmark`).
 
 ---

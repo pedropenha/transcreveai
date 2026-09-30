@@ -47,7 +47,7 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
   1. Boas-vindas + idioma da interface e de ditado.
   2. **Microfone**: verifica permissão do Windows ("Permitir que apps da área de trabalho acessem o microfone"); se negada, botão que abre `ms-settings:privacy-microphone`; seleção de dispositivo com medidor.
   3. **Transcrição**: *Local* (mostra recomendação por hardware, baixa com progresso — dá para seguir enquanto baixa) **ou** *Nuvem* (escolhe provedor, cola chave, testa) — F003.
-  4. **Atalho**: mostra o padrão, permite trocar, e um campo de prática: "Segure `Ctrl+Win` e diga: *Olá, estou testando o Sussurro*" — sucesso quando o texto aparece no campo.
+  4. **Atalho**: mostra o padrão, permite trocar, e um campo de prática: "Segure `Ctrl+Win` e diga: *Olá, estou testando o Transcreve.ai*" — sucesso quando o texto aparece no campo.
   5. **Flow Bar**: animação mostrando hover e as 2 ações.
   6. (v0.3) **Reuniões**: liga/desliga detecção, explica consentimento.
 - **FR-010-17** Onboarding pode ser pulado e reaberto em Configurações → Ajuda.

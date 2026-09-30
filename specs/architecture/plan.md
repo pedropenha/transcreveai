@@ -2,7 +2,7 @@
 
 ## 1. Decisão de stack
 
-> **Base decidida: fork divergente do [Handy](https://github.com/cjpais/Handy)** (MIT, commit `29bd2c0`, v0.9.7+), renomeado para **Sussurro**. A decisão e a avaliação estão no [ADR-0001](../../docs/adr/0001-fork-do-handy-como-base.md). Segue `rules/common/patterns.md` ("Skeleton Projects: clone best match as foundation") e a skill `search-first`. A coluna "Crates" mostra o que vem do Handy (**herdado**) e o que precisa ser acrescentado (**novo**).
+> **Base decidida: fork divergente do [Handy](https://github.com/cjpais/Handy)** (MIT, commit `29bd2c0`, v0.9.7+), renomeado para **Transcreve.ai**. A decisão e a avaliação estão no [ADR-0001](../../docs/adr/0001-fork-do-handy-como-base.md). Segue `rules/common/patterns.md` ("Skeleton Projects: clone best match as foundation") e a skill `search-first`. A coluna "Crates" mostra o que vem do Handy (**herdado**) e o que precisa ser acrescentado (**novo**).
 
 | Camada | Escolha | Crates | Por quê |
 |---|---|---|---|
@@ -186,7 +186,7 @@ sequenceDiagram
 - Instalador **NSIS/MSI** via bundler do Tauri; **assinatura de código** antes de distribuir (hooks de teclado + SendInput sem assinatura geram alertas do SmartScreen/antivírus).
 - Auto-update assinado (`tauri-plugin-updater`), como o Wispr, com **endpoint e chave de assinatura próprios**: o fork não pode apontar para o updater do Handy.
 - whisper via `transcribe-cpp` (herdado): no Windows x86_64, backends dinâmicos (CPU por ISA + Vulkan, escolhidos em runtime); no ARM, CPU estático. O pipeline de build do Handy (`.github/workflows/build.yml`) já trata ONNX Runtime sem AVX2 e a assinatura das DLLs.
-- Logs com `log` + `tauri-plugin-log` (herdado; `rules/rust/security.md` aceita "`tracing` or `log`") em `%APPDATA%\Sussurro\logs`. **Texto transcrito e chaves nunca são logados** — são dados sensíveis do usuário (`rules/common/security.md`: "error messages don't leak sensitive data"). A T-003 audita os logs herdados.
+- Logs com `log` + `tauri-plugin-log` (herdado; `rules/rust/security.md` aceita "`tracing` or `log`") em `%LOCALAPPDATA%\br.com.creator4all.transcreve.ai\logs` (`app_log_dir` do Tauri). **Texto transcrito e chaves nunca são logados** — são dados sensíveis do usuário (`rules/common/security.md`: "error messages don't leak sensitive data"). A T-003 audita os logs herdados.
 - CI: os workflows do Handy são estendidos (T-002) para `windows-latest` com os checks exigidos pelas rules (ver §11). Hoje eles rodam `cargo test` só no Ubuntu e não rodam clippy, cobertura, `cargo audit` nem `cargo deny`.
 - **Atribuição e marca**: manter o `LICENSE` MIT com o copyright do Handy e acrescentar o nosso; trocar nome, ícones, logo, identificador do bundle e `sponsor-images/` (o README do Handy exige marca própria em forks).
 

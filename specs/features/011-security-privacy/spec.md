@@ -9,7 +9,7 @@ O app escuta o microfone, instala um hook global de teclado, injeta teclas, lê 
 ## Requisitos funcionais
 
 ### Segredos
-- **FR-011-01** Chaves de API são gravadas **somente** no cofre do SO — o "secret manager" de `rules/common/security.md` (Windows Credential Manager, entrada `Sussurro/provider/<provider_id>`; macOS Keychain). Variáveis de ambiente só em testes/CI.
+- **FR-011-01** Chaves de API são gravadas **somente** no cofre do SO — o "secret manager" de `rules/common/security.md` (Windows Credential Manager, entrada `Transcreve.ai/provider/<provider_id>`; macOS Keychain). Variáveis de ambiente só em testes/CI.
 - **FR-011-02** O frontend só **escreve** chaves (`secret_set`); não existe comando para lê-las. A UI mostra `••••` + últimos 4 caracteres (`secret_hint`).
 - **FR-011-03** Chaves nunca aparecem em: logs (redação automática de padrões `sk-…`, `gsk_…`, `Bearer …`, `x-api-key`), mensagens de erro, relatórios de crash, exportação de configurações, SQLite.
 - **FR-011-04** Excluir um provedor apaga a entrada do cofre.
@@ -61,7 +61,7 @@ O app escuta o microfone, instala um hook global de teclado, injeta teclas, lê 
 
 ## Critérios de aceitação
 
-- **AC-011-01** *Dado* uma chave salva, *quando* procuro o valor da chave em todo `%APPDATA%\Sussurro` (banco, logs, settings), *então* não encontro nenhuma ocorrência.
+- **AC-011-01** *Dado* uma chave salva, *quando* procuro o valor da chave em todo `%APPDATA%\br.com.creator4all.transcreve.ai` e `%LOCALAPPDATA%\br.com.creator4all.transcreve.ai` (banco, logs, settings), *então* não encontro nenhuma ocorrência.
 - **AC-011-02** *Dado* o modo offline e provedor em nuvem selecionado, *quando* dito, *então* nenhuma conexão sai da máquina (monitor de rede) e o ditado usa o local ou mostra erro claro.
 - **AC-011-03** *Dado* o modo debug desligado, *então* os logs não contêm texto transcrito, apenas metadados (tamanhos, latências, códigos de erro).
 - **AC-011-04** *Quando* uso "Apagar todos os dados", *então* banco, áudios, notas e entradas do cofre são removidos.
