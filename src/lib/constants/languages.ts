@@ -139,7 +139,7 @@ export const SELECTABLE_LANGUAGES: Language[] = LANGUAGES.filter(
   (language) => language.value !== CHINESE_LANGUAGE_CODE,
 );
 
-// Collapse a language tag to the canonical recognition intent Handy exposes in
+// Collapse a language tag to the canonical recognition intent the app exposes in
 // the UI. BCP-47 region/script subtags are dropped ("en-US" → "en",
 // "zh-Hant" → "zh"), and model-specific base-code equivalents are mapped to a
 // stable intent. Norwegian Bokmål (`nb`) maps to Norwegian (`no`), while

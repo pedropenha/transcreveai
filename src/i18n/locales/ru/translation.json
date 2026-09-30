@@ -101,7 +101,7 @@
     },
     "permissions": {
       "title": "Требуются разрешения",
-      "description": "Handy требуются некоторые разрешения для корректной работы.",
+      "description": "Transcreve.ai требуются некоторые разрешения для корректной работы.",
       "microphone": {
         "title": "Доступ к микрофону",
         "description": "Необходим для прослушивания вашего голоса для транскрипции."
@@ -175,13 +175,13 @@
       "searchPlaceholder": "Поиск моделей по имени…",
       "rescan": {
         "label": "Пересканировать",
-        "tooltip": "Пересканировать модели, добавленные в папку моделей или кэш Hugging Face вне Handy"
+        "tooltip": "Пересканировать модели, добавленные в папку моделей или кэш Hugging Face вне Transcreve.ai"
       }
     },
     "general": {
       "title": "Общие",
       "shortcut": {
-        "title": "Ярлыки Handy",
+        "title": "Ярлыки Transcreve.ai",
         "description": "Настройте сочетания клавиш для запуска записи речи в текст",
         "loading": "Загрузка ярлыков...",
         "none": "Ярлыки не настроены",
@@ -293,11 +293,11 @@
       },
       "autostart": {
         "label": "Запускать при старте",
-        "description": "Автоматически запускать Handy при входе в систему."
+        "description": "Автоматически запускать Transcreve.ai при входе в систему."
       },
       "showTrayIcon": {
         "label": "Показать значок в трее",
-        "description": "Отображать значок Handy в системном трее."
+        "description": "Отображать значок Transcreve.ai в системном трее."
       },
       "overlay": {
         "style": {
@@ -493,8 +493,8 @@
       },
       "updateChecks": {
         "label": "Проверять наличие обновлений",
-        "description": "Автоматически проверять наличие новых версий Handy",
-        "lockedDescription": "Отключено системной конфигурацией (HANDY_DISABLE_UPDATER)"
+        "description": "Автоматически проверять наличие новых версий Transcreve.ai",
+        "lockedDescription": "Отключено системной конфигурацией (TRANSCREVE_DISABLE_UPDATER)"
       },
       "soundTheme": {
         "label": "Звуковая тема",
@@ -571,7 +571,7 @@
       },
       "keyboardDiagnostic": {
         "title": "Диагностика клавиатуры",
-        "description": "Проверяет, доходят ли события клавиатуры до Handy. Записывается только количество событий — никогда то, какие клавиши вы нажимаете.",
+        "description": "Проверяет, доходят ли события клавиатуры до Transcreve.ai. Записывается только количество событий — никогда то, какие клавиши вы нажимаете.",
         "run": "Запустить 10-секундную диагностику",
         "running": "Прослушивание… нажмите своё сочетание клавиш несколько раз (например, Option+Space)",
         "secureInputLabel": "Secure Input",
@@ -585,7 +585,7 @@
         "mouse": "Мышь",
         "verdictBlocked": "Secure Input блокирует события клавиш — сочетания с обычной клавишей не смогут работать, пока это не будет устранено.",
         "verdictSuspicious": "События модификаторов приходят, а события клавиш — нет: что-то подавляет клавиши, хотя Secure Input отмечен как выключенный. Пожалуйста, сообщите об этом на GitHub.",
-        "verdictOk": "События клавиш доходят до Handy нормально.",
+        "verdictOk": "События клавиш доходят до Transcreve.ai нормально.",
         "verdictNoEvents": "События не зафиксированы — вы нажимали клавиши во время теста?",
         "failed": "Диагностика не удалась: {{error}}"
       },
@@ -608,33 +608,28 @@
       "title": "О программе",
       "version": {
         "title": "Версия",
-        "description": "Текущая версия Handy"
+        "description": "Текущая версия Transcreve.ai"
       },
       "appDataDirectory": {
         "title": "Каталог данных приложения",
-        "description": "Место, где Handy хранит свои данные"
-      },
-      "sourceCode": {
-        "title": "Исходный код",
-        "description": "Просмотреть исходный код и внести свой вклад",
-        "button": "Посмотреть на GitHub"
-      },
-      "supportDevelopment": {
-        "title": "Поддержка развития",
-        "description": "Помогите нам продолжать развитие Handy",
-        "button": "Поддержать"
+        "description": "Место, где Transcreve.ai хранит свои данные"
       },
       "acknowledgments": {
         "title": "Благодарности",
         "ggml": {
           "title": "ggml",
           "description": "Высокопроизводительная модель автоматического распознавания речи OpenAI Whisper",
-          "details": "Handy использует ggml для быстрого локального преобразования речи в текст. Спасибо великолепной работе Георгия Герганова и участников."
+          "details": "Transcreve.ai использует ggml для быстрого локального преобразования речи в текст. Спасибо великолепной работе Георгия Герганова и участников."
+        },
+        "handy": {
+          "title": "Handy",
+          "description": "Open-source speech-to-text app this project is built on",
+          "details": "Transcreve.ai is a fork of Handy by CJ Pais, released under the MIT license. Thanks to CJ and the Handy contributors."
         }
       },
       "whatsNewUpdates": {
         "label": "Показывать новинки",
-        "description": "Показывать примечания к выпуску после обновлений Handy"
+        "description": "Показывать примечания к выпуску после обновлений Transcreve.ai"
       }
     }
   },
@@ -663,7 +658,7 @@
     "noOptionsFound": "Вариантов не найдено"
   },
   "accessibility": {
-    "permissionsDescription": "Handy необходимы разрешения на доступ для ввода расшифрованного текста.",
+    "permissionsDescription": "Transcreve.ai необходимы разрешения на доступ для ввода расшифрованного текста.",
     "openSettings": "Открыть настройки системы"
   },
   "errors": {
@@ -686,11 +681,11 @@
   },
   "appLanguage": {
     "title": "Язык приложения",
-    "description": "Изменить язык интерфейса Handy"
+    "description": "Изменить язык интерфейса Transcreve.ai"
   },
   "theme": {
     "title": "Тема приложения",
-    "description": "Выберите, следует ли Handy системной теме или остаётся светлым либо тёмным",
+    "description": "Выберите, следует ли Transcreve.ai системной теме или остаётся светлым либо тёмным",
     "options": {
       "system": "Системная",
       "light": "Светлая",
@@ -702,7 +697,7 @@
     "processing": "Обработка..."
   },
   "whatsNew": {
-    "title": "Новое в Handy v{{version}}"
+    "title": "Новое в Transcreve.ai v{{version}}"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} может блокировать 1 сочетание клавиш",

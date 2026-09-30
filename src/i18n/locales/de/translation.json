@@ -101,7 +101,7 @@
     },
     "permissions": {
       "title": "Berechtigungen erforderlich",
-      "description": "Handy benötigt einige Berechtigungen, um richtig zu funktionieren.",
+      "description": "Transcreve.ai benötigt einige Berechtigungen, um richtig zu funktionieren.",
       "microphone": {
         "title": "Mikrofonzugriff",
         "description": "Erforderlich, um deine Stimme für die Transkription zu hören."
@@ -175,13 +175,13 @@
       "searchPlaceholder": "Modelle nach Namen suchen…",
       "rescan": {
         "label": "Neu scannen",
-        "tooltip": "Erneut nach Modellen scannen, die außerhalb von Handy zum Modellordner oder Hugging-Face-Cache hinzugefügt wurden"
+        "tooltip": "Erneut nach Modellen scannen, die außerhalb von Transcreve.ai zum Modellordner oder Hugging-Face-Cache hinzugefügt wurden"
       }
     },
     "general": {
       "title": "Allgemein",
       "shortcut": {
-        "title": "Handy-Tastenkürzel",
+        "title": "Transcreve.ai-Tastenkürzel",
         "description": "Tastenkürzel für die Sprachaufnahme konfigurieren",
         "loading": "Tastenkürzel werden geladen...",
         "none": "Keine Tastenkürzel konfiguriert",
@@ -293,11 +293,11 @@
       },
       "autostart": {
         "label": "Beim Start ausführen",
-        "description": "Handy automatisch beim Anmelden starten."
+        "description": "Transcreve.ai automatisch beim Anmelden starten."
       },
       "showTrayIcon": {
         "label": "Taskleistensymbol anzeigen",
-        "description": "Das Handy-Symbol in der Taskleiste anzeigen."
+        "description": "Das Transcreve.ai-Symbol in der Taskleiste anzeigen."
       },
       "overlay": {
         "style": {
@@ -493,8 +493,8 @@
       },
       "updateChecks": {
         "label": "Nach Updates suchen",
-        "description": "Automatisch nach neuen Versionen von Handy suchen",
-        "lockedDescription": "Durch Systemkonfiguration deaktiviert (HANDY_DISABLE_UPDATER)"
+        "description": "Automatisch nach neuen Versionen von Transcreve.ai suchen",
+        "lockedDescription": "Durch Systemkonfiguration deaktiviert (TRANSCREVE_DISABLE_UPDATER)"
       },
       "soundTheme": {
         "label": "Sound-Thema",
@@ -571,7 +571,7 @@
       },
       "keyboardDiagnostic": {
         "title": "Tastatur-Diagnose",
-        "description": "Prüft, ob Tastaturereignisse Handy erreichen. Es wird nur die Anzahl der Ereignisse erfasst — niemals, welche Tasten du drückst.",
+        "description": "Prüft, ob Tastaturereignisse Transcreve.ai erreichen. Es wird nur die Anzahl der Ereignisse erfasst — niemals, welche Tasten du drückst.",
         "run": "10-Sekunden-Diagnose starten",
         "running": "Lauscht… drücke dein Tastenkürzel ein paar Mal (z. B. Option+Space)",
         "secureInputLabel": "Secure Input",
@@ -585,7 +585,7 @@
         "mouse": "Maus",
         "verdictBlocked": "Secure Input blockiert Tastenereignisse — Tastenkürzel mit einer normalen Taste können erst wieder funktionieren, wenn das behoben ist.",
         "verdictSuspicious": "Es kamen Modifikator-Ereignisse an, aber keine Tastenereignisse — irgendetwas unterdrückt Tasten, obwohl Secure Input als deaktiviert gemeldet wird. Bitte melde das auf GitHub.",
-        "verdictOk": "Tastenereignisse erreichen Handy normal.",
+        "verdictOk": "Tastenereignisse erreichen Transcreve.ai normal.",
         "verdictNoEvents": "Keine Ereignisse erfasst — hast du während des Tests Tasten gedrückt?",
         "failed": "Diagnose fehlgeschlagen: {{error}}"
       },
@@ -608,33 +608,28 @@
       "title": "Info",
       "version": {
         "title": "Version",
-        "description": "Aktuelle Version von Handy"
+        "description": "Aktuelle Version von Transcreve.ai"
       },
       "appDataDirectory": {
         "title": "App-Datenverzeichnis",
-        "description": "Speicherort der Handy-Daten"
-      },
-      "sourceCode": {
-        "title": "Quellcode",
-        "description": "Quellcode ansehen und beitragen",
-        "button": "Auf GitHub ansehen"
-      },
-      "supportDevelopment": {
-        "title": "Entwicklung unterstützen",
-        "description": "Hilf uns, Handy weiterzuentwickeln",
-        "button": "Spenden"
+        "description": "Speicherort der Transcreve.ai-Daten"
       },
       "acknowledgments": {
         "title": "Danksagungen",
         "ggml": {
           "title": "ggml",
           "description": "Hochleistungs-Inferenz des Whisper-Spracherkennungsmodells von OpenAI",
-          "details": "Handy verwendet ggml für schnelle, lokale Sprach-zu-Text-Verarbeitung. Dank an Georgi Gerganov und die Mitwirkenden für ihre großartige Arbeit."
+          "details": "Transcreve.ai verwendet ggml für schnelle, lokale Sprach-zu-Text-Verarbeitung. Dank an Georgi Gerganov und die Mitwirkenden für ihre großartige Arbeit."
+        },
+        "handy": {
+          "title": "Handy",
+          "description": "Open-source speech-to-text app this project is built on",
+          "details": "Transcreve.ai is a fork of Handy by CJ Pais, released under the MIT license. Thanks to CJ and the Handy contributors."
         }
       },
       "whatsNewUpdates": {
         "label": "Neuerungen anzeigen",
-        "description": "Versionshinweise nach Handy-Updates anzeigen"
+        "description": "Versionshinweise nach Transcreve.ai-Updates anzeigen"
       }
     }
   },
@@ -663,7 +658,7 @@
     "noOptionsFound": "Keine Optionen gefunden"
   },
   "accessibility": {
-    "permissionsDescription": "Handy benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",
+    "permissionsDescription": "Transcreve.ai benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",
     "openSettings": "Systemeinstellungen öffnen"
   },
   "errors": {
@@ -686,11 +681,11 @@
   },
   "appLanguage": {
     "title": "Anwendungssprache",
-    "description": "Sprache der Handy-Oberfläche ändern"
+    "description": "Sprache der Transcreve.ai-Oberfläche ändern"
   },
   "theme": {
     "title": "Anwendungsdesign",
-    "description": "Wählen Sie, ob Handy dem Systemthema folgt oder hell bzw. dunkel bleibt",
+    "description": "Wählen Sie, ob Transcreve.ai dem Systemthema folgt oder hell bzw. dunkel bleibt",
     "options": {
       "system": "System",
       "light": "Hell",
@@ -702,7 +697,7 @@
     "processing": "Verarbeite..."
   },
   "whatsNew": {
-    "title": "Neu in Handy v{{version}}"
+    "title": "Neu in Transcreve.ai v{{version}}"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} blockiert möglicherweise 1 Tastenkürzel",

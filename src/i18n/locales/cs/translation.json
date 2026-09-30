@@ -101,7 +101,7 @@
     },
     "permissions": {
       "title": "Vyžadována oprávnění",
-      "description": "Handy potřebuje několik oprávnění pro správné fungování.",
+      "description": "Transcreve.ai potřebuje několik oprávnění pro správné fungování.",
       "microphone": {
         "title": "Přístup k mikrofonu",
         "description": "Potřebný pro zachycení vašeho hlasu k přepisu."
@@ -175,13 +175,13 @@
       "searchPlaceholder": "Hledat modely podle názvu…",
       "rescan": {
         "label": "Znovu prohledat",
-        "tooltip": "Znovu prohledat modely přidané do složky modelů nebo mezipaměti Hugging Face mimo Handy"
+        "tooltip": "Znovu prohledat modely přidané do složky modelů nebo mezipaměti Hugging Face mimo Transcreve.ai"
       }
     },
     "general": {
       "title": "Obecné",
       "shortcut": {
-        "title": "Zkratky Handy",
+        "title": "Zkratky Transcreve.ai",
         "description": "Nastavte klávesové zkratky pro spuštění nahrávání řeči na text",
         "loading": "Načítám zkratky...",
         "none": "Žádné zkratky nejsou nastavené",
@@ -293,11 +293,11 @@
       },
       "autostart": {
         "label": "Spouštět při startu",
-        "description": "Automaticky spustit Handy po přihlášení do počítače."
+        "description": "Automaticky spustit Transcreve.ai po přihlášení do počítače."
       },
       "showTrayIcon": {
         "label": "Zobrazit ikonu v systémové liště",
-        "description": "Zobrazit ikonu Handy v systémové liště."
+        "description": "Zobrazit ikonu Transcreve.ai v systémové liště."
       },
       "overlay": {
         "style": {
@@ -493,8 +493,8 @@
       },
       "updateChecks": {
         "label": "Kontrolovat aktualizace",
-        "description": "Automaticky kontrolovat nové verze Handy",
-        "lockedDescription": "Zakázáno systémovou konfigurací (HANDY_DISABLE_UPDATER)"
+        "description": "Automaticky kontrolovat nové verze Transcreve.ai",
+        "lockedDescription": "Zakázáno systémovou konfigurací (TRANSCREVE_DISABLE_UPDATER)"
       },
       "soundTheme": {
         "label": "Zvukový motiv",
@@ -571,7 +571,7 @@
       },
       "keyboardDiagnostic": {
         "title": "Diagnostika klávesnice",
-        "description": "Ověří, zda události klávesnice dorazí do Handy. Zaznamenává se pouze počet událostí — nikdy to, které klávesy stisknete.",
+        "description": "Ověří, zda události klávesnice dorazí do Transcreve.ai. Zaznamenává se pouze počet událostí — nikdy to, které klávesy stisknete.",
         "run": "Spustit 10s diagnostiku",
         "running": "Naslouchání… několikrát stiskněte svou zkratku (např. Option+Space)",
         "secureInputLabel": "Secure Input",
@@ -585,7 +585,7 @@
         "mouse": "Myš",
         "verdictBlocked": "Secure Input blokuje události kláves — zkratky obsahující běžnou klávesu nemohou fungovat, dokud se to nevyřeší.",
         "verdictSuspicious": "Dorazily události modifikátorů, ale žádné události kláves — něco klávesy potlačuje, přestože Secure Input hlásí, že je vypnutý. Nahlaste to prosím na GitHubu.",
-        "verdictOk": "Události kláves dorazí do Handy normálně.",
+        "verdictOk": "Události kláves dorazí do Transcreve.ai normálně.",
         "verdictNoEvents": "Nebyly zachyceny žádné události — stiskli jste během testu nějaké klávesy?",
         "failed": "Diagnostika selhala: {{error}}"
       },
@@ -608,33 +608,28 @@
       "title": "O aplikaci",
       "version": {
         "title": "Verze",
-        "description": "Aktuální verze Handy"
+        "description": "Aktuální verze Transcreve.ai"
       },
       "appDataDirectory": {
         "title": "Adresář dat aplikace",
-        "description": "Umístění, kde Handy ukládá data"
-      },
-      "sourceCode": {
-        "title": "Zdrojový kód",
-        "description": "Zobrazit zdrojový kód a přispět",
-        "button": "Zobrazit na GitHubu"
-      },
-      "supportDevelopment": {
-        "title": "Podpořte vývoj",
-        "description": "Pomozte nám pokračovat ve vývoji Handy",
-        "button": "Přispět"
+        "description": "Umístění, kde Transcreve.ai ukládá data"
       },
       "acknowledgments": {
         "title": "Poděkování",
         "ggml": {
           "title": "ggml",
           "description": "Vysoce výkonné inferenční zpracování modelu automatického rozpoznávání řeči Whisper od OpenAI",
-          "details": "Handy používá ggml pro rychlé lokální zpracování řeči na text. Díky skvělé práci Georgiho Gerganova a přispěvatelů."
+          "details": "Transcreve.ai používá ggml pro rychlé lokální zpracování řeči na text. Díky skvělé práci Georgiho Gerganova a přispěvatelů."
+        },
+        "handy": {
+          "title": "Handy",
+          "description": "Open-source speech-to-text app this project is built on",
+          "details": "Transcreve.ai is a fork of Handy by CJ Pais, released under the MIT license. Thanks to CJ and the Handy contributors."
         }
       },
       "whatsNewUpdates": {
         "label": "Zobrazovat novinky",
-        "description": "Zobrazovat poznámky k vydání po aktualizacích Handy"
+        "description": "Zobrazovat poznámky k vydání po aktualizacích Transcreve.ai"
       }
     }
   },
@@ -663,7 +658,7 @@
     "noOptionsFound": "Nenalezeny žádné možnosti"
   },
   "accessibility": {
-    "permissionsDescription": "Handy potřebuje oprávnění usnadnění přístupu, aby mohlo psát přepsaný text.",
+    "permissionsDescription": "Transcreve.ai potřebuje oprávnění usnadnění přístupu, aby mohlo psát přepsaný text.",
     "openSettings": "Otevřít Nastavení systému"
   },
   "errors": {
@@ -686,11 +681,11 @@
   },
   "appLanguage": {
     "title": "Jazyk aplikace",
-    "description": "Změňte jazyk rozhraní Handy"
+    "description": "Změňte jazyk rozhraní Transcreve.ai"
   },
   "theme": {
     "title": "Motiv aplikace",
-    "description": "Zvolte, zda má Handy sledovat motiv systému, nebo zůstat světlý či tmavý",
+    "description": "Zvolte, zda má Transcreve.ai sledovat motiv systému, nebo zůstat světlý či tmavý",
     "options": {
       "system": "Systém",
       "light": "Světlý",
@@ -702,7 +697,7 @@
     "processing": "Zpracovávám..."
   },
   "whatsNew": {
-    "title": "Novinky v Handy v{{version}}"
+    "title": "Novinky v Transcreve.ai v{{version}}"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} může blokovat 1 zkratku",
