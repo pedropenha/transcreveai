@@ -1,6 +1,6 @@
 # F009 — Notetaker de reuniões
 
-**Status**: Draft · **Release**: v0.3 · **Depende de**: F003, F008, F007 (editor), LlmProvider
+**Status**: Draft · **Release**: v1 · **Depende de**: F003, F008, LlmProvider (T-050, BYOK) — o editor de "Minhas notas" é um Markdown embutido na janela da reunião; o Scratchpad completo (F007) é v1.1+
 
 ## Contexto
 
@@ -37,11 +37,11 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
 
 - **FR-009-12** Cabeçalho: título editável (padrão "<App> · <data hora>"), app, cronômetro, status, Pausar/Parar.
 - **FR-009-13** Abas:
-  - **Minhas notas** — editor Markdown (mesmo da F007), autosave; é o foco padrão.
+  - **Minhas notas** — editor Markdown com autosave; é o foco padrão. Na v1 é um editor embutido nesta janela (o Scratchpad da F007 é v1.1+).
   - **Transcrição** — segmentos com horário e falante: `Você` (trilha mic), `Outros` ou `Falante N` (trilha system, após diarização), marcadores de ditado/lacuna.
   - **Resumo** — disponível após o processamento; editável.
 - **FR-009-14** Fechar a janela **não** para a gravação; a Flow Bar/bandeja reabre a janela.
-- **FR-009-15** Transcrição ao vivo (configurável, padrão ligada): cada trilha é segmentada por VAD (blocos ≤ 30 s) e enviada ao provedor de reuniões; atraso alvo ≤ 10 s. Com a opção desligada, transcreve só ao final. Se o provedor for nuvem e estiver offline, os blocos entram em fila.
+- **FR-009-15** Transcrição ao vivo (configurável, padrão ligada): cada trilha é segmentada por VAD (blocos ≤ 30 s) e enviada ao provedor de reuniões; atraso alvo ≤ 10 s. Com a opção desligada, transcreve só ao final. Na v1 o provedor é sempre local; se o modelo estiver ocupado/indisponível, os blocos entram em fila.
 
 ### Pós-processamento
 
@@ -71,7 +71,7 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
 - **FR-009-18** Transcrição maior que o orçamento de contexto do modelo → map-reduce (resumos parciais por blocos de ~20 min e consolidação).
 - **FR-009-19** "Minhas notas" **nunca** são reescritas pelo resumo; editar o resumo não altera as notas.
 - **FR-009-20** "Regenerar resumo" (ex.: com outro provedor). P2: templates personalizados ("1:1", "Entrevista", "Daily").
-- **FR-009-21** Sem LLM configurado → a reunião fica `ready` só com transcrição e notas, com aviso para configurar resumo.
+- **FR-009-21** Sem chave de LLM configurada (BYOK, F011/T-016) → a reunião fica `ready` só com transcrição e notas, com aviso para configurar o resumo. Transcrição e notas nunca dependem do LLM.
 - **FR-009-22** Falha no processamento → `error` com "Tentar novamente"; áudio preservado.
 
 ### Exportação e busca
@@ -84,7 +84,7 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
 ## Requisitos não funcionais
 
 - **NFR-009-01** Uso de CPU durante gravação sem transcrição ao vivo ≤ 3 %.
-- **NFR-009-02** Reunião de 30 min pronta (transcrição + resumo) ≤ 2 min com nuvem; ≤ 6 min local (GPU).
+- **NFR-009-02** Reunião de 30 min pronta (transcrição local + resumo) ≤ 2 min com LLM em nuvem (BYOK); ≤ 6 min com LLM local.
 - **NFR-009-03** Perda máxima de áudio em caso de crash: 60 s.
 - **NFR-009-04** Disco: ~1,9 MB/min por trilha (WAV 16 kHz mono 16-bit); P1: FLAC (~50 %).
 

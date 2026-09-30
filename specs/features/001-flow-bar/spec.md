@@ -1,6 +1,6 @@
 # F001 — Flow Bar
 
-**Status**: Draft · **Release**: MVP · **Depende de**: F002 (sessão), F009 (botão de reunião, v0.3)
+**Status**: Draft · **Release**: v1 · **Depende de**: F002 (sessão), F009 (botão de reunião)
 
 ## Contexto
 
@@ -27,18 +27,18 @@ Ponto de entrada visual sempre presente, independente do app em uso. Em repouso 
 | `processing`               | Três pontos pulsando ou shimmer                                                                                                                         | 64 × 24 px     |
 | `done`                     | ✓ breve (600 ms), volta a `idle`                                                                                                                        | 48 × 24 px     |
 | `error`                    | Contorno vermelho + ícone ⚠; hover mostra mensagem curta; clique abre detalhes/"Tentar novamente"                                                      | 64 × 24 px     |
-| `meeting_recording` (v0.3) | Ponto vermelho pulsando + cronômetro `12:34` ao lado da pílula; clique abre a janela da reunião                                                         | 96 × 24 px     |
+| `meeting_recording`        | Ponto vermelho pulsando + cronômetro `12:34` ao lado da pílula; clique abre a janela da reunião                                                         | 96 × 24 px     |
 
 Os tamanhos aproximam o Wispr. Cores, tipografia, raios e animações saem da direção de design (tarefa T-008), feita conforme `rules/web/design-quality.md` usando os prints do Wispr como referência.
 
 - **FR-001-01** A barra aparece por padrão centralizada horizontalmente na borda inferior da **área de trabalho** do monitor (acima da barra de tarefas), com margem de 8 px.
 - **FR-001-02** Ao entrar com o mouse (atraso 120 ms), anima de `idle` para `hover` em ≤ 150 ms (ease-out). Ao sair (atraso 400 ms), volta.
 - **FR-001-03** Clique em 🎤 inicia uma sessão de ditado **mãos-livres**; novo clique (ou ■) encerra e insere. O texto vai para a janela que estava em foco antes do clique.
-- **FR-001-04** Clique em ◉ inicia uma sessão de Notetaker (F009), como no Wispr. Antes da v0.3, o botão inicia uma **nota por voz** (F007) para o hover sempre mostrar 2 ações.
+- **FR-001-04** Clique em ◉ inicia uma sessão de Notetaker (F009), como no Wispr.
 - **FR-001-05** Durante `recording`, as barras refletem o RMS do microfone recebido via `audio://level` (30 Hz), com suavização.
 - **FR-001-06** O botão ✕ cancela a sessão (descarta áudio); ■ para e processa.
 - **FR-001-07** Clique direito abre menu nativo:
-  - Ocultar por 1 hora · Ocultar até reiniciar o app
+  - Ocultar por 15/30/60 min (soneca) · Ocultar até reiniciar o app
   - Microfone ▸ (lista de dispositivos, marcado o atual)
   - Idioma ▸ (Automático, Português, Inglês, …)
   - Colar última transcrição
@@ -48,7 +48,7 @@ Os tamanhos aproximam o Wispr. Cores, tipografia, raios e animações saem da di
 - **FR-001-10** Visibilidade (configuração): _Sempre_ · _Só durante gravação_ · _Nunca_ (atalhos continuam funcionando; feedback via ícone da bandeja).
 - **FR-001-11** Com "Ocultar em tela cheia" (padrão ligado), a barra some quando a janela em primeiro plano cobre o monitor inteiro (jogos, apresentações, vídeo), exceto se uma gravação estiver ativa.
 - **FR-001-12** Tema segue o Windows (claro/escuro) e respeita "Efeitos de animação" desligado (sem animações, só troca de estado).
-- **FR-001-13** Sons de início/fim de gravação (curtos, suaves), desativáveis.
+- **FR-001-13** Sons de início/fim de gravação (curtos, suaves), **ligados por padrão**, desativáveis.
 - **FR-001-14** O slot acima da barra é usado para **toasts** (F008) sem sobrepor a barra.
 
 ## Requisitos não funcionais
@@ -66,9 +66,9 @@ Os tamanhos aproximam o Wispr. Cores, tipografia, raios e animações saem da di
 - **AC-001-03** _Dado_ o mouse sobre a barra, _então_ aparecem exatamente 2 botões e o tooltip do botão sob o cursor mostra o atalho configurado atualmente.
 - **AC-001-04** _Dado_ que arrastei a barra para a borda direita, _quando_ reinicio o app, _então_ ela reaparece na borda direita.
 - **AC-001-05** _Dado_ um vídeo em tela cheia no navegador, _então_ a barra fica oculta; _quando_ inicio um ditado por atalho, _então_ ela aparece durante a gravação.
-- **AC-001-06** _Dado_ "Ocultar por 1 hora", _então_ a barra some e reaparece após 60 min ou ao escolher "Mostrar Flow Bar" na bandeja.
+- **AC-001-06** _Dado_ "Ocultar por 60 min", _então_ a barra some e reaparece após 60 min ou ao escolher "Mostrar Flow Bar" na bandeja; o mesmo vale para 15 e 30 min.
 - **AC-001-07** _Dado_ uma gravação com o microfone mudo, _então_ as barras ficam planas; ao falar, variam visivelmente.
-- **AC-001-08** _Dado_ um erro de rede sem fallback, _então_ a barra entra em `error`, o hover mostra "Sem conexão com <provedor>" e o clique oferece "Tentar novamente".
+- **AC-001-08** _Dado_ um erro de transcrição (ex.: modelo ausente), _então_ a barra entra em `error`, o hover mostra a causa e o clique oferece "Tentar novamente".
 
 ## Casos de borda
 

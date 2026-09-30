@@ -17,11 +17,11 @@ O texto final precisa aparecer onde o cursor está, em qualquer app (nativo, Ele
 
 | Método               | Como                                                                                                           | Quando                                                            |
 | -------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `paste` (padrão)     | Salva clipboard → escreve texto → `Ctrl+V` via `SendInput` → restaura clipboard                                | Quase todos os apps; 1 operação de desfazer.                      |
+| `paste`              | Salva clipboard → escreve texto → `Ctrl+V` via `SendInput` → restaura clipboard                                | Quase todos os apps; 1 operação de desfazer.                      |
 | `paste_shift_insert` | Igual, com `Shift+Insert`                                                                                      | Terminais legados / apps onde `Ctrl+V` tem outro significado.     |
 | `type`               | `SendInput` com `KEYEVENTF_UNICODE` caractere a caractere                                                      | Apps que bloqueiam colar; RDP/Citrix sem clipboard compartilhado. |
 | `clipboard_only`     | Só copia e avisa "Texto copiado — cole com Ctrl+V"                                                             | Alvo não alcançável (elevado, tela segura).                       |
-| `auto`               | `paste`, trocando para `type` em exes conhecidos (`mstsc.exe`, `wfica32.exe`, `vmconnect.exe`, `CDViewer.exe`) | Padrão dos perfis.                                                |
+| `auto`               | `paste`, trocando para `type` em exes conhecidos (`mstsc.exe`, `wfica32.exe`, `vmconnect.exe`, `CDViewer.exe`) | **Padrão na v1** (global e dos perfis, ADR-0002).                 |
 
 ## Requisitos funcionais
 
@@ -50,7 +50,7 @@ O texto final precisa aparecer onde o cursor está, em qualquer app (nativo, Ele
 - **AC-005-03** _Quando_ dito algo no Word e aperto `Ctrl+Z` uma vez, _então_ todo o texto ditado some.
 - **AC-005-04** _Dado_ o histórico do clipboard do Windows ligado (Win+V), _então_ o texto ditado **não** aparece nele.
 - **AC-005-05** _Dado_ um PowerShell "Executar como administrador" em foco, _então_ o texto não é digitado, fica no clipboard e aparece o aviso.
-- **AC-005-06** A inserção funciona com o método `auto` em: Notepad, Word, Outlook, Chrome (Gmail, Google Docs), Edge, Slack, Teams, WhatsApp Desktop, VS Code, Cursor, Windows Terminal, cmd, Notion, Obsidian, Discord e RDP (`mstsc`). Automatizado com a skill `windows-desktop-e2e` onde o app expõe UI Automation; o restante (ex.: RDP) fica em roteiro manual.
+- **AC-005-06** A inserção funciona com o método `auto` em: Notepad, Word, Outlook, Chrome (Gmail, Google Docs), Edge, Slack, Teams, WhatsApp Desktop, VS Code, Cursor, Windows Terminal, cmd, Notion, Obsidian, Discord e RDP (`mstsc`). Na **v1** é verificada por checklist de smoke manual (ADR-0002); a automação com `windows-desktop-e2e` (T-032) fica para a v1.1+.
 - **AC-005-07** _Dado_ o perfil do Slack com `newline_mode = shift_enter` e método `type`, _quando_ dito "linha um nova linha linha dois", _então_ aparecem duas linhas na caixa sem enviar a mensagem.
 - **AC-005-08** _Quando_ o usuário ainda segura `Ctrl` ao fim do PTT, _então_ nenhum atalho indesejado (`Ctrl+Win+V`, etc.) é disparado.
 

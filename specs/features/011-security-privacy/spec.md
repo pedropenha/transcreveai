@@ -1,6 +1,6 @@
 # F011 — Segurança e privacidade
 
-**Status**: Draft · **Release**: MVP · **Transversal** (vale para todas as features)
+**Status**: Draft · **Release**: v1 · **Transversal** (vale para todas as features)
 
 ## Contexto
 
@@ -19,7 +19,7 @@ O app escuta o microfone, instala um hook global de teclado, injeta teclas, lê 
 ### Rede
 
 - **FR-011-06** Somente HTTPS, exceto `http://` para `localhost`, `127.0.0.1`, `::1` (Ollama, servidores locais).
-- **FR-011-07** O app só se conecta a: hosts dos provedores configurados, URLs de download do catálogo de modelos e o servidor de atualização. Nenhuma outra conexão de saída (verificável).
+- **FR-011-07** O app só se conecta a: URLs de download do catálogo de modelos, o provedor LLM configurado pelo usuário (BYOK) e — na v1.1+ — hosts dos provedores STT configurados e o servidor de atualização. Nenhuma outra conexão de saída (verificável).
 - **FR-011-08** **Modo offline** (Configurações e bandeja): bloqueia toda chamada de rede de provedores; a UI indica claramente; provedores em nuvem ficam indisponíveis e o fallback local é usado.
 - **FR-011-09** Sem telemetria/analytics na v1. Relatório de erro só é gerado localmente e o usuário decide enviar (P2).
 - **FR-011-10** Respeitar proxy do sistema / `HTTPS_PROXY`.
@@ -29,17 +29,17 @@ O app escuta o microfone, instala um hook global de teclado, injeta teclas, lê 
 - **FR-011-11** Tela "O que é enviado" em Privacidade, gerada a partir da configuração atual:
   | Dado | Para quem | Quando |
   |---|---|---|
-  | Áudio do ditado | Provedor STT de ditado (se nuvem) | A cada ditado |
-  | Texto ditado + categoria/nome do app | Provedor LLM (se configurado) | Limpeza (F004) |
-  | Texto selecionado + instrução | Provedor LLM | Command Mode (F006) |
-  | Áudio da reunião | Provedor STT de reuniões (se nuvem) | Gravação/processamento |
-  | Transcrição + minhas notas | Provedor LLM | Resumo (F009) |
+  | Áudio do ditado | Provedor STT de ditado (se nuvem — v1.1+; na v1 nunca sai) | A cada ditado |
+  | Texto ditado + categoria/nome do app | Provedor LLM (se configurado — v1.1+) | Limpeza (F004) |
+  | Texto selecionado + instrução | Provedor LLM (v1.1+) | Command Mode (F006) |
+  | Áudio da reunião | Provedor STT de reuniões (se nuvem — v1.1+; na v1 nunca sai) | Gravação/processamento |
+  | Transcrição + minhas notas | Provedor LLM (BYOK, se configurado) | Resumo (F009) |
   | Título da janela | Provedor LLM | Só se `send_window_title` = ligado |
 
 ### Dados locais
 
 - **FR-011-12** Retenção configurável (ver [data-model](../../architecture/data-model.md#4-retenção)); limpeza automática.
-- **FR-011-13** "Apagar todos os dados": remove banco, áudios, notas, modelos (opcional) e segredos, com confirmação digitada.
+- **FR-011-13** "Apagar todos os dados": remove banco, áudios (inclusive o áudio preservado de sessões falhas em `audio/dictations`, F002/T-022), notas, reuniões, modelos (opcional) e segredos, com confirmação digitada.
 - **FR-011-14** P2: criptografia do banco (SQLCipher) com chave no cofre do SO.
 - **FR-011-15** Arquivos criados com permissões apenas do usuário (pasta em `%APPDATA%`, herdando ACL do perfil).
 

@@ -1,6 +1,6 @@
 # F008 — Detecção de reunião e popup
 
-**Status**: Draft · **Release**: v0.3 · **Depende de**: F001 (slot de toast), F009
+**Status**: Draft · **Release**: v1 · **Depende de**: F001 (slot de toast), F009
 
 ## Contexto
 
@@ -23,15 +23,17 @@ Ao entrar numa chamada (Zoom, Teams, Meet, Slack, Discord…), o app mostra um t
 
 ### Regras embutidas (editáveis)
 
-| Rótulo          | Exe                                                               | Título (regex, aproximado — validar na implementação) |
-| --------------- | ----------------------------------------------------------------- | ----------------------------------------------------- |
-| Zoom            | `Zoom.exe`                                                        | `Zoom Meeting\|Reunião Zoom\|Zoom Workplace`          |
-| Microsoft Teams | `ms-teams.exe`, `Teams.exe`                                       | reunião/chamada ativa (janela de chamada)             |
-| Google Meet     | `chrome.exe`, `msedge.exe`, `firefox.exe`, `brave.exe`, `arc.exe` | `^Meet -\|meet\.google\.com`                          |
-| Slack Huddle    | `slack.exe`                                                       | `Huddle`                                              |
-| Discord         | `Discord.exe`                                                     | (mic em uso basta)                                    |
-| Webex           | `CiscoCollabHost.exe`, `webexmta.exe`                             | —                                                     |
-| Whereby / Jitsi | navegadores                                                       | `Whereby\|Jitsi Meet`                                 |
+Na **v1** o conjunto embutido é **Zoom, Teams, Meet (navegador) e Webex** (ADR-0002); as demais linhas entram na v1.1+. Regras adicionadas pelo usuário funcionam já na v1.
+
+| Rótulo          | Exe                                                               | Título (regex, aproximado — validar na implementação) | Release |
+| --------------- | ----------------------------------------------------------------- | ----------------------------------------------------- | ------- |
+| Zoom            | `Zoom.exe`                                                        | `Zoom Meeting\|Reunião Zoom\|Zoom Workplace`          | v1      |
+| Microsoft Teams | `ms-teams.exe`, `Teams.exe`                                       | reunião/chamada ativa (janela de chamada)             | v1      |
+| Google Meet     | `chrome.exe`, `msedge.exe`, `firefox.exe`, `brave.exe`, `arc.exe` | `^Meet -\|meet\.google\.com`                          | v1      |
+| Webex           | `CiscoCollabHost.exe`, `webexmta.exe`                             | —                                                     | v1      |
+| Slack Huddle    | `slack.exe`                                                       | `Huddle`                                              | v1.1+   |
+| Discord         | `Discord.exe`                                                     | (mic em uso basta)                                    | v1.1+   |
+| Whereby / Jitsi | navegadores                                                       | `Whereby\|Jitsi Meet`                                 | v1.1+   |
 
 ## Requisitos funcionais
 
@@ -78,7 +80,7 @@ Ao entrar numa chamada (Zoom, Teams, Meet, Slack, Discord…), o app mostra um t
 - **AC-008-05** _Dado_ uma gravação iniciada por detecção, _quando_ saio da chamada, _então_ após 15 s a gravação para e o processamento começa; _se_ clico em "Continuar gravando" antes, _então_ ela continua.
 - **AC-008-06** _Quando_ uso o próprio ditado do app, _então_ nenhum toast de reunião aparece.
 - **AC-008-07** _Dado_ que dispensei o toast (✕), _então_ ele não reaparece para a mesma reunião; numa nova reunião, reaparece.
-- **AC-008-08** Matriz manual: Zoom, Teams (novo), Meet (Chrome/Edge), Slack Huddle, Discord, WhatsApp chamada — registrar detecção e fim.
+- **AC-008-08** Matriz manual: Zoom, Teams (novo), Meet (Chrome/Edge), Webex — registrar detecção e fim. Na v1 é roteiro manual parcial (T-069); Slack/Discord/WhatsApp entram na v1.1+.
 
 ## Casos de borda
 

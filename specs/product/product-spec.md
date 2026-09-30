@@ -22,38 +22,39 @@ Escrever na velocidade da fala, em qualquer aplicativo, com privacidade. E nunca
 
 | Objetivo       | Métrica                                                       | Meta v1                                                  |
 | -------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
-| Ditado rápido  | Tempo entre soltar o atalho e o texto aparecer (fala de 10 s) | p50 ≤ 1,0 s (nuvem) · ≤ 1,5 s (local GPU / Parakeet CPU) |
+| Ditado rápido  | Tempo entre soltar o atalho e o texto aparecer (fala de 10 s) | p50 ≤ 1,5 s (local GPU)                                  |
 | Ditado preciso | WER no conjunto de fixtures pt-BR                             | ≤ 8 % com large-v3-turbo                                 |
 | Sem atrito     | % de sessões inseridas sem erro                               | ≥ 99 %                                                   |
-| Reuniões úteis | Resumo pronto após parar (reunião de 30 min)                  | ≤ 2 min (nuvem) · ≤ 6 min (local)                        |
+| Reuniões úteis | Resumo pronto após parar (reunião de 30 min)                  | ≤ 2 min (LLM em nuvem, BYOK) · ≤ 6 min (LLM local)       |
 | Leve           | RAM ociosa sem modelo carregado                               | ≤ 150 MB                                                 |
 
 ## 5. Escopo por release
 
-### MVP (v0.1) — Ditado
+> O fatiamento original (v0.1 → v0.3 → v1.0) foi substituído por um único release **v1** — ver [ADR-0002](../../docs/adr/0002-escopo-v1.md).
 
-- Flow Bar (idle, hover com 2 ações, gravando, processando, erro) — [F001](../features/001-flow-bar/spec.md)
-- Atalhos globais: push-to-talk, mãos livres, cancelar, colar último — [F002](../features/002-hotkeys-dictation/spec.md)
-- Transcrição local (whisper.cpp) + nuvem (OpenAI, Groq, compatível OpenAI) com chave própria — [F003](../features/003-transcription-engines/spec.md)
-- Inserção via área de transferência com restauração — [F005](../features/005-text-insertion/spec.md)
-- Hub com histórico e configurações; onboarding; bandeja — [F010](../features/010-hub-settings/spec.md)
-- Segredos no cofre do SO — [F011](../features/011-security-privacy/spec.md)
-- Pipeline mínimo: dicionário (dicas de vocabulário), comandos de voz "nova linha"/"enviar", filtro de alucinação.
+### v1 — Ditado + Reuniões
 
-### v0.2 — Texto inteligente
+- Flow Bar (idle, hover com 2 ações, gravando, processando, erro, cronômetro de reunião) — [F001](../features/001-flow-bar/spec.md)
+- Atalhos globais: push-to-talk, mãos livres, cancelar, colar último, Notetaker — [F002](../features/002-hotkeys-dictation/spec.md)
+- Transcrição **somente local** (whisper.cpp); modelo escolhido no onboarding com `large-v3-turbo` como recomendação — [F003](../features/003-transcription-engines/spec.md)
+- Pipeline determinístico: dicionário (dicas de vocabulário), comandos de voz "nova linha"/"enviar", filtro de alucinação, limpeza `light` de muletas pt-BR — [F004](../features/004-text-pipeline/spec.md)
+- Inserção `auto` via área de transferência com restauração; janela elevada → `clipboard_only` + aviso — [F005](../features/005-text-insertion/spec.md)
+- Detecção de reunião + toast (Zoom, Teams, Meet, Webex) — [F008](../features/008-meeting-detection/spec.md)
+- Notetaker: mic + áudio do sistema, transcrição, resumo **via LLM BYOK** (sem chave → sem resumo), exportação — [F009](../features/009-meeting-notetaker/spec.md)
+- Hub completo: histórico, reuniões, dicionário, modelos, configurações; onboarding; bandeja — [F010](../features/010-hub-settings/spec.md)
+- Segredos no cofre do SO (chave LLM inclusa) — [F011](../features/011-security-privacy/spec.md)
+- Release: `bun run tauri build` local (NSIS, sem assinatura/updater).
 
+### v1.1+ — Texto inteligente e nuvem
+
+- STT em nuvem (OpenAI, Groq, compatível OpenAI) com chave própria — F003, T-014
 - Pipeline completo: limpeza por LLM com níveis, backtrack, estilos por app, snippets — [F004](../features/004-text-pipeline/spec.md)
 - Command Mode — [F006](../features/006-command-mode/spec.md)
 - Scratchpad / notas por voz — [F007](../features/007-notes-scratchpad/spec.md)
 
-### v0.3 — Reuniões
+### v1.1+ — Polimento e portes
 
-- Detecção de reunião + toast — [F008](../features/008-meeting-detection/spec.md)
-- Notetaker: mic + áudio do sistema, transcrição, resumo, exportação — [F009](../features/009-meeting-notetaker/spec.md)
-
-### v1.0 — Polimento
-
-- Parakeet local, diarização, builds com GPU, assinatura de código, auto-update, macOS e Linux, acessibilidade completa.
+- Parakeet local, diarização, builds com GPU dedicada, assinatura de código, auto-update, macOS e Linux, acessibilidade completa.
 
 ### Fora de escopo (v1)
 
@@ -88,7 +89,7 @@ Escrever na velocidade da fala, em qualquer aplicativo, com privacidade. E nunca
 4. Sai da chamada → gravação para sozinha após 15 s → "Gerando notas…" → resumo com decisões e próximos passos.
 5. "Copiar como Markdown" → cola no Notion.
 
-**J6 — Configurar pela primeira vez**: onboarding → permissão de mic → escolher "Local" (baixa o modelo recomendado para o hardware) ou "Nuvem" (cola a chave, testa) → treina o atalho num campo de teste.
+**J6 — Configurar pela primeira vez**: onboarding → permissão de mic → escolher o modelo local (com `large-v3-turbo` marcado como recomendado; baixa com progresso) → treina o atalho num campo de teste.
 
 ## 7. Glossário
 
