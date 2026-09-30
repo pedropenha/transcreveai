@@ -26,9 +26,10 @@
 - [x] **T-002** — merge (ver git log). CI: jobs windows-latest, clippy multi-OS, coverage llvm-cov+frontend c/ catraca ADR-0001, cargo deny/audit, debt-ratchet (`scripts/check-*.ts`). Teto unwrap/expect re-medido: 158.
 - [x] **T-003** — merge (ver git log). `redact_secret_patterns` nos erros de LLM, `LLMPrompt` Debug redigido, `redact_text` segue `debug_mode` em runtime (não perfil), log dir/KeepOne confirmados. Ajuste pós-merge: teste de dump não usa mais `post_process_api_keys` (campo removido na T-016).
 
+- [x] **T-007** — merge (ver git log). Menu da bandeja = FR-010-14 (Hub, ditado, reunião desabilitada até T-064, Flow Bar show/hide, pausa de detecção 1h, modo offline, sair); autostart default on; `offline_mode` + `meeting_detection_paused_until_ms` no schema; quit c/ confirmação se gravando; `--no-tray` fecha de verdade; relaunch hidden. 373 testes + `cargo check` pós-merge verde.
+
 ## Em andamento (lanes)
 
-- **T-007** `chore/t-007-tray-single-instance` @ `ecc-t007` (08fe6794)
 - **T-009** `chore/t-009-e2e-base` @ `ecc-t009` (c8b313c3)
 - **T-015** `chore/t-015-models` @ `ecc-t015` (eb5b6a88)
 - **T-006** `chore/t-006-ipc` @ `ecc-t006` (0a1ec490)
