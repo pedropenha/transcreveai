@@ -1,50 +1,398 @@
-/* Transcreve.ai colors (inherited from Handy until the T-008 design direction) */
+/* Transcreve.ai design tokens — T-008 “Sinal Calmo” */
 
 :root {
   /* Palette source of truth. Each themed color is defined once as a
-     light/dark pair; the active tokens below and the `data-theme` overrides
-     in App.css reference these, so a hex value lives in exactly one place. */
-  --light-color-text: #0f0f0f;
-  --light-color-background: #fbfbfb;
-  --light-color-logo-primary: #faa2ca;
-  --light-color-logo-stroke: #382731;
+     light/dark pair; the active tokens and `data-theme` overrides below
+     reference these, so a hex value lives in exactly one place. */
+  --primitive-neutral-0: #ffffff;
+  --primitive-neutral-25: #fbfcfa;
+  --primitive-neutral-50: #f6f8f5;
+  --primitive-neutral-100: #eef1ed;
+  --primitive-neutral-200: #dde2dc;
+  --primitive-neutral-300: #c8cfc7;
+  --primitive-neutral-400: #9ba59b;
+  --primitive-neutral-500: #707a71;
+  --primitive-neutral-600: #586159;
+  --primitive-neutral-700: #3d453f;
+  --primitive-neutral-800: #272d29;
+  --primitive-neutral-900: #181d1a;
+  --primitive-neutral-950: #0e1210;
 
-  --dark-color-text: #fbfbfb;
-  --dark-color-background: #2c2b29;
-  --dark-color-logo-primary: #f28cbb;
-  --dark-color-logo-stroke: #fad1ed;
+  --primitive-teal-50: #e7f8f5;
+  --primitive-teal-100: #c7f0ea;
+  --primitive-teal-200: #95e2d8;
+  --primitive-teal-300: #63d3c5;
+  --primitive-teal-400: #35b9ad;
+  --primitive-teal-500: #158f87;
+  --primitive-teal-600: #08766f;
+  --primitive-teal-700: #075e59;
+  --primitive-teal-800: #074c48;
+  --primitive-teal-900: #063d3a;
 
-  /* Semantic status colors. First used by SecureInputWarning; intended to
-     replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
-     time so status styling is themeable from one place. */
-  --light-color-warning: #d97706;
-  --light-color-error: #dc2626;
-  --dark-color-warning: #fbbf24;
-  --dark-color-error: #f87171;
+  --primitive-coral-50: #fff0f3;
+  --primitive-coral-100: #ffdde4;
+  --primitive-coral-200: #ffb8c6;
+  --primitive-coral-300: #fa899f;
+  --primitive-coral-400: #eb617d;
+  --primitive-coral-500: #d94263;
+  --primitive-coral-600: #ba304f;
+  --primitive-coral-700: #982642;
+  --primitive-coral-800: #7f233b;
+  --primitive-coral-900: #6c2135;
+
+  --primitive-amber-50: #fff7e0;
+  --primitive-amber-100: #fdeab0;
+  --primitive-amber-200: #f7d573;
+  --primitive-amber-300: #e9b949;
+  --primitive-amber-400: #c99116;
+  --primitive-amber-500: #9b6908;
+  --primitive-amber-600: #7a5008;
+  --primitive-amber-700: #603d0a;
+
+  --primitive-green-50: #eaf8ef;
+  --primitive-green-100: #bfe8ce;
+  --primitive-green-200: #74d89b;
+  --primitive-green-300: #3ba86b;
+  --primitive-green-400: #247a4a;
+  --primitive-green-500: #185e39;
+  --primitive-green-600: #124a2d;
+
+  --primitive-violet-50: #f1efff;
+  --primitive-violet-100: #dcd7ff;
+  --primitive-violet-200: #b8aeff;
+  --primitive-violet-300: #8878e8;
+  --primitive-violet-400: #6857c7;
+  --primitive-violet-500: #5041a3;
+  --primitive-violet-600: #3e337f;
+
+  --primitive-red-50: #fff1ef;
+  --primitive-red-100: #ffd8d3;
+  --primitive-red-200: #ffaaa1;
+  --primitive-red-300: #ff7d73;
+  --primitive-red-400: #e94f44;
+  --primitive-red-500: #b42318;
+  --primitive-red-600: #8f1d15;
+  --primitive-red-700: #721a14;
+
+  --light-color-canvas: var(--primitive-neutral-50);
+  --light-color-surface: var(--primitive-neutral-0);
+  --light-color-surface-raised: var(--primitive-neutral-25);
+  --light-color-surface-inset: var(--primitive-neutral-100);
+  --light-color-text: var(--primitive-neutral-900);
+  --light-color-text-muted: var(--primitive-neutral-600);
+  --light-color-text-subtle: var(--primitive-neutral-500);
+  --light-color-border: var(--primitive-neutral-200);
+  --light-color-border-strong: var(--primitive-neutral-400);
+  --light-color-accent: var(--primitive-teal-600);
+  --light-color-accent-hover: var(--primitive-teal-700);
+  --light-color-accent-active: var(--primitive-teal-800);
+  --light-color-accent-soft: var(--primitive-teal-50);
+  --light-color-accent-contrast: var(--primitive-neutral-0);
+  --light-color-focus-ring: var(--primitive-teal-600);
+  --light-color-selection: var(--primitive-teal-100);
+  --light-color-recording: var(--primitive-coral-600);
+  --light-color-recording-soft: var(--primitive-coral-50);
+  --light-color-processing: var(--primitive-amber-600);
+  --light-color-processing-soft: var(--primitive-amber-50);
+  --light-color-success: var(--primitive-green-500);
+  --light-color-success-soft: var(--primitive-green-50);
+  --light-color-warning: var(--primitive-amber-600);
+  --light-color-warning-soft: var(--primitive-amber-50);
+  --light-color-error: var(--primitive-red-500);
+  --light-color-error-soft: var(--primitive-red-50);
+  --light-color-command: var(--primitive-violet-500);
+  --light-color-command-soft: var(--primitive-violet-50);
+
+  --dark-color-canvas: var(--primitive-neutral-950);
+  --dark-color-surface: var(--primitive-neutral-900);
+  --dark-color-surface-raised: var(--primitive-neutral-800);
+  --dark-color-surface-inset: var(--primitive-neutral-950);
+  --dark-color-text: var(--primitive-neutral-50);
+  --dark-color-text-muted: var(--primitive-neutral-300);
+  --dark-color-text-subtle: var(--primitive-neutral-400);
+  --dark-color-border: var(--primitive-neutral-700);
+  --dark-color-border-strong: var(--primitive-neutral-500);
+  --dark-color-accent: var(--primitive-teal-300);
+  --dark-color-accent-hover: var(--primitive-teal-200);
+  --dark-color-accent-active: var(--primitive-teal-100);
+  --dark-color-accent-soft: var(--primitive-teal-900);
+  --dark-color-accent-contrast: var(--primitive-neutral-950);
+  --dark-color-focus-ring: var(--primitive-teal-300);
+  --dark-color-selection: var(--primitive-teal-800);
+  --dark-color-recording: var(--primitive-coral-300);
+  --dark-color-recording-soft: var(--primitive-coral-900);
+  --dark-color-processing: var(--primitive-amber-200);
+  --dark-color-processing-soft: var(--primitive-amber-700);
+  --dark-color-success: var(--primitive-green-200);
+  --dark-color-success-soft: var(--primitive-green-600);
+  --dark-color-warning: var(--primitive-amber-200);
+  --dark-color-warning-soft: var(--primitive-amber-700);
+  --dark-color-error: var(--primitive-red-300);
+  --dark-color-error-soft: var(--primitive-red-700);
+  --dark-color-command: var(--primitive-violet-200);
+  --dark-color-command-soft: var(--primitive-violet-600);
+
+  --light-color-background: var(--light-color-canvas);
+  --light-color-logo-primary: var(--light-color-accent);
+  --light-color-logo-stroke: var(--light-color-text);
+  --dark-color-background: var(--dark-color-canvas);
+  --dark-color-logo-primary: var(--dark-color-accent);
+  --dark-color-logo-stroke: var(--dark-color-text);
+
+  /* Flow Bar pairs stay dark in both themes for predictable contrast over
+     external apps; light/dark still tune surface depth and text hierarchy. */
+  --light-flowbar-surface: var(--primitive-neutral-900);
+  --light-flowbar-surface-raised: var(--primitive-neutral-800);
+  --light-flowbar-text: var(--primitive-neutral-50);
+  --light-flowbar-text-muted: var(--primitive-neutral-300);
+  --light-flowbar-border: var(--primitive-neutral-700);
+  --light-flowbar-accent: var(--primitive-teal-300);
+  --light-flowbar-recording: var(--primitive-coral-300);
+  --light-flowbar-processing: var(--primitive-amber-200);
+  --light-flowbar-success: var(--primitive-green-200);
+  --light-flowbar-warning: var(--primitive-amber-200);
+  --light-flowbar-error: var(--primitive-red-300);
+  --light-flowbar-command: var(--primitive-violet-200);
+
+  --dark-flowbar-surface: var(--primitive-neutral-950);
+  --dark-flowbar-surface-raised: var(--primitive-neutral-900);
+  --dark-flowbar-text: var(--primitive-neutral-50);
+  --dark-flowbar-text-muted: var(--primitive-neutral-400);
+  --dark-flowbar-border: var(--primitive-neutral-700);
+  --dark-flowbar-accent: var(--primitive-teal-300);
+  --dark-flowbar-recording: var(--primitive-coral-300);
+  --dark-flowbar-processing: var(--primitive-amber-200);
+  --dark-flowbar-success: var(--primitive-green-200);
+  --dark-flowbar-warning: var(--primitive-amber-200);
+  --dark-flowbar-error: var(--primitive-red-300);
+  --dark-flowbar-command: var(--primitive-violet-200);
 
   /* Tokens that do not change between light and dark */
-  --color-background-ui: #da5893;
-  --color-text-stroke: #f6f6f6;
-  --color-mid-gray: #808080;
+  --font-family-sans:
+    "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    sans-serif;
+  --font-family-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --font-size-xxs: 0.6875rem;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-md: 0.9375rem;
+  --font-size-lg: 1.0625rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-compact: 1.2;
+  --line-height-snug: 1.35;
+  --line-height-body: 1.5;
+  --line-height-relaxed: 1.65;
+  --letter-spacing-tight: -0.015em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.06em;
+
+  --space-0: 0;
+  --space-0-5: 0.125rem;
+  --space-1: 0.25rem;
+  --space-1-5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+  --radius-pill: 999px;
+
+  --motion-duration-instant: 0ms;
+  --motion-duration-fast: 90ms;
+  --motion-duration-interaction: 140ms;
+  --motion-duration-enter: 180ms;
+  --motion-duration-state: 240ms;
+  --motion-duration-slow: 360ms;
+  --motion-duration-success: 600ms;
+  --motion-duration-feedback-loop: 900ms;
+  --motion-duration-pulse: 1800ms;
+  --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-easing-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-easing-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-navigation: 20;
+  --z-dropdown: 40;
+  --z-toast: 60;
+  --z-modal: 80;
+  --z-flowbar: 100;
+  --z-tooltip: 120;
+
+  --control-target-min: 24px;
+  --control-target-comfortable: 40px;
+  --control-target-preferred: 44px;
+
+  --flowbar-size-idle-width: 48px;
+  --flowbar-size-idle-height: 8px;
+  --flowbar-size-hover-width: 88px;
+  --flowbar-size-hover-height: 36px;
+  --flowbar-size-recording-width: 128px;
+  --flowbar-size-recording-height: 36px;
+  --flowbar-size-command-width: 150px;
+  --flowbar-size-command-height: 36px;
+  --flowbar-size-processing-width: 64px;
+  --flowbar-size-processing-height: 24px;
+  --flowbar-size-done-width: 48px;
+  --flowbar-size-done-height: 24px;
+  --flowbar-size-error-width: 64px;
+  --flowbar-size-error-height: 24px;
+  --flowbar-size-meeting-width: 96px;
+  --flowbar-size-meeting-height: 24px;
+
+  --light-shadow-raised:
+    0 1px 2px rgb(14 18 16 / 8%), 0 8px 24px rgb(14 18 16 / 10%);
+  --light-shadow-floating:
+    0 2px 5px rgb(14 18 16 / 14%), 0 16px 40px rgb(14 18 16 / 18%);
+  --light-shadow-modal:
+    0 4px 12px rgb(14 18 16 / 14%), 0 28px 72px rgb(14 18 16 / 22%);
+  --dark-shadow-raised: 0 1px 2px rgb(0 0 0 / 24%), 0 8px 24px rgb(0 0 0 / 30%);
+  --dark-shadow-floating:
+    0 2px 5px rgb(0 0 0 / 34%), 0 16px 40px rgb(0 0 0 / 42%);
+  --dark-shadow-modal:
+    0 4px 12px rgb(0 0 0 / 34%), 0 28px 72px rgb(0 0 0 / 52%);
 
   /* Active palette — defaults to light, follows the OS via the media query
      below, or is forced by `data-theme` (see the overrides below). */
+  --color-canvas: var(--light-color-canvas);
+  --color-surface: var(--light-color-surface);
+  --color-surface-raised: var(--light-color-surface-raised);
+  --color-surface-inset: var(--light-color-surface-inset);
   --color-text: var(--light-color-text);
-  --color-background: var(--light-color-background);
-  --color-logo-primary: var(--light-color-logo-primary);
-  --color-logo-stroke: var(--light-color-logo-stroke);
+  --color-text-muted: var(--light-color-text-muted);
+  --color-text-subtle: var(--light-color-text-subtle);
+  --color-border: var(--light-color-border);
+  --color-border-strong: var(--light-color-border-strong);
+  --color-accent: var(--light-color-accent);
+  --color-accent-hover: var(--light-color-accent-hover);
+  --color-accent-active: var(--light-color-accent-active);
+  --color-accent-soft: var(--light-color-accent-soft);
+  --color-accent-contrast: var(--light-color-accent-contrast);
+  --color-focus-ring: var(--light-color-focus-ring);
+  --color-selection: var(--light-color-selection);
+  --color-recording: var(--light-color-recording);
+  --color-recording-soft: var(--light-color-recording-soft);
+  --color-processing: var(--light-color-processing);
+  --color-processing-soft: var(--light-color-processing-soft);
+  --color-success: var(--light-color-success);
+  --color-success-soft: var(--light-color-success-soft);
   --color-warning: var(--light-color-warning);
+  --color-warning-soft: var(--light-color-warning-soft);
   --color-error: var(--light-color-error);
+  --color-error-soft: var(--light-color-error-soft);
+  --color-command: var(--light-color-command);
+  --color-command-soft: var(--light-color-command-soft);
+  --shadow-raised: var(--light-shadow-raised);
+  --shadow-floating: var(--light-shadow-floating);
+  --shadow-modal: var(--light-shadow-modal);
+
+  --flowbar-surface: var(--light-flowbar-surface);
+  --flowbar-surface-raised: var(--light-flowbar-surface-raised);
+  --flowbar-text: var(--light-flowbar-text);
+  --flowbar-text-muted: var(--light-flowbar-text-muted);
+  --flowbar-border: var(--light-flowbar-border);
+  --flowbar-accent: var(--light-flowbar-accent);
+  --flowbar-recording: var(--light-flowbar-recording);
+  --flowbar-processing: var(--light-flowbar-processing);
+  --flowbar-success: var(--light-flowbar-success);
+  --flowbar-warning: var(--light-flowbar-warning);
+  --flowbar-error: var(--light-flowbar-error);
+  --flowbar-command: var(--light-flowbar-command);
+
+  --state-default-surface: var(--color-surface);
+  --state-default-foreground: var(--color-text);
+  --state-hover-surface: var(--color-accent-soft);
+  --state-hover-foreground: var(--color-accent-hover);
+  --state-active-surface: var(--color-selection);
+  --state-active-foreground: var(--color-accent-active);
+  --state-focus-ring: var(--color-focus-ring);
+  --state-focus-offset: var(--color-canvas);
+  --state-disabled-surface: var(--color-surface-inset);
+  --state-disabled-foreground: var(--color-text-subtle);
+  --state-disabled-opacity: 0.56;
+  --state-recording: var(--color-recording);
+  --state-recording-surface: var(--color-recording-soft);
+  --state-processing: var(--color-processing);
+  --state-processing-surface: var(--color-processing-soft);
+  --state-success: var(--color-success);
+  --state-success-surface: var(--color-success-soft);
+  --state-warning: var(--color-warning);
+  --state-warning-surface: var(--color-warning-soft);
+  --state-error: var(--color-error);
+  --state-error-surface: var(--color-error-soft);
+  --state-command: var(--color-command);
+  --state-command-surface: var(--color-command-soft);
+
+  --color-background: var(--color-canvas);
+  --color-background-ui: var(--color-accent);
+  --color-logo-primary: var(--color-accent);
+  --color-logo-stroke: var(--color-text);
+  --color-text-stroke: var(--color-surface);
+  --color-mid-gray: var(--color-text-muted);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --color-canvas: var(--dark-color-canvas);
+    --color-surface: var(--dark-color-surface);
+    --color-surface-raised: var(--dark-color-surface-raised);
+    --color-surface-inset: var(--dark-color-surface-inset);
     --color-text: var(--dark-color-text);
-    --color-background: var(--dark-color-background);
-    --color-logo-primary: var(--dark-color-logo-primary);
-    --color-logo-stroke: var(--dark-color-logo-stroke);
+    --color-text-muted: var(--dark-color-text-muted);
+    --color-text-subtle: var(--dark-color-text-subtle);
+    --color-border: var(--dark-color-border);
+    --color-border-strong: var(--dark-color-border-strong);
+    --color-accent: var(--dark-color-accent);
+    --color-accent-hover: var(--dark-color-accent-hover);
+    --color-accent-active: var(--dark-color-accent-active);
+    --color-accent-soft: var(--dark-color-accent-soft);
+    --color-accent-contrast: var(--dark-color-accent-contrast);
+    --color-focus-ring: var(--dark-color-focus-ring);
+    --color-selection: var(--dark-color-selection);
+    --color-recording: var(--dark-color-recording);
+    --color-recording-soft: var(--dark-color-recording-soft);
+    --color-processing: var(--dark-color-processing);
+    --color-processing-soft: var(--dark-color-processing-soft);
+    --color-success: var(--dark-color-success);
+    --color-success-soft: var(--dark-color-success-soft);
     --color-warning: var(--dark-color-warning);
+    --color-warning-soft: var(--dark-color-warning-soft);
     --color-error: var(--dark-color-error);
+    --color-error-soft: var(--dark-color-error-soft);
+    --color-command: var(--dark-color-command);
+    --color-command-soft: var(--dark-color-command-soft);
+    --shadow-raised: var(--dark-shadow-raised);
+    --shadow-floating: var(--dark-shadow-floating);
+    --shadow-modal: var(--dark-shadow-modal);
+
+    --flowbar-surface: var(--dark-flowbar-surface);
+    --flowbar-surface-raised: var(--dark-flowbar-surface-raised);
+    --flowbar-text: var(--dark-flowbar-text);
+    --flowbar-text-muted: var(--dark-flowbar-text-muted);
+    --flowbar-border: var(--dark-flowbar-border);
+    --flowbar-accent: var(--dark-flowbar-accent);
+    --flowbar-recording: var(--dark-flowbar-recording);
+    --flowbar-processing: var(--dark-flowbar-processing);
+    --flowbar-success: var(--dark-flowbar-success);
+    --flowbar-warning: var(--dark-flowbar-warning);
+    --flowbar-error: var(--dark-flowbar-error);
+    --flowbar-command: var(--dark-flowbar-command);
   }
 }
 
@@ -59,19 +407,107 @@
  * the settings window and the recording overlay alike — honours the override.
  */
 :root[data-theme="light"] {
+  --color-canvas: var(--light-color-canvas);
+  --color-surface: var(--light-color-surface);
+  --color-surface-raised: var(--light-color-surface-raised);
+  --color-surface-inset: var(--light-color-surface-inset);
   --color-text: var(--light-color-text);
-  --color-background: var(--light-color-background);
-  --color-logo-primary: var(--light-color-logo-primary);
-  --color-logo-stroke: var(--light-color-logo-stroke);
+  --color-text-muted: var(--light-color-text-muted);
+  --color-text-subtle: var(--light-color-text-subtle);
+  --color-border: var(--light-color-border);
+  --color-border-strong: var(--light-color-border-strong);
+  --color-accent: var(--light-color-accent);
+  --color-accent-hover: var(--light-color-accent-hover);
+  --color-accent-active: var(--light-color-accent-active);
+  --color-accent-soft: var(--light-color-accent-soft);
+  --color-accent-contrast: var(--light-color-accent-contrast);
+  --color-focus-ring: var(--light-color-focus-ring);
+  --color-selection: var(--light-color-selection);
+  --color-recording: var(--light-color-recording);
+  --color-recording-soft: var(--light-color-recording-soft);
+  --color-processing: var(--light-color-processing);
+  --color-processing-soft: var(--light-color-processing-soft);
+  --color-success: var(--light-color-success);
+  --color-success-soft: var(--light-color-success-soft);
   --color-warning: var(--light-color-warning);
+  --color-warning-soft: var(--light-color-warning-soft);
   --color-error: var(--light-color-error);
+  --color-error-soft: var(--light-color-error-soft);
+  --color-command: var(--light-color-command);
+  --color-command-soft: var(--light-color-command-soft);
+  --shadow-raised: var(--light-shadow-raised);
+  --shadow-floating: var(--light-shadow-floating);
+  --shadow-modal: var(--light-shadow-modal);
+
+  --flowbar-surface: var(--light-flowbar-surface);
+  --flowbar-surface-raised: var(--light-flowbar-surface-raised);
+  --flowbar-text: var(--light-flowbar-text);
+  --flowbar-text-muted: var(--light-flowbar-text-muted);
+  --flowbar-border: var(--light-flowbar-border);
+  --flowbar-accent: var(--light-flowbar-accent);
+  --flowbar-recording: var(--light-flowbar-recording);
+  --flowbar-processing: var(--light-flowbar-processing);
+  --flowbar-success: var(--light-flowbar-success);
+  --flowbar-warning: var(--light-flowbar-warning);
+  --flowbar-error: var(--light-flowbar-error);
+  --flowbar-command: var(--light-flowbar-command);
 }
 
 :root[data-theme="dark"] {
+  --color-canvas: var(--dark-color-canvas);
+  --color-surface: var(--dark-color-surface);
+  --color-surface-raised: var(--dark-color-surface-raised);
+  --color-surface-inset: var(--dark-color-surface-inset);
   --color-text: var(--dark-color-text);
-  --color-background: var(--dark-color-background);
-  --color-logo-primary: var(--dark-color-logo-primary);
-  --color-logo-stroke: var(--dark-color-logo-stroke);
+  --color-text-muted: var(--dark-color-text-muted);
+  --color-text-subtle: var(--dark-color-text-subtle);
+  --color-border: var(--dark-color-border);
+  --color-border-strong: var(--dark-color-border-strong);
+  --color-accent: var(--dark-color-accent);
+  --color-accent-hover: var(--dark-color-accent-hover);
+  --color-accent-active: var(--dark-color-accent-active);
+  --color-accent-soft: var(--dark-color-accent-soft);
+  --color-accent-contrast: var(--dark-color-accent-contrast);
+  --color-focus-ring: var(--dark-color-focus-ring);
+  --color-selection: var(--dark-color-selection);
+  --color-recording: var(--dark-color-recording);
+  --color-recording-soft: var(--dark-color-recording-soft);
+  --color-processing: var(--dark-color-processing);
+  --color-processing-soft: var(--dark-color-processing-soft);
+  --color-success: var(--dark-color-success);
+  --color-success-soft: var(--dark-color-success-soft);
   --color-warning: var(--dark-color-warning);
+  --color-warning-soft: var(--dark-color-warning-soft);
   --color-error: var(--dark-color-error);
+  --color-error-soft: var(--dark-color-error-soft);
+  --color-command: var(--dark-color-command);
+  --color-command-soft: var(--dark-color-command-soft);
+  --shadow-raised: var(--dark-shadow-raised);
+  --shadow-floating: var(--dark-shadow-floating);
+  --shadow-modal: var(--dark-shadow-modal);
+
+  --flowbar-surface: var(--dark-flowbar-surface);
+  --flowbar-surface-raised: var(--dark-flowbar-surface-raised);
+  --flowbar-text: var(--dark-flowbar-text);
+  --flowbar-text-muted: var(--dark-flowbar-text-muted);
+  --flowbar-border: var(--dark-flowbar-border);
+  --flowbar-accent: var(--dark-flowbar-accent);
+  --flowbar-recording: var(--dark-flowbar-recording);
+  --flowbar-processing: var(--dark-flowbar-processing);
+  --flowbar-success: var(--dark-flowbar-success);
+  --flowbar-warning: var(--dark-flowbar-warning);
+  --flowbar-error: var(--dark-flowbar-error);
+  --flowbar-command: var(--dark-flowbar-command);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 1ms;
+    --motion-duration-interaction: 1ms;
+    --motion-duration-enter: 1ms;
+    --motion-duration-state: 1ms;
+    --motion-duration-slow: 1ms;
+    --motion-duration-feedback-loop: 1ms;
+    --motion-duration-pulse: 1ms;
+  }
 }
