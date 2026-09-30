@@ -2086,15 +2086,12 @@ mod tests {
 
     /// FR-011-03 / AC-011-03: the `Loaded settings` debug dump
     /// (`load_or_create_app_settings` logs `{:?}` of the whole `AppSettings`)
-    /// must never contain API key values or post-processing prompt bodies.
-    /// Keys go through `SecretMap`'s redacted `Debug`; prompt text is replaced
-    /// by its length in `LLMPrompt`'s `Debug`.
+    /// must never contain post-processing prompt bodies. Prompt text is
+    /// replaced by its length in `LLMPrompt`'s `Debug`. API keys no longer
+    /// live in `AppSettings` — they are in the OS vault (T-016).
     #[test]
     fn settings_debug_dump_redacts_secrets_and_prompts() {
         let mut settings = get_default_settings();
-        settings
-            .post_process_api_keys
-            .insert("openai".into(), "sk-super-secret-value-123".into());
         settings.post_process_prompts = vec![LLMPrompt {
             id: "p1".into(),
             name: "Resumo".into(),
@@ -2104,15 +2101,10 @@ mod tests {
         let dump = format!("{settings:?}");
 
         assert!(
-            !dump.contains("sk-super-secret-value-123"),
-            "API key leaked into settings debug dump"
-        );
-        assert!(
             !dump.contains("instrução confidencial do usuário"),
             "post-process prompt body leaked into settings debug dump"
         );
-        // Redaction markers are present so the fields are still diagnosable.
-        assert!(dump.contains("[REDACTED]"));
+        // Redaction marker is present so the field is still diagnosable.
         assert!(dump.contains("[REDACTED len="));
         // Non-sensitive metadata (ids, names) stays visible.
         assert!(dump.contains("Resumo"));

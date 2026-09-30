@@ -22,16 +22,17 @@
 - [x] **T-012** — merge (ver git log). `managers/transcription.rs` → diretório (engine/inference/language/postprocess/streaming) + `stt/` (trait `SttProvider`, `SttOrchestrator` c/ retry+fallback, `LocalSttProvider`). FR-003-16 implementada. 294 testes.
 - [x] **fix/review-t005-t020** — merge (ver git log). `RestartBackoff` puro (backoff também na morte, reset após 30s estável, teto 10 falhas → `shortcut://hook-dead`); `release_all`/`release_binding` no matcher; `InjectionGuard` RAII + `validate_shortcut` rejeitando acordes de colagem; timeout 30s + `emit_to(hub)` no recording_loop; `normalize_app_language` idempotente; carimbo único de schema_version. 309 testes.
 
-- [x] **T-016** — merge `e59fa3b`. Chaves de API no OS keyring (`secrets.rs`, comandos write-only `secret_set/clear/hint`, migração remove plaintext só após cofre confirmar, redator de log no choke point). Security+code review pós-merge em andamento. `bindings.ts` editado à mão — regenerar.
+- [x] **T-016** — merge `e59fa3b`. Chaves de API no OS keyring (`secrets.rs`, comandos write-only `secret_set/clear/hint`, migração remove plaintext só após cofre confirmar, redator de log no choke point). Reviews acharam 1 HIGH (migração sobrescreve cofre) + MEDIUMs → fix-forward na lane `fix/review-t016` @ `ecc-fix-t016` (cc32c248). `bindings.ts` editado à mão — regenerar.
+- [x] **T-002** — merge (ver git log). CI: jobs windows-latest, clippy multi-OS, coverage llvm-cov+frontend c/ catraca ADR-0001, cargo deny/audit, debt-ratchet (`scripts/check-*.ts`). Teto unwrap/expect re-medido: 158.
+- [x] **T-003** — merge (ver git log). `redact_secret_patterns` nos erros de LLM, `LLMPrompt` Debug redigido, `redact_text` segue `debug_mode` em runtime (não perfil), log dir/KeepOne confirmados. Ajuste pós-merge: teste de dump não usa mais `post_process_api_keys` (campo removido na T-016).
 
 ## Em andamento (lanes)
 
-- **T-002** `chore/t-002-ci` @ `ecc-t002` (8b9c2744)
-- **T-003** `chore/t-003-logging` @ `ecc-t003` (9c55f56d)
 - **T-007** `chore/t-007-tray-single-instance` @ `ecc-t007` (08fe6794)
 - **T-009** `chore/t-009-e2e-base` @ `ecc-t009` (c8b313c3)
 - **T-015** `chore/t-015-models` @ `ecc-t015` (eb5b6a88)
 - **T-006** `chore/t-006-ipc` @ `ecc-t006` (0a1ec490)
+- **fix/review-t016** @ `ecc-fix-t016` (cc32c248) — cofre-vence-na-migração, mutex de escrita, store:default, ApiKeyField, async commands
 
 ## Próximas na DAG (prontas para lanes)
 
