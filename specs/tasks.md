@@ -63,7 +63,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 
 ### Áudio e STT
 
-- [ ] **T-010** **Adaptar** engine de áudio (`audio_toolkit/audio/`, `managers/audio.rs`: cpal + rtrb + rubato, visualizer → evento `mic-level`): verificar reamostragem 16 kHz, níveis a 30 Hz, troca de dispositivo e fan-out. — Refs: FR-002-10, FR-002-20, FR-001-05
+- [x] **T-010** **Adaptar** engine de áudio (`audio_toolkit/audio/`, `managers/audio.rs`: cpal + rtrb + rubato, visualizer → evento `mic-level`): verificar reamostragem 16 kHz, níveis a 30 Hz, troca de dispositivo e fan-out. — Refs: FR-002-10, FR-002-20, FR-001-05
 - [ ] **T-011** **Adaptar** VAD (Silero v4 + Earshot, `audio_toolkit/vad/`): aparar silêncio e "nada ouvido". — Refs: FR-002-14, FR-003-11
 - [ ] **T-012** **Estender** (refatorar) `managers/transcription.rs` (2.529 linhas, centrado no motor local) para o trait `SttProvider` + orquestrador com retry/fallback, dividindo o arquivo por domínio. — Refs: [contracts §2](architecture/contracts.md#2-sttprovider), FR-003-16
 - [ ] **T-013** [P] **Adaptar** provedor local whisper (`transcribe-cpp`): ciclo de vida do modelo e descarregar por ociosidade (existem), dicas de vocabulário (`custom_words`); verificar ou construir o filtro de alucinação. — Refs: FR-003-09, FR-003-12, FR-003-13, AC-003-05
