@@ -20,21 +20,18 @@
 //! a hidden tray relies on tray-icon recreating it from the last applied
 //! icon/menu/tooltip, so those must only ever be set through the applier.
 
-use crate::managers::history::{HistoryEntry, HistoryManager};
-use crate::managers::model::ModelManager;
-use crate::managers::transcription::TranscriptionManager;
+use crate::managers::audio::AudioRecordingManager;
 use crate::settings;
 use crate::tray_i18n::get_tray_translations;
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Manager, Theme};
-use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayIconState {
@@ -55,12 +52,24 @@ impl TrayIconState {
 /// compare equal the menu is not rebuilt.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MenuInputs {
+    /// Recording or transcribing — adds the "Cancel" row (FR-002).
     busy: bool,
+    /// A dictation is recording right now — its entry reads "Stop Dictation"
+    /// (FR-010-14). During `Transcribing` the entry flips back to "Start
+    /// Dictation": clicking then queues a new session for when the pipeline
+    /// drains (the coordinator's remembered-press path).
+    recording: bool,
     warning: bool,
-    model_loaded: bool,
-    selected_model: String,
-    /// `(id, name)` of downloaded models, sorted by name.
-    downloaded_models: Vec<(String, String)>,
+    /// A meeting is being recorded — switches its entry to "Stop Meeting".
+    /// Always `false` until the meeting session (T-064) reports state; the
+    /// entry ships disabled in the meantime.
+    meeting_active: bool,
+    /// Tray "Ocultar Flow Bar" suppression is on (runtime-only, FR-001-07).
+    flowbar_hidden: bool,
+    /// Meeting detection pause deadline is still in the future (FR-010-14).
+    meeting_detection_paused: bool,
+    /// `privacy.offline_mode` (FR-011-08): checked-state for the toggle.
+    offline_mode: bool,
     locale: String,
     update_checks_enabled: bool,
 }
@@ -313,25 +322,22 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
     let settings = settings::get_settings(app);
     let theme = get_current_theme(app);
     let warning = crate::secure_input::tray_warning_active(app);
-    let model_loaded = app.state::<Arc<TranscriptionManager>>().is_model_loaded();
-
-    let mut downloaded_models: Vec<(String, String)> = app
-        .state::<Arc<ModelManager>>()
-        .get_available_models()
-        .into_iter()
-        .filter(|m| m.is_downloaded)
-        .map(|m| (m.id, m.name))
-        .collect();
-    downloaded_models.sort_by(|a, b| a.1.cmp(&b.1));
 
     TrayDesired {
         icon_path: get_icon_path(theme, icon_state, warning),
         menu: MenuInputs {
             busy: icon_state.is_busy(),
+            recording: icon_state == TrayIconState::Recording,
             warning,
-            model_loaded,
-            selected_model: settings.selected_model,
-            downloaded_models,
+            // No meeting session exists yet (T-064); when it lands, feed the
+            // live "meeting recording" state here.
+            meeting_active: false,
+            flowbar_hidden: crate::overlay::is_flowbar_user_hidden(),
+            meeting_detection_paused: meeting_detection_is_paused(
+                settings.meeting_detection_paused_until_ms,
+                now_unix_ms(),
+            ),
+            offline_mode: settings.offline_mode,
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
         },
@@ -455,13 +461,17 @@ fn version_label() -> String {
 /// to app state: everything it depends on is in `inputs`, plus the
 /// process-constant release-channel / `TRANSCREVE_DISABLE_UPDATER` state behind
 /// `update_checks_forced_disabled()`, which cannot change during a run.
+///
+/// Menu layout follows FR-010-14: Abrir Hub · Iniciar/Parar ditado ·
+/// Iniciar/Parar reunião · Mostrar/Ocultar Flow Bar · Pausar detecção de
+/// reuniões por 1 h · Modo offline · Sair.
 fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri::Wry>, String)> {
     let strings = get_tray_translations(Some(inputs.locale.clone()));
 
-    // Secure Input warning entry (macOS): clicking opens the settings window
-    // where the full warning banner explains the situation. Locales that
-    // haven't translated the key yet get the English string rather than a
-    // blank menu item (build.rs emits "" for missing keys).
+    // Secure Input warning entry (macOS): clicking opens the Hub window where
+    // the full warning banner explains the situation. Locales that haven't
+    // translated the key yet get the English string rather than a blank menu
+    // item (build.rs emits "" for missing keys).
     let secure_input_warning = if inputs.warning {
         let label = if strings.secure_input_warning.is_empty() {
             get_tray_translations(Some("en".to_string())).secure_input_warning
@@ -481,20 +491,55 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
 
     // Platform-specific accelerators
     #[cfg(target_os = "macos")]
-    let (settings_accelerator, quit_accelerator) = (Some("Cmd+,"), Some("Cmd+Q"));
+    let (hub_accelerator, quit_accelerator) = (Some("Cmd+,"), Some("Cmd+Q"));
     #[cfg(not(target_os = "macos"))]
-    let (settings_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
+    let (hub_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
 
-    // Create common menu items
-    let version_label = version_label();
-    let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)?;
-    let settings_i = MenuItem::with_id(
+    let open_hub_i = MenuItem::with_id(app, "open_hub", &strings.open_hub, true, hub_accelerator)?;
+
+    let dictation_label = if inputs.recording {
+        &strings.stop_dictation
+    } else {
+        &strings.start_dictation
+    };
+    let toggle_dictation_i =
+        MenuItem::with_id(app, "toggle_dictation", dictation_label, true, None::<&str>)?;
+
+    // Meeting sessions land with T-064; until then the entry is present (the
+    // menu already matches FR-010-14) but disabled.
+    let meeting_label = if inputs.meeting_active {
+        &strings.stop_meeting
+    } else {
+        &strings.start_meeting
+    };
+    let toggle_meeting_i =
+        MenuItem::with_id(app, "toggle_meeting", meeting_label, false, None::<&str>)?;
+
+    let flowbar_label = if inputs.flowbar_hidden {
+        &strings.show_flowbar
+    } else {
+        &strings.hide_flowbar
+    };
+    let toggle_flowbar_i =
+        MenuItem::with_id(app, "toggle_flowbar", flowbar_label, true, None::<&str>)?;
+
+    let pause_detection_i = CheckMenuItem::with_id(
         app,
-        "settings",
-        &strings.settings,
+        "pause_meeting_detection",
+        &strings.pause_meeting_detection,
         true,
-        settings_accelerator,
+        inputs.meeting_detection_paused,
+        None::<&str>,
     )?;
+    let offline_mode_i = CheckMenuItem::with_id(
+        app,
+        "offline_mode",
+        &strings.offline_mode,
+        true,
+        inputs.offline_mode,
+        None::<&str>,
+    )?;
+
     let check_updates_i = MenuItem::with_id(
         app,
         "check_updates",
@@ -502,104 +547,85 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         inputs.update_checks_enabled,
         None::<&str>,
     )?;
-    let copy_last_transcript_i = MenuItem::with_id(
-        app,
-        "copy_last_transcript",
-        &strings.copy_last_transcript,
-        true,
-        None::<&str>,
-    )?;
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)?;
-    let separator = || PredefinedMenuItem::separator(app);
 
-    let menu = if inputs.busy {
-        let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)?;
-        Menu::with_items(
-            app,
-            &[
-                &version_i,
-                &separator()?,
-                &cancel_i,
-                &separator()?,
-                &copy_last_transcript_i,
-                &separator()?,
-                &settings_i,
-                &check_updates_i,
-                &separator()?,
-                &quit_i,
-            ],
-        )?
-    } else {
-        // Build model submenu — label is the active model name
-        let submenu_label = inputs
-            .downloaded_models
-            .iter()
-            .find(|(id, _)| *id == inputs.selected_model)
-            .map(|(_, name)| name.clone())
-            .unwrap_or_else(|| strings.model.clone());
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    let sep3 = PredefinedMenuItem::separator(app)?;
+    let sep4 = PredefinedMenuItem::separator(app)?;
 
-        let model_submenu = Submenu::with_id(app, "model_submenu", &submenu_label, true)?;
-        for (id, name) in &inputs.downloaded_models {
-            let is_active = *id == inputs.selected_model;
-            let item_id = format!("model_select:{}", id);
-            let item = CheckMenuItem::with_id(app, &item_id, name, true, is_active, None::<&str>)?;
-            model_submenu.append(&item)?;
-        }
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&open_hub_i, &sep1, &toggle_dictation_i];
 
-        let unload_model_i = MenuItem::with_id(
-            app,
-            "unload_model",
-            &strings.unload_model,
-            inputs.model_loaded,
-            None::<&str>,
-        )?;
+    // While a dictation/transcription is in flight the menu gains a "Cancel"
+    // row (discards the operation — the Escape binding's menu twin).
+    let cancel_i;
+    if inputs.busy {
+        cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)?;
+        items.push(&cancel_i);
+    }
 
-        Menu::with_items(
-            app,
-            &[
-                &version_i,
-                &separator()?,
-                &copy_last_transcript_i,
-                &separator()?,
-                &model_submenu,
-                &unload_model_i,
-                &separator()?,
-                &settings_i,
-                &check_updates_i,
-                &separator()?,
-                &quit_i,
-            ],
-        )?
-    };
+    items.push(&toggle_meeting_i);
+    items.push(&sep2);
+    items.push(&toggle_flowbar_i);
+    items.push(&pause_detection_i);
+    items.push(&offline_mode_i);
+    items.push(&sep3);
+    items.push(&check_updates_i);
+    items.push(&sep4);
+    items.push(&quit_i);
 
-    // When update checks are forced off (no release channel in this build, or
-    // TRANSCREVE_DISABLE_UPDATER, set by
-    // the Nix package), the item is dropped from the menu rather than shown
+    let menu = Menu::with_items(app, &items)?;
+
+    // When update checks are forced off (no release channel in this build —
+    // FR-010-19: no updater in v1 — or TRANSCREVE_DISABLE_UPDATER, set by the
+    // Nix package), the item is dropped from the menu rather than shown
     // disabled — it can never do anything in that case, and a disabled item
     // still shifts every entry below it by one position. A manually-disabled
     // toggle in Debug Settings keeps the old greyed-out behavior via the
     // enabled flag.
     if settings::update_checks_forced_disabled() {
         menu.remove(&check_updates_i)?;
+        // Its leading separator goes with it so two separators never end up
+        // adjacent.
+        menu.remove(&sep3)?;
     }
 
-    // Both layouts start with [version, separator, ...]; slot the warning in
-    // right below the version line so it's the first actionable thing seen.
-    let mut tooltip = version_label;
+    // Slot the warning at the very top so it's the first thing seen.
+    let mut tooltip = version_label();
+    if inputs.offline_mode {
+        tooltip = format!("{} — {}", tooltip, strings.offline_mode);
+    }
     if let Some(warning_item) = secure_input_warning {
-        menu.insert(&warning_item, 2)?;
-        menu.insert(&separator()?, 3)?;
+        menu.insert(&warning_item, 0)?;
+        menu.insert(&PredefinedMenuItem::separator(app)?, 1)?;
         tooltip = format!("{} — {}", tooltip, warning_item.text().unwrap_or_default());
     }
 
     Ok((menu, tooltip))
 }
 
-fn last_transcript_text(entry: &HistoryEntry) -> &str {
-    entry
-        .post_processed_text
-        .as_deref()
-        .unwrap_or(&entry.transcription_text)
+/// Length of the tray's meeting-detection pause (FR-010-14 "por 1 h").
+pub const MEETING_DETECTION_PAUSE_MS: i64 = 60 * 60 * 1000;
+
+/// Current unix time in milliseconds (`0` if the clock is before the epoch).
+pub fn now_unix_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Whether a `meeting_detection_paused_until_ms` deadline still lies ahead.
+pub fn meeting_detection_is_paused(paused_until: Option<i64>, now_ms: i64) -> bool {
+    paused_until.is_some_and(|until| until > now_ms)
+}
+
+/// Whether quitting now should be confirmed first (FR-010-15 / AC-010-06): a
+/// recording in progress would be silently lost. Meeting sessions (T-064)
+/// fold into this check when they land.
+pub fn quit_needs_confirmation(app: &AppHandle) -> bool {
+    app.try_state::<Arc<AudioRecordingManager>>()
+        .is_some_and(|manager| manager.is_recording())
 }
 
 pub fn set_tray_visibility(app: &AppHandle, visible: bool) {
@@ -636,78 +662,25 @@ pub fn recreate_tray_icon(app: &AppHandle) {
     }
 }
 
-pub fn copy_last_transcript(app: &AppHandle) {
-    let history_manager = app.state::<Arc<HistoryManager>>();
-    let entry = match history_manager.get_latest_completed_entry() {
-        Ok(Some(entry)) => entry,
-        Ok(None) => {
-            warn!("No completed transcription history entries available for tray copy.");
-            return;
-        }
-        Err(err) => {
-            error!(
-                "Failed to fetch last completed transcription entry: {}",
-                err
-            );
-            return;
-        }
-    };
-
-    let text = last_transcript_text(&entry);
-    if text.trim().is_empty() {
-        warn!("Last completed transcription is empty; skipping tray copy.");
-        return;
-    }
-
-    if let Err(err) = app.clipboard().write_text(text) {
-        error!("Failed to copy last transcript to clipboard: {}", err);
-        return;
-    }
-
-    info!("Copied last transcript to clipboard via tray.");
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{last_transcript_text, load_tray_icon, MenuInputs, TrayDesired, TrayIconState};
-    use crate::managers::history::HistoryEntry;
+    use super::{
+        load_tray_icon, meeting_detection_is_paused, MenuInputs, TrayDesired,
+        MEETING_DETECTION_PAUSE_MS,
+    };
 
-    fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
-        HistoryEntry {
-            id: 1,
-            file_name: "transcreve-ai-1.wav".to_string(),
-            timestamp: 0,
-            saved: false,
-            title: "Recording".to_string(),
-            transcription_text: transcription.to_string(),
-            post_processed_text: post_processed.map(|text| text.to_string()),
-            post_process_prompt: None,
-            post_process_requested: false,
-        }
-    }
-
-    fn inputs(busy: bool) -> MenuInputs {
+    fn inputs(busy: bool, recording: bool) -> MenuInputs {
         MenuInputs {
             busy,
+            recording,
             warning: false,
-            model_loaded: true,
-            selected_model: "small".to_string(),
-            downloaded_models: vec![("small".to_string(), "Small".to_string())],
+            meeting_active: false,
+            flowbar_hidden: false,
+            meeting_detection_paused: false,
+            offline_mode: false,
             locale: "en".to_string(),
             update_checks_enabled: true,
         }
-    }
-
-    #[test]
-    fn uses_post_processed_text_when_available() {
-        let entry = build_entry("raw", Some("processed"));
-        assert_eq!(last_transcript_text(&entry), "processed");
-    }
-
-    #[test]
-    fn falls_back_to_raw_transcription() {
-        let entry = build_entry("raw", None);
-        assert_eq!(last_transcript_text(&entry), "raw");
     }
 
     #[test]
@@ -723,23 +696,41 @@ mod tests {
     }
 
     #[test]
-    fn recording_and_transcribing_share_a_menu() {
-        // The icon differs but the menu inputs are identical, so a
-        // Recording -> Transcribing transition must not rebuild the menu.
+    fn recording_and_transcribing_differ_only_in_label() {
+        // The icon differs, and the dictation entry reads "Stop Dictation"
+        // only while audio is actually being captured — a press during
+        // Transcribing queues the *next* session, so it stays "Start".
         let recording = TrayDesired {
             icon_path: "resources/tray_recording.png",
-            menu: inputs(TrayIconState::Recording.is_busy()),
+            menu: MenuInputs {
+                recording: true,
+                ..inputs(true, false)
+            },
         };
         let transcribing = TrayDesired {
             icon_path: "resources/tray_transcribing.png",
-            menu: inputs(TrayIconState::Transcribing.is_busy()),
+            menu: inputs(true, false),
         };
+        assert!(recording.menu.busy && transcribing.menu.busy);
         assert_ne!(recording.icon_path, transcribing.icon_path);
-        assert_eq!(recording.menu, transcribing.menu);
+        assert_ne!(recording.menu, transcribing.menu);
     }
 
     #[test]
     fn idle_and_busy_menus_differ() {
-        assert_ne!(inputs(false), inputs(true));
+        assert_ne!(inputs(false, false), inputs(true, false));
+    }
+
+    #[test]
+    fn meeting_detection_pause_deadline_semantics() {
+        let now = 1_000_000i64;
+        assert!(!meeting_detection_is_paused(None, now));
+        assert!(!meeting_detection_is_paused(Some(now), now));
+        assert!(!meeting_detection_is_paused(Some(now - 1), now));
+        assert!(meeting_detection_is_paused(Some(now + 1), now));
+        assert!(meeting_detection_is_paused(
+            Some(now + MEETING_DETECTION_PAUSE_MS),
+            now
+        ));
     }
 }

@@ -318,6 +318,11 @@ impl HistoryManager {
     }
 
     /// Get the latest entry with non-empty transcription text.
+    ///
+    /// No caller today: the tray's "copy last transcript" item was removed in
+    /// the FR-010-14 menu rework; the Flow Bar context menu ("Colar última
+    /// transcrição", FR-001-07, T-040) is its next consumer.
+    #[allow(dead_code)]
     pub fn get_latest_completed_entry(&self) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
         Self::get_latest_completed_entry_with_conn(&conn)
