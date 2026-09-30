@@ -131,6 +131,54 @@ pub enum OverlayStyle {
     Live,
 }
 
+/// How a finished transcription reaches the target app (data-model
+/// `insertion_method`; FR-005). `Auto` is the v1 default (ADR-0002): the
+/// insertion layer picks per context. Schema only for now — the consumers are
+/// wired by T-031; until then the existing `paste_method` keeps driving paste.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum InsertionMethod {
+    #[default]
+    Auto,
+    Paste,
+    PasteShiftInsert,
+    Type,
+    ClipboardOnly,
+}
+
+/// When the Flow Bar is on screen (FR-001-10).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FlowbarVisibility {
+    #[default]
+    Always,
+    DuringRecording,
+    Never,
+}
+
+/// Which monitor hosts the Flow Bar (FR-001-09).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FlowbarFollow {
+    /// Monitor of the foreground window (data-model `foreground_monitor`).
+    #[default]
+    ForegroundMonitor,
+    /// Monitor under the cursor.
+    Cursor,
+    /// Always the primary monitor.
+    PrimaryMonitor,
+}
+
+/// Screen edge the Flow Bar is docked to (FR-001-08).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FlowbarEdge {
+    #[default]
+    Bottom,
+    Left,
+    Right,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelUnloadTimeout {
@@ -379,7 +427,10 @@ pub struct AppSettings {
     /// anything shorter is a tap that locks recording on.
     #[serde(default = "default_hold_threshold_ms")]
     pub hold_threshold_ms: u64,
-    #[serde(default)]
+    /// Start/stop recording sounds. On by default per FR-001-13; users who
+    /// already turned it off keep their stored `false` (migrations never
+    /// overwrite an explicit preference).
+    #[serde(default = "default_audio_feedback")]
     pub audio_feedback: bool,
     #[serde(default = "default_audio_feedback_volume")]
     pub audio_feedback_volume: f32,
@@ -514,13 +565,62 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Default insertion method for finished transcriptions (FR-005). `Auto` is
+    /// the v1 default (ADR-0002 / data-model). Consumers land with T-031.
+    #[serde(default)]
+    pub insertion_method: InsertionMethod,
+    /// Maximum hands-free dictation length in minutes (FR-002-13). The spec
+    /// range is 1–20; enforcement lives with the session consumer (T-022).
+    #[serde(default = "default_max_dictation_minutes")]
+    pub max_dictation_minutes: u64,
+    /// Pending sessions kept in the FIFO insertion queue while a previous
+    /// session is still processing (FR-002-16). Default 5.
+    #[serde(default = "default_session_queue_size")]
+    pub session_queue_size: usize,
+    /// Flow Bar visibility policy: always / only while recording / never
+    /// (FR-001-10). `Never` still leaves hotkeys and tray feedback working.
+    #[serde(default)]
+    pub flowbar_visibility: FlowbarVisibility,
+    /// Which monitor the Flow Bar follows (FR-001-09).
+    #[serde(default)]
+    pub flowbar_follow: FlowbarFollow,
+    /// Edge the Flow Bar is docked to, plus the relative offset along it
+    /// (0–1, FR-001-08). Persisted per position; multi-monitor placement is
+    /// derived from `flowbar_follow`.
+    #[serde(default)]
+    pub flowbar_position_edge: FlowbarEdge,
+    #[serde(default = "default_flowbar_position_offset")]
+    pub flowbar_position_offset: f64,
+    /// Hide the Flow Bar while the foreground window covers the whole monitor
+    /// (FR-001-11), except during an active recording.
+    #[serde(default = "default_flowbar_hide_in_fullscreen")]
+    pub flowbar_hide_in_fullscreen: bool,
+    /// Timed Flow Bar snooze (FR-001-07 "Ocultar por 15/30/60 min"): unix
+    /// timestamp in milliseconds until which the bar stays hidden, `None` when
+    /// not snoozed. "Ocultar até reiniciar o app" is runtime-only and never
+    /// reaches the store.
+    #[serde(default)]
+    pub flowbar_snoozed_until_ms: Option<i64>,
+    /// STT provider used for dictation (data-model `transcription.dictation_provider`).
+    /// `None` resolves to the local `selected_model` until the provider
+    /// registry (T-004) lands.
+    #[serde(default)]
+    pub dictation_provider_id: Option<String>,
+    /// STT provider used for meeting transcription (data-model
+    /// `transcription.meeting_provider`); `None` inherits `dictation_provider_id`.
+    #[serde(default)]
+    pub meeting_provider_id: Option<String>,
+    /// Fallback STT provider tried when the primary fails (data-model
+    /// `transcription.fallback_provider`).
+    #[serde(default)]
+    pub fallback_provider_id: Option<String>,
 }
 
 fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 3;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -635,8 +735,39 @@ fn default_post_process_enabled() -> bool {
 
 fn default_app_language() -> String {
     tauri_plugin_os::locale()
-        .map(|l| l.replace('_', "-"))
+        .map(|l| normalize_app_language(&l))
         .unwrap_or_else(|| "en".to_string())
+}
+
+/// Fold any BCP-47-ish tag ("pt", "pt_BR", "en-US", "de-DE") onto the UI
+/// languages that ship in v1 (ADR-0002): `pt-BR` for Portuguese, `en` for
+/// everything else — including codes whose locale was removed.
+pub(crate) fn normalize_app_language(lang: &str) -> String {
+    let normalized = lang.trim().to_lowercase().replace('_', "-");
+    match normalized.split('-').next().unwrap_or("en") {
+        "pt" => "pt-BR".to_string(),
+        _ => "en".to_string(),
+    }
+}
+
+fn default_audio_feedback() -> bool {
+    true
+}
+
+fn default_max_dictation_minutes() -> u64 {
+    5
+}
+
+fn default_session_queue_size() -> usize {
+    5
+}
+
+fn default_flowbar_position_offset() -> f64 {
+    0.5
+}
+
+fn default_flowbar_hide_in_fullscreen() -> bool {
+    true
 }
 
 fn default_show_tray_icon() -> bool {
@@ -912,7 +1043,7 @@ pub fn get_default_settings() -> AppSettings {
         bindings,
         shortcut_activation: ShortcutActivation::default(),
         hold_threshold_ms: default_hold_threshold_ms(),
-        audio_feedback: false,
+        audio_feedback: default_audio_feedback(),
         audio_feedback_volume: default_audio_feedback_volume(),
         sound_theme: default_sound_theme(),
         start_hidden: default_start_hidden(),
@@ -970,6 +1101,18 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        insertion_method: InsertionMethod::default(),
+        max_dictation_minutes: default_max_dictation_minutes(),
+        session_queue_size: default_session_queue_size(),
+        flowbar_visibility: FlowbarVisibility::default(),
+        flowbar_follow: FlowbarFollow::default(),
+        flowbar_position_edge: FlowbarEdge::default(),
+        flowbar_position_offset: default_flowbar_position_offset(),
+        flowbar_hide_in_fullscreen: default_flowbar_hide_in_fullscreen(),
+        flowbar_snoozed_until_ms: None,
+        dictation_provider_id: None,
+        meeting_provider_id: None,
+        fallback_provider_id: None,
     }
 }
 
@@ -1158,6 +1301,14 @@ fn apply_settings_migrations(
         settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
         updated = true;
     }
+    if stored_schema_version < 3 {
+        // v1 ships only en + pt-BR locales (ADR-0002). Fold any other stored UI
+        // language — including the retired bare "pt" locale — onto the closest
+        // supported code.
+        settings.app_language = normalize_app_language(&settings.app_language);
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+        updated = true;
+    }
 
     // The generic GPU choice was removed in favor of Auto or an exact device.
     // Normalize settings created by builds that exposed that short-lived option.
@@ -1279,7 +1430,8 @@ mod tests {
             ShortcutActivation::HoldOrToggle
         );
         assert_eq!(settings.hold_threshold_ms, default_hold_threshold_ms());
-        assert!(!settings.audio_feedback);
+        // Recording sounds are on by default (FR-001-13).
+        assert!(settings.audio_feedback);
         assert!(settings.filler_word_removal_enabled);
         // Bindings default to empty; the load path merges the real defaults in.
         assert!(settings.bindings.is_empty());
@@ -1734,5 +1886,153 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn normalize_app_language_folds_onto_supported_codes() {
+        for (input, expected) in [
+            ("en", "en"),
+            ("en-US", "en"),
+            ("pt", "pt-BR"),
+            ("pt-BR", "pt-BR"),
+            ("pt_BR", "pt-BR"),
+            ("pt-PT", "pt-BR"),
+            ("de-DE", "en"),
+            ("zh-Hant-TW", "en"),
+            ("", "en"),
+        ] {
+            assert_eq!(normalize_app_language(input), expected, "{input}");
+        }
+    }
+
+    /// v1 surfaces required by the data-model (schema 3): insertion method
+    /// `auto`, 5-minute dictation cap, FIFO of 5 pending sessions, Flow Bar
+    /// defaults, sounds on, and provider slots for dictation/meeting/fallback.
+    #[test]
+    fn v1_fields_default_per_data_model() {
+        let settings = get_default_settings();
+
+        assert_eq!(settings.insertion_method, InsertionMethod::Auto);
+        assert_eq!(settings.max_dictation_minutes, 5);
+        assert_eq!(settings.session_queue_size, 5);
+        assert_eq!(settings.flowbar_visibility, FlowbarVisibility::Always);
+        assert_eq!(settings.flowbar_follow, FlowbarFollow::ForegroundMonitor);
+        assert_eq!(settings.flowbar_position_edge, FlowbarEdge::Bottom);
+        assert_eq!(settings.flowbar_position_offset, 0.5);
+        assert!(settings.flowbar_hide_in_fullscreen);
+        assert_eq!(settings.flowbar_snoozed_until_ms, None);
+        assert_eq!(settings.dictation_provider_id, None);
+        assert_eq!(settings.meeting_provider_id, None);
+        assert_eq!(settings.fallback_provider_id, None);
+        assert!(settings.audio_feedback);
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+    }
+
+    /// A schema-2 store written by the previous build must load with every
+    /// value intact; the migration stamps v3 and fills the new fields with
+    /// their defaults.
+    #[test]
+    fn schema_v2_store_migrates_to_v3_preserving_values() {
+        let mut stored = default_settings_json();
+        let map = stored.as_object_mut().unwrap();
+        map.insert("settings_schema_version".into(), serde_json::json!(2));
+        map.insert(
+            "selected_model".into(),
+            serde_json::json!("whisper-large-v3-turbo"),
+        );
+        map.insert("audio_feedback".into(), serde_json::json!(false));
+        map.insert("app_language".into(), serde_json::json!("en"));
+        // A store from schema 2 predates the v1 fields entirely.
+        for key in [
+            "insertion_method",
+            "max_dictation_minutes",
+            "session_queue_size",
+            "flowbar_visibility",
+            "flowbar_snoozed_until_ms",
+            "dictation_provider_id",
+        ] {
+            map.remove(key);
+        }
+
+        let mut settings: AppSettings =
+            serde_json::from_value(stored.clone()).expect("schema-2 store must parse");
+
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+        // Pre-existing choices survive.
+        assert_eq!(settings.selected_model, "whisper-large-v3-turbo");
+        assert!(!settings.audio_feedback);
+        // New fields get their v1 defaults.
+        assert_eq!(settings.insertion_method, InsertionMethod::Auto);
+        assert_eq!(settings.max_dictation_minutes, 5);
+        assert_eq!(settings.session_queue_size, 5);
+        assert_eq!(settings.dictation_provider_id, None);
+    }
+
+    /// Users on a removed locale (e.g. the retired bare `pt`, or `de`) are
+    /// folded onto the closest of en/pt-BR during the schema-3 migration.
+    #[test]
+    fn schema_v3_migration_normalizes_app_language() {
+        for (stored_language, expected) in [
+            ("pt", "pt-BR"),
+            ("pt-BR", "pt-BR"),
+            ("en", "en"),
+            ("de", "en"),
+            ("zh-TW", "en"),
+        ] {
+            let raw = serde_json::json!({
+                "settings_schema_version": 2,
+                "app_language": stored_language
+            });
+            let mut settings: AppSettings =
+                serde_json::from_value(raw.clone()).expect("fixture must parse");
+
+            assert!(apply_settings_migrations(&mut settings, &raw));
+            assert_eq!(settings.app_language, expected, "{stored_language}");
+            assert_eq!(
+                settings.settings_schema_version,
+                CURRENT_SETTINGS_SCHEMA_VERSION
+            );
+        }
+    }
+
+    /// A store already at the current schema is never rewritten just to
+    /// re-derive values the user may have changed.
+    #[test]
+    fn current_schema_store_is_not_touched() {
+        let mut stored = default_settings_json();
+        let map = stored.as_object_mut().unwrap();
+        map.insert("app_language".into(), serde_json::json!("pt-BR"));
+        map.insert("max_dictation_minutes".into(), serde_json::json!(10));
+        map.insert("session_queue_size".into(), serde_json::json!(3));
+        map.insert(
+            "flowbar_snoozed_until_ms".into(),
+            serde_json::json!(1_800_000_000_000i64),
+        );
+        map.insert(
+            "dictation_provider_id".into(),
+            serde_json::json!("local_whisper"),
+        );
+
+        let mut settings: AppSettings =
+            serde_json::from_value(stored.clone()).expect("current store must parse");
+
+        // onboarding_completed and whats_new_last_seen_version are present, so
+        // no migration applies at all.
+        assert!(!apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(settings.app_language, "pt-BR");
+        assert_eq!(settings.max_dictation_minutes, 10);
+        assert_eq!(settings.session_queue_size, 3);
+        assert_eq!(settings.flowbar_snoozed_until_ms, Some(1_800_000_000_000));
+        assert_eq!(
+            settings.dictation_provider_id.as_deref(),
+            Some("local_whisper")
+        );
     }
 }

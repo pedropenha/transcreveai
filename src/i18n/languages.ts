@@ -1,6 +1,8 @@
 /**
  * Language metadata for supported locales.
  *
+ * Transcreve.ai v1 ships only English and Brazilian Portuguese (ADR-0002).
+ *
  * To add a new language:
  * 1. Create a new folder: src/i18n/locales/{code}/translation.json
  * 2. Add an entry here with the language code, English name, and native name
@@ -17,33 +19,40 @@ export const LANGUAGE_METADATA: Record<
   }
 > = {
   en: { name: "English", nativeName: "English", priority: 1 },
-  zh: { name: "Simplified Chinese", nativeName: "简体中文", priority: 2 },
-  "zh-TW": { name: "Traditional Chinese", nativeName: "繁體中文", priority: 3 },
-  es: { name: "Spanish", nativeName: "Español", priority: 4 },
-  fr: { name: "French", nativeName: "Français", priority: 5 },
-  de: { name: "German", nativeName: "Deutsch", priority: 6 },
-  ja: { name: "Japanese", nativeName: "日本語", priority: 7 },
-  ko: { name: "Korean", nativeName: "한국어", priority: 8 },
-  vi: { name: "Vietnamese", nativeName: "Tiếng Việt", priority: 9 },
-  pl: { name: "Polish", nativeName: "Polski", priority: 10 },
-  it: { name: "Italian", nativeName: "Italiano", priority: 11 },
-  ru: { name: "Russian", nativeName: "Русский", priority: 12 },
-  uk: { name: "Ukrainian", nativeName: "Українська", priority: 13 },
-  pt: { name: "Portuguese", nativeName: "Português", priority: 14 },
-  cs: { name: "Czech", nativeName: "Čeština", priority: 15 },
-  tr: { name: "Turkish", nativeName: "Türkçe", priority: 16 },
-  ar: { name: "Arabic", nativeName: "العربية", priority: 17, direction: "rtl" },
-  he: { name: "Hebrew", nativeName: "עברית", priority: 18, direction: "rtl" },
-  sv: { name: "Swedish", nativeName: "Svenska", priority: 19 },
-  bg: { name: "Bulgarian", nativeName: "Български", priority: 20 },
-  nl: { name: "Dutch", nativeName: "Nederlands", priority: 21 },
-  ne: { name: "Nepali", nativeName: "नेपाली", priority: 22 },
-  hi: { name: "Hindi", nativeName: "हिन्दी", priority: 23 },
-  da: { name: "Danish", nativeName: "Dansk", priority: 24 },
-  ca: { name: "Catalan", nativeName: "Català", priority: 25 },
-  id: {
-    name: "Indonesian",
-    nativeName: "Bahasa Indonesia",
-    priority: 26,
+  "pt-BR": {
+    name: "Portuguese (Brazil)",
+    nativeName: "Português (Brasil)",
+    priority: 2,
   },
+};
+
+/** UI language used when no preference is stored or a tag can't be resolved. */
+export const FALLBACK_LANGUAGE = "en";
+
+/**
+ * Resolve an arbitrary BCP-47 tag ("pt", "pt_BR", "en-US", "de-DE") onto one of
+ * the supported UI languages.
+ *
+ * Lookup order: exact match → same primary subtag ("pt" → "pt-BR",
+ * "en-US" → "en") → null (caller falls back to English).
+ */
+export const resolveSupportedLanguage = (
+  langCode: string | null | undefined,
+  supportedCodes: readonly string[],
+): string | null => {
+  if (!langCode) return null;
+
+  const normalized = langCode.toLowerCase().replace(/_/g, "-");
+  const primary = normalized.split("-")[0];
+
+  const exact = supportedCodes.find(
+    (code) => code.toLowerCase() === normalized,
+  );
+  if (exact) return exact;
+
+  return (
+    supportedCodes.find(
+      (code) => code.toLowerCase().split("-")[0] === primary,
+    ) ?? null
+  );
 };

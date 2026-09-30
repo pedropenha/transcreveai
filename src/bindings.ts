@@ -1002,7 +1002,66 @@ vad_backend?: VadBackend;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; 
+/**
+ * Default insertion method for finished transcriptions (FR-005). `Auto` is
+ * the v1 default (ADR-0002 / data-model). Consumers land with T-031.
+ */
+insertion_method?: InsertionMethod; 
+/**
+ * Maximum hands-free dictation length in minutes (FR-002-13). The spec
+ * range is 1–20; enforcement lives with the session consumer (T-022).
+ */
+max_dictation_minutes?: number; 
+/**
+ * Pending sessions kept in the FIFO insertion queue while a previous
+ * session is still processing (FR-002-16). Default 5.
+ */
+session_queue_size?: number; 
+/**
+ * Flow Bar visibility policy: always / only while recording / never
+ * (FR-001-10). `Never` still leaves hotkeys and tray feedback working.
+ */
+flowbar_visibility?: FlowbarVisibility; 
+/**
+ * Which monitor the Flow Bar follows (FR-001-09).
+ */
+flowbar_follow?: FlowbarFollow; 
+/**
+ * Edge the Flow Bar is docked to, plus the relative offset along it
+ * (0–1, FR-001-08). Persisted per position; multi-monitor placement is
+ * derived from `flowbar_follow`.
+ */
+flowbar_position_edge?: FlowbarEdge; 
+flowbar_position_offset?: number; 
+/**
+ * Hide the Flow Bar while the foreground window covers the whole monitor
+ * (FR-001-11), except during an active recording.
+ */
+flowbar_hide_in_fullscreen?: boolean; 
+/**
+ * Timed Flow Bar snooze (FR-001-07 "Ocultar por 15/30/60 min"): unix
+ * timestamp in milliseconds until which the bar stays hidden, `None` when
+ * not snoozed. "Ocultar até reiniciar o app" is runtime-only and never
+ * reaches the store.
+ */
+flowbar_snoozed_until_ms?: number | null; 
+/**
+ * STT provider used for dictation (data-model `transcription.dictation_provider`).
+ * `None` resolves to the local `selected_model` until the provider
+ * registry (T-004) lands.
+ */
+dictation_provider_id?: string | null; 
+/**
+ * STT provider used for meeting transcription (data-model
+ * `transcription.meeting_provider`); `None` inherits `dictation_provider_id`.
+ */
+meeting_provider_id?: string | null; 
+/**
+ * Fallback STT provider tried when the primary fails (data-model
+ * `transcription.fallback_provider`).
+ */
+fallback_provider_id?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1016,6 +1075,21 @@ export type EngineType =
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
+export type FlowbarEdge = "bottom" | "left" | "right"
+export type FlowbarFollow = 
+/**
+ * Monitor of the foreground window (data-model `foreground_monitor`).
+ */
+"foreground_monitor" | 
+/**
+ * Monitor under the cursor.
+ */
+"cursor" | 
+/**
+ * Always the primary monitor.
+ */
+"primary_monitor"
+export type FlowbarVisibility = "always" | "during_recording" | "never"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
@@ -1027,6 +1101,7 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+export type InsertionMethod = "auto" | "paste" | "paste_shift_insert" | "type" | "clipboard_only"
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.

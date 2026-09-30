@@ -16,7 +16,7 @@
 - [ ] `bun run lint`, `format:check`, `check:translations`, `test:unit`
 - [ ] `cargo fmt --check`, `cargo test`, `cargo clippy` em `src-tauri/`
 - [ ] Spec da feature atualizada, se o comportamento de produto mudou
-- [ ] Textos novos passam pelo i18n (`en` e `pt`)
+- [ ] Textos novos passam pelo i18n (`en` e `pt-BR`)
 
 ## Capturas (se houver UI)
 
