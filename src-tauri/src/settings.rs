@@ -614,6 +614,18 @@ pub struct AppSettings {
     /// `transcription.fallback_provider`).
     #[serde(default)]
     pub fallback_provider_id: Option<String>,
+    /// Blocks every cloud-provider network call (FR-010-09 / FR-011-08;
+    /// data-model `privacy.offline_mode`). Toggled from the tray menu
+    /// (FR-010-14) and Privacy settings; the actual network gate lands with
+    /// T-046.
+    #[serde(default)]
+    pub offline_mode: bool,
+    /// Meeting detection paused until this unix-ms timestamp (tray "Pausar
+    /// detecção de reuniões por 1 h", FR-010-14); `None` when detection runs
+    /// normally. A timestamp in the past counts as not paused. Consumed by
+    /// the detector (T-061).
+    #[serde(default)]
+    pub meeting_detection_paused_until_ms: Option<i64>,
 }
 
 fn default_model() -> String {
@@ -643,7 +655,9 @@ fn default_start_hidden() -> bool {
 }
 
 fn default_autostart_enabled() -> bool {
-    false
+    // FR-010-08 / data-model `system.launch_at_login`: launch at login is on
+    // by default.
+    true
 }
 
 fn default_update_checks_enabled() -> bool {
@@ -1113,6 +1127,8 @@ pub fn get_default_settings() -> AppSettings {
         dictation_provider_id: None,
         meeting_provider_id: None,
         fallback_provider_id: None,
+        offline_mode: false,
+        meeting_detection_paused_until_ms: None,
     }
 }
 

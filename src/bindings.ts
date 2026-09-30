@@ -1061,7 +1061,21 @@ meeting_provider_id?: string | null;
  * Fallback STT provider tried when the primary fails (data-model
  * `transcription.fallback_provider`).
  */
-fallback_provider_id?: string | null }
+fallback_provider_id?: string | null; 
+/**
+ * Blocks every cloud-provider network call (FR-010-09 / FR-011-08;
+ * data-model `privacy.offline_mode`). Toggled from the tray menu
+ * (FR-010-14) and Privacy settings; the actual network gate lands with
+ * T-046.
+ */
+offline_mode?: boolean; 
+/**
+ * Meeting detection paused until this unix-ms timestamp (tray "Pausar
+ * detecção de reuniões por 1 h", FR-010-14); `None` when detection runs
+ * normally. A timestamp in the past counts as not paused. Consumed by
+ * the detector (T-061).
+ */
+meeting_detection_paused_until_ms?: number | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }

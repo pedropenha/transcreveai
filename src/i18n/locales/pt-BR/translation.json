@@ -1,12 +1,20 @@
 {
   "tray": {
-    "settings": "Configurações...",
+    "openHub": "Abrir Hub",
+    "startDictation": "Iniciar ditado",
+    "stopDictation": "Parar ditado",
+    "startMeeting": "Iniciar reunião",
+    "stopMeeting": "Parar reunião",
+    "showFlowbar": "Mostrar Flow Bar",
+    "hideFlowbar": "Ocultar Flow Bar",
+    "pauseMeetingDetection": "Pausar detecção de reuniões por 1 h",
+    "offlineMode": "Modo offline",
     "checkUpdates": "Verificar Atualizações...",
-    "copyLastTranscript": "Copiar última transcrição",
-    "unloadModel": "Descarregar modelo",
-    "model": "Modelo",
     "quit": "Sair",
     "cancel": "Cancelar",
+    "quitRecordingTitle": "Gravação em andamento",
+    "quitRecordingMessage": "Há uma gravação em andamento. Sair mesmo assim? O áudio será perdido.",
+    "quitRecordingConfirm": "Sair mesmo assim",
     "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input"
   },
   "sidebar": {

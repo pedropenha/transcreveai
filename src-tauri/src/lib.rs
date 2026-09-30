@@ -289,32 +289,72 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     let tray = tray_builder
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "settings" => {
+            "open_hub" => {
                 show_main_window(app);
             }
             "secure_input_warning" => {
-                // Full explanation lives in the settings-window banner
+                // Full explanation lives in the Hub's warning banner
                 show_main_window(app);
+            }
+            "toggle_dictation" => {
+                // FR-010-14 "Iniciar/Parar ditado": the same toggle edge the
+                // --toggle-transcription CLI flag produces — a press while
+                // recording stops it, a press while idle starts it.
+                signal_handle::send_transcription_input(app, "transcribe", "Tray");
+            }
+            "toggle_meeting" => {
+                // Unreachable while the item ships disabled (T-064 wires the
+                // real start/stop).
+                log::warn!("Meeting toggle invoked before the meeting session exists");
+            }
+            "toggle_flowbar" => {
+                // "Ocultar até reiniciar o app" (FR-001-07): runtime-only,
+                // never persisted.
+                let hidden = !crate::overlay::is_flowbar_user_hidden();
+                crate::overlay::set_flowbar_user_hidden(app, hidden);
+                tray::update_tray_menu(app);
+            }
+            "pause_meeting_detection" => {
+                let mut settings = settings::get_settings(app);
+                let now = tray::now_unix_ms();
+                let paused_until = if tray::meeting_detection_is_paused(
+                    settings.meeting_detection_paused_until_ms,
+                    now,
+                ) {
+                    None
+                } else {
+                    Some(now + tray::MEETING_DETECTION_PAUSE_MS)
+                };
+                settings.meeting_detection_paused_until_ms = paused_until;
+                settings::write_settings(app, settings);
+                let _ = app.emit(
+                    "settings-changed",
+                    serde_json::json!({
+                        "setting": "meeting_detection_paused_until_ms",
+                        "value": paused_until
+                    }),
+                );
+                tray::update_tray_menu(app);
+            }
+            "offline_mode" => {
+                let mut settings = settings::get_settings(app);
+                settings.offline_mode = !settings.offline_mode;
+                let enabled = settings.offline_mode;
+                settings::write_settings(app, settings);
+                let _ = app.emit(
+                    "settings-changed",
+                    serde_json::json!({
+                        "setting": "offline_mode",
+                        "value": enabled
+                    }),
+                );
+                tray::update_tray_menu(app);
             }
             "check_updates" => {
                 let settings = settings::get_settings(app);
                 if settings::update_checks_effectively_enabled(&settings) {
                     show_main_window(app);
                     let _ = app.emit("check-for-updates", ());
-                }
-            }
-            "copy_last_transcript" => {
-                tray::copy_last_transcript(app);
-            }
-            "unload_model" => {
-                let transcription_manager = app.state::<Arc<TranscriptionManager>>();
-                if !transcription_manager.is_model_loaded() {
-                    log::warn!("No model is currently loaded.");
-                    return;
-                }
-                match transcription_manager.unload_model() {
-                    Ok(()) => log::info!("Model unloaded via tray."),
-                    Err(e) => log::error!("Failed to unload model via tray: {}", e),
                 }
             }
             "cancel" => {
@@ -324,26 +364,28 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 cancel_current_operation(app);
             }
             "quit" => {
-                app.exit(0);
-            }
-            id if id.starts_with("model_select:") => {
-                let model_id = id.strip_prefix("model_select:").unwrap().to_string();
-                let current_model = settings::get_settings(app).selected_model;
-                if model_id == current_model {
-                    return;
-                }
-                let app_clone = app.clone();
-                std::thread::spawn(move || {
-                    match commands::models::switch_active_model(&app_clone, &model_id) {
-                        Ok(()) => {
-                            log::info!("Model switched to {} via tray.", model_id);
-                        }
-                        Err(e) => {
-                            log::error!("Failed to switch model via tray: {}", e);
-                        }
+                // FR-010-15 / AC-010-06: a recording in progress would be lost
+                // — confirm before exiting.
+                if tray::quit_needs_confirmation(app) {
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+                    let strings = crate::tray_i18n::get_tray_translations(Some(
+                        settings::get_settings(app).app_language.clone(),
+                    ));
+                    let confirmed = app
+                        .dialog()
+                        .message(strings.quit_recording_message.clone())
+                        .title(strings.quit_recording_title.clone())
+                        .kind(MessageDialogKind::Warning)
+                        .buttons(MessageDialogButtons::OkCancelCustom(
+                            strings.quit_recording_confirm.clone(),
+                            strings.cancel.clone(),
+                        ))
+                        .blocking_show();
+                    if !confirmed {
+                        return;
                     }
-                    tray::update_tray_menu(&app_clone);
-                });
+                }
+                app.exit(0);
             }
             _ => {}
         })
@@ -861,6 +903,10 @@ pub fn run(cli_args: CliArgs) {
                 signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
+            } else if args.iter().any(|a| a == "--start-hidden") {
+                // Launched again with --start-hidden (e.g. a login relaunch):
+                // the request is "be running, but don't open anything", so the
+                // Hub stays hidden.
             } else {
                 // A second process was launched without remote-control flags
                 // (e.g. the binary run from a shell). On macOS, relaunching the
@@ -1063,6 +1109,23 @@ pub fn run(cli_args: CliArgs) {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
+                // FR-010-15: closing the Hub minimizes to the tray — but only
+                // when there is a tray to minimize to. With the tray off
+                // (`--no-tray` or the setting), hiding would leave the app
+                // running with no way back in, so closing quits instead.
+                // macOS is exempt: the Dock icon remains the way back.
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let settings = get_settings(window.app_handle());
+                    let no_tray = window.app_handle().state::<CliArgs>().no_tray;
+                    if window.label() == window_labels::HUB
+                        && (no_tray || !settings.show_tray_icon)
+                    {
+                        window.app_handle().exit(0);
+                        return;
+                    }
+                }
+
                 api.prevent_close();
                 let _res = window.hide();
 

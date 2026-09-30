@@ -1,12 +1,20 @@
 {
   "tray": {
-    "settings": "Settings...",
+    "openHub": "Open Hub",
+    "startDictation": "Start Dictation",
+    "stopDictation": "Stop Dictation",
+    "startMeeting": "Start Meeting",
+    "stopMeeting": "Stop Meeting",
+    "showFlowbar": "Show Flow Bar",
+    "hideFlowbar": "Hide Flow Bar",
+    "pauseMeetingDetection": "Pause meeting detection for 1 hour",
+    "offlineMode": "Offline Mode",
     "checkUpdates": "Check for Updates...",
-    "copyLastTranscript": "Copy Last Transcript",
-    "unloadModel": "Unload Model",
-    "model": "Model",
     "quit": "Quit",
     "cancel": "Cancel",
+    "quitRecordingTitle": "Recording in progress",
+    "quitRecordingMessage": "A recording is in progress. Quit anyway? The audio will be lost.",
+    "quitRecordingConfirm": "Quit Anyway",
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
   },
   "sidebar": {

@@ -492,8 +492,11 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     // Whether the overlay shows at all is governed by overlay_style; position
     // only chooses Top vs Bottom placement. Checked here (off the main thread)
     // so the common overlay-disabled case never pays for a main-thread hop.
+    // A user hide from the tray ("Ocultar Flow Bar", FR-010-14) suppresses it
+    // just as completely — hotkeys keep working, feedback moves to the tray
+    // icon (FR-001-10).
     let settings = settings::get_settings(app_handle);
-    if settings.overlay_style == OverlayStyle::None {
+    if settings.overlay_style == OverlayStyle::None || is_flowbar_user_hidden() {
         return;
     }
 
@@ -600,7 +603,7 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
 /// first sample chunk. Audio feedback uses the same backend readiness signal,
 /// but this targeted event is skipped when overlays are disabled.
 pub fn emit_recording_ready(app_handle: &AppHandle) {
-    if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
+    if !OVERLAY_ENABLED.load(Ordering::Relaxed) || is_flowbar_user_hidden() {
         return;
     }
 
@@ -730,6 +733,30 @@ pub fn update_overlay_enabled_cache(enabled: bool) {
     OVERLAY_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
+/// User-driven Flow Bar suppression from the tray's "Ocultar Flow Bar"
+/// (FR-010-14), matching FR-001-07 "Ocultar até reiniciar o app": runtime-only
+/// and never persisted — a restart always brings the bar back. T-040
+/// reconciles this flag with the persisted `flowbar_visibility` /
+/// `flowbar_snoozed_until_ms` settings once the always-on Flow Bar lands.
+static FLOWBAR_USER_HIDDEN: AtomicBool = AtomicBool::new(false);
+
+/// Whether the tray's "Ocultar Flow Bar" currently suppresses the overlay.
+pub fn is_flowbar_user_hidden() -> bool {
+    FLOWBAR_USER_HIDDEN.load(Ordering::Relaxed)
+}
+
+/// Hide or un-suppress the Flow Bar until the next launch. Hiding unmaps the
+/// window immediately; showing only lifts the suppression — the bar reappears
+/// on the next recording/state change that would display it.
+pub fn set_flowbar_user_hidden(app_handle: &AppHandle, hidden: bool) {
+    FLOWBAR_USER_HIDDEN.store(hidden, Ordering::Relaxed);
+    if hidden {
+        // Reuse the animated hide (fade-out event + delayed unmap) so a bar
+        // hidden mid-recording doesn't just pop out of existence.
+        hide_recording_overlay(app_handle);
+    }
+}
+
 /// IPC contract (contracts.md §5): the flowbar receives `audio://level` with
 /// `{ rms: f32[] }` at ~30 Hz, only while recording. The values are the
 /// visualizer's per-band levels — the flowbar renders them directly as bars.
@@ -744,7 +771,7 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // directly characterized; see issue #1279 for the investigation).
     // For users with `overlay_style: none` (the Linux default) this skip
     // eliminates the upstream driver of that accumulation.
-    if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
+    if !OVERLAY_ENABLED.load(Ordering::Relaxed) || is_flowbar_user_hidden() {
         return;
     }
 
