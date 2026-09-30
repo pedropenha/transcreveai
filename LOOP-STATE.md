@@ -25,10 +25,14 @@
 ## Em andamento (lanes)
 
 - **T-016** `feat/t-016-keyring-secrets` @ `ecc-t016` (70b66b95)
+- **T-002** `chore/t-002-ci` @ `ecc-t002` (8b9c2744)
+- **T-003** `chore/t-003-logging` @ `ecc-t003` (9c55f56d)
+- **T-007** `chore/t-007-tray-single-instance` @ `ecc-t007` (08fe6794)
+- **T-009** `chore/t-009-e2e-base` @ `ecc-t009` (c8b313c3)
 
 ## Próximas na DAG (prontas para lanes)
 
-- **T-002** [P] CI · **T-003** [P] logging · **T-006** [P] IPC/specta · **T-007** instância única/bandeja · **T-009** [P] E2E + fixtures WAV pt-BR · **T-015** [P] modelos · **T-060** monitor de mic · **T-063** loopback · **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade
+- **T-006** [P] IPC/specta · **T-015** [P] modelos · **T-060** monitor de mic · **T-063** loopback · **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade
 
 ## Merges pendentes
 
