@@ -123,7 +123,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
     if (!updateChecksEnabled) return;
 
     const portable = await commands.isPortable();
-    if (portable) {
+    if (portable.status === "ok" && portable.data) {
       setShowPortableUpdateDialog(true);
       return;
     }

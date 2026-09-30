@@ -1,3 +1,7 @@
+use crate::commands::CommandResult;
+
+#[cfg(target_os = "macos")]
+use crate::commands::{CommandError, CommandErrorCode};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
@@ -32,12 +36,18 @@ pub fn is_clamshell() -> Result<bool, String> {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 #[specta::specta]
-pub fn is_laptop() -> Result<bool, String> {
+pub fn is_laptop() -> CommandResult<bool> {
     let output = Command::new("pmset")
         .arg("-g")
         .arg("batt")
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to query battery status",
+                e,
+            )
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -57,7 +67,7 @@ pub fn is_clamshell() -> Result<bool, String> {
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
 #[specta::specta]
-pub fn is_laptop() -> Result<bool, String> {
+pub fn is_laptop() -> CommandResult<bool> {
     Ok(false)
 }
 

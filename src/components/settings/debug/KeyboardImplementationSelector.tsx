@@ -35,7 +35,7 @@ export const KeyboardImplementationSelector: React.FC<
           "Failed to update keyboard implementation:",
           result.error,
         );
-        toast.error(String(result.error));
+        toast.error(result.error.message);
         return;
       }
 

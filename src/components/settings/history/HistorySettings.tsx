@@ -212,7 +212,7 @@ export const HistorySettings: React.FC = () => {
   const retryHistoryEntry = async (id: number) => {
     const result = await commands.retryHistoryEntryTranscription(id);
     if (result.status !== "ok") {
-      throw new Error(String(result.error));
+      throw new Error(result.error.message);
     }
   };
 
@@ -220,7 +220,7 @@ export const HistorySettings: React.FC = () => {
     try {
       const result = await commands.openRecordingsFolder();
       if (result.status !== "ok") {
-        throw new Error(String(result.error));
+        throw new Error(result.error.message);
       }
     } catch (error) {
       console.error("Failed to open recordings folder:", error);

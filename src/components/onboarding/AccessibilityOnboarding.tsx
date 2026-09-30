@@ -69,11 +69,11 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
     const microphoneStatus =
       await commands.getWindowsMicrophonePermissionStatus();
 
-    if (!microphoneStatus.supported) {
+    if (microphoneStatus.status !== "ok" || !microphoneStatus.data.supported) {
       return true;
     }
 
-    return microphoneStatus.overall_access !== "denied";
+    return microphoneStatus.data.overall_access !== "denied";
   }, []);
 
   // Check platform and permission status on mount

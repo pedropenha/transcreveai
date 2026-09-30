@@ -106,7 +106,7 @@ export const useModelStore = create<ModelsStore>()(
             }),
           );
         } else {
-          set({ error: `Failed to load models: ${result.error}` });
+          set({ error: `Failed to load models: ${result.error.message}` });
         }
       } catch (err) {
         set({ error: `Failed to load models: ${err}` });
@@ -131,7 +131,7 @@ export const useModelStore = create<ModelsStore>()(
       try {
         const result = await commands.rescanLocalModels();
         if (result.status !== "ok") {
-          set({ error: `Failed to rescan models: ${result.error}` });
+          set({ error: `Failed to rescan models: ${result.error.message}` });
         }
         // On success the backend emits `models-updated`, which reloads the list
         // via the listener registered in initialize().
@@ -150,7 +150,7 @@ export const useModelStore = create<ModelsStore>()(
           set({ currentModel: modelId });
           return true;
         } else {
-          set({ error: `Failed to switch to model: ${result.error}` });
+          set({ error: `Failed to switch to model: ${result.error.message}` });
           return false;
         }
       } catch (err) {
@@ -218,7 +218,7 @@ export const useModelStore = create<ModelsStore>()(
           await get().loadModels();
           return true;
         } else {
-          set({ error: `Failed to cancel download: ${result.error}` });
+          set({ error: `Failed to cancel download: ${result.error.message}` });
           return false;
         }
       } catch (err) {
@@ -236,7 +236,7 @@ export const useModelStore = create<ModelsStore>()(
           await get().loadCurrentModel();
           return true;
         } else {
-          set({ error: `Failed to delete model: ${result.error}` });
+          set({ error: `Failed to delete model: ${result.error.message}` });
           return false;
         }
       } catch (err) {

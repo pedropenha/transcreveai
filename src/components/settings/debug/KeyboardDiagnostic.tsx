@@ -31,7 +31,7 @@ export const KeyboardDiagnostic: React.FC = () => {
       if (result.status === "ok") {
         setReport(result.data);
       } else {
-        setError(result.error);
+        setError(result.error.message);
       }
     } catch (e) {
       setError(String(e));

@@ -176,12 +176,15 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
             return false;
         }
 
-        let status = commands::audio::get_windows_microphone_permission_status();
-        if status.supported && status.overall_access == commands::audio::PermissionAccess::Denied {
-            log::info!(
-                "Windows microphone permissions are denied; forcing main window visible for onboarding"
-            );
-            return true;
+        if let Ok(status) = commands::audio::get_windows_microphone_permission_status() {
+            if status.supported
+                && status.overall_access == commands::audio::PermissionAccess::Denied
+            {
+                log::info!(
+                    "Windows microphone permissions are denied; forcing main window visible for onboarding"
+                );
+                return true;
+            }
         }
     }
 
@@ -377,19 +380,24 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
 #[tauri::command]
 #[specta::specta]
-fn trigger_update_check(app: AppHandle) -> Result<(), String> {
+fn trigger_update_check(app: AppHandle) -> commands::CommandResult<()> {
     let settings = settings::get_settings(&app);
     if !settings::update_checks_effectively_enabled(&settings) {
         return Ok(());
     }
-    app.emit("check-for-updates", ())
-        .map_err(|e| e.to_string())?;
+    app.emit("check-for-updates", ()).map_err(|e| {
+        commands::CommandError::logged(
+            commands::CommandErrorCode::Internal,
+            "Failed to trigger update check",
+            e,
+        )
+    })?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-fn show_main_window_command(app: AppHandle) -> Result<(), String> {
+fn show_main_window_command(app: AppHandle) -> commands::CommandResult<()> {
     show_main_window(&app);
     Ok(())
 }
