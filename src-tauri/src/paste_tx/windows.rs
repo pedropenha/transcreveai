@@ -471,7 +471,7 @@ fn on_timer(_hwnd: HWND, shared: &WinTxShared) {
     if let Ok(mut slot) = PENDING.lock() {
         let is_us = slot
             .as_ref()
-            .map(|pending| Arc::as_ptr(pending) as *const WinTxShared == shared as *const _)
+            .map(|pending| std::ptr::eq(Arc::as_ptr(pending), shared))
             .unwrap_or(false);
         if is_us {
             *slot = None;

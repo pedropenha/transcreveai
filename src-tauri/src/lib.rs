@@ -414,6 +414,7 @@ where
     }
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod headless_guard_tests {
     use super::run_headless_guarded;

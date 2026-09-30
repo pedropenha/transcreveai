@@ -61,7 +61,7 @@ pub fn is_laptop() -> Result<bool, String> {
     Ok(false)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 

@@ -91,9 +91,9 @@ fn get_windows_microphone_permission_status_impl() -> WindowsMicrophonePermissio
     // the relevant permission scope. The UWP master key (app_access) can be
     // "deny" on systems with debloaters (e.g. O&O ShutUp10) without actually
     // blocking desktop app microphone access.
-    let overall_access = if device_access == PermissionAccess::Denied {
-        PermissionAccess::Denied
-    } else if desktop_app_access == PermissionAccess::Denied {
+    let overall_access = if device_access == PermissionAccess::Denied
+        || desktop_app_access == PermissionAccess::Denied
+    {
         PermissionAccess::Denied
     } else if desktop_app_access == PermissionAccess::Allowed {
         PermissionAccess::Allowed
@@ -145,7 +145,7 @@ pub fn open_microphone_privacy_settings() -> Result<(), String> {
             .args(["/C", "start", "", "ms-settings:privacy-microphone"])
             .spawn()
             .map_err(|e| format!("Failed to open Windows microphone privacy settings: {}", e))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(target_os = "windows"))]
