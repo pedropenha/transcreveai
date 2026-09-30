@@ -1,0 +1,2011 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transcreve.ai — Direção Sinal Calmo</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 14v-4M8 17V7M12 20V4M16 17V7M20 14v-4' fill='none' stroke='teal' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --light-canvas: #f6f8f5;
+        --light-surface: #ffffff;
+        --light-surface-raised: #fbfcfa;
+        --light-surface-inset: #eef1ed;
+        --light-text: #181d1a;
+        --light-text-muted: #586159;
+        --light-text-subtle: #707a71;
+        --light-border: #dde2dc;
+        --light-border-strong: #9ba59b;
+        --light-accent: #08766f;
+        --light-accent-hover: #075e59;
+        --light-accent-soft: #e7f8f5;
+        --light-accent-contrast: #ffffff;
+        --light-recording: #ba304f;
+        --light-recording-soft: #fff0f3;
+        --light-processing: #7a5008;
+        --light-processing-soft: #fff7e0;
+        --light-success: #185e39;
+        --light-success-soft: #eaf8ef;
+        --light-warning: #7a5008;
+        --light-warning-soft: #fff7e0;
+        --light-error: #b42318;
+        --light-error-soft: #fff1ef;
+        --light-command: #5041a3;
+        --light-command-soft: #f1efff;
+        --dark-canvas: #0e1210;
+        --dark-surface: #181d1a;
+        --dark-surface-raised: #272d29;
+        --dark-surface-inset: #0e1210;
+        --dark-text: #f6f8f5;
+        --dark-text-muted: #c8cfc7;
+        --dark-text-subtle: #9ba59b;
+        --dark-border: #3d453f;
+        --dark-border-strong: #707a71;
+        --dark-accent: #63d3c5;
+        --dark-accent-hover: #95e2d8;
+        --dark-accent-soft: #063d3a;
+        --dark-accent-contrast: #0e1210;
+        --dark-recording: #fa899f;
+        --dark-recording-soft: #6c2135;
+        --dark-processing: #f7d573;
+        --dark-processing-soft: #603d0a;
+        --dark-success: #74d89b;
+        --dark-success-soft: #124a2d;
+        --dark-warning: #f7d573;
+        --dark-warning-soft: #603d0a;
+        --dark-error: #ff7d73;
+        --dark-error-soft: #721a14;
+        --dark-command: #b8aeff;
+        --dark-command-soft: #3e337f;
+        --flow-surface-light: #181d1a;
+        --flow-surface-raised-light: #272d29;
+        --flow-surface-dark: #0e1210;
+        --flow-surface-raised-dark: #181d1a;
+        --flow-text: #f6f8f5;
+        --flow-muted-light: #c8cfc7;
+        --flow-muted-dark: #9ba59b;
+        --flow-border: #3d453f;
+        --flow-accent: #63d3c5;
+        --flow-recording: #fa899f;
+        --flow-processing: #f7d573;
+        --flow-success: #74d89b;
+        --flow-warning: #f7d573;
+        --flow-error: #ff7d73;
+        --flow-command: #b8aeff;
+        --font-sans:
+          "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
+          sans-serif;
+        --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+        --space-1: 0.25rem;
+        --space-2: 0.5rem;
+        --space-3: 0.75rem;
+        --space-4: 1rem;
+        --space-5: 1.25rem;
+        --space-6: 1.5rem;
+        --space-8: 2rem;
+        --space-10: 2.5rem;
+        --space-12: 3rem;
+        --radius-sm: 0.375rem;
+        --radius-md: 0.625rem;
+        --radius-lg: 0.875rem;
+        --radius-xl: 1.25rem;
+        --radius-pill: 999px;
+        --duration-fast: 90ms;
+        --duration-interaction: 140ms;
+        --duration-enter: 180ms;
+        --duration-state: 240ms;
+        --duration-success: 600ms;
+        --duration-feedback-loop: 900ms;
+        --duration-pulse: 1800ms;
+        --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+        --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+        --shadow-raised-light:
+          0 1px 2px rgba(14, 18, 16, 0.08), 0 8px 24px rgba(14, 18, 16, 0.1);
+        --shadow-floating-light:
+          0 2px 5px rgba(14, 18, 16, 0.14), 0 16px 40px rgba(14, 18, 16, 0.18);
+        --shadow-raised-dark:
+          0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 24px rgba(0, 0, 0, 0.3);
+        --shadow-floating-dark:
+          0 2px 5px rgba(0, 0, 0, 0.34), 0 16px 40px rgba(0, 0, 0, 0.42);
+        --canvas: var(--light-canvas);
+        --surface: var(--light-surface);
+        --surface-raised: var(--light-surface-raised);
+        --surface-inset: var(--light-surface-inset);
+        --text: var(--light-text);
+        --text-muted: var(--light-text-muted);
+        --text-subtle: var(--light-text-subtle);
+        --border: var(--light-border);
+        --border-strong: var(--light-border-strong);
+        --accent: var(--light-accent);
+        --accent-hover: var(--light-accent-hover);
+        --accent-soft: var(--light-accent-soft);
+        --accent-contrast: var(--light-accent-contrast);
+        --recording: var(--light-recording);
+        --recording-soft: var(--light-recording-soft);
+        --processing: var(--light-processing);
+        --processing-soft: var(--light-processing-soft);
+        --success: var(--light-success);
+        --success-soft: var(--light-success-soft);
+        --warning: var(--light-warning);
+        --warning-soft: var(--light-warning-soft);
+        --error: var(--light-error);
+        --error-soft: var(--light-error-soft);
+        --command: var(--light-command);
+        --command-soft: var(--light-command-soft);
+        --flow-surface: var(--flow-surface-light);
+        --flow-surface-raised: var(--flow-surface-raised-light);
+        --flow-muted: var(--flow-muted-light);
+        --shadow-raised: var(--shadow-raised-light);
+        --shadow-floating: var(--shadow-floating-light);
+      }
+
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --canvas: var(--dark-canvas);
+        --surface: var(--dark-surface);
+        --surface-raised: var(--dark-surface-raised);
+        --surface-inset: var(--dark-surface-inset);
+        --text: var(--dark-text);
+        --text-muted: var(--dark-text-muted);
+        --text-subtle: var(--dark-text-subtle);
+        --border: var(--dark-border);
+        --border-strong: var(--dark-border-strong);
+        --accent: var(--dark-accent);
+        --accent-hover: var(--dark-accent-hover);
+        --accent-soft: var(--dark-accent-soft);
+        --accent-contrast: var(--dark-accent-contrast);
+        --recording: var(--dark-recording);
+        --recording-soft: var(--dark-recording-soft);
+        --processing: var(--dark-processing);
+        --processing-soft: var(--dark-processing-soft);
+        --success: var(--dark-success);
+        --success-soft: var(--dark-success-soft);
+        --warning: var(--dark-warning);
+        --warning-soft: var(--dark-warning-soft);
+        --error: var(--dark-error);
+        --error-soft: var(--dark-error-soft);
+        --command: var(--dark-command);
+        --command-soft: var(--dark-command-soft);
+        --flow-surface: var(--flow-surface-dark);
+        --flow-surface-raised: var(--flow-surface-raised-dark);
+        --flow-muted: var(--flow-muted-dark);
+        --shadow-raised: var(--shadow-raised-dark);
+        --shadow-floating: var(--shadow-floating-dark);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--canvas);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        background:
+          linear-gradient(var(--border) 1px, transparent 1px),
+          linear-gradient(90deg, var(--border) 1px, transparent 1px),
+          var(--canvas);
+        background-size: 32px 32px;
+        background-position: -1px -1px;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-4);
+        min-height: 60px;
+        padding: var(--space-3) clamp(var(--space-4), 4vw, var(--space-10));
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--canvas) 92%, transparent);
+        backdrop-filter: blur(12px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        min-width: 0;
+      }
+
+      .brand-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: var(--radius-md);
+        color: var(--accent-contrast);
+        background: var(--accent);
+      }
+
+      .brand-mark svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .brand-copy {
+        min-width: 0;
+      }
+
+      .brand-copy strong,
+      .brand-copy span {
+        display: block;
+      }
+
+      .brand-copy strong {
+        font-size: 0.875rem;
+        line-height: 1.2;
+      }
+
+      .brand-copy span {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+      }
+
+      .theme-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: 40px;
+        padding: 0 var(--space-3);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        background: var(--surface);
+        cursor: pointer;
+        transition:
+          border-color var(--duration-interaction) var(--ease-standard),
+          background-color var(--duration-interaction) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
+      }
+
+      .theme-toggle:hover {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .theme-toggle:active {
+        transform: scale(0.98);
+      }
+
+      .theme-toggle svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      main {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: clamp(var(--space-8), 5vw, var(--space-12)) 0 var(--space-12);
+      }
+
+      .intro {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
+        gap: var(--space-8);
+        align-items: end;
+        margin-bottom: var(--space-12);
+      }
+
+      .eyebrow {
+        margin: 0 0 var(--space-3);
+        color: var(--accent);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 15ch;
+        margin-bottom: var(--space-4);
+        font-size: clamp(2rem, 5vw, 3.75rem);
+        font-weight: 650;
+        letter-spacing: -0.035em;
+        line-height: 1;
+        text-wrap: balance;
+      }
+
+      .lede {
+        max-width: 62ch;
+        margin-bottom: 0;
+        color: var(--text-muted);
+        font-size: 1.0625rem;
+        text-wrap: pretty;
+      }
+
+      .principle {
+        padding: var(--space-5) 0 var(--space-5) var(--space-5);
+        border-left: 2px solid var(--accent);
+      }
+
+      .principle strong {
+        display: block;
+        margin-bottom: var(--space-2);
+        font-size: 1rem;
+      }
+
+      .principle p {
+        margin-bottom: 0;
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+      }
+
+      section {
+        margin-bottom: var(--space-12);
+      }
+
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--space-6);
+        margin-bottom: var(--space-5);
+        padding-bottom: var(--space-3);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .section-head h2 {
+        margin-bottom: 0;
+        font-size: 1.25rem;
+        letter-spacing: -0.015em;
+      }
+
+      .section-head p {
+        margin-bottom: 0;
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+        text-align: right;
+      }
+
+      .palette {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: var(--space-3);
+      }
+
+      .swatch {
+        min-height: 128px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+      }
+
+      .swatch-color {
+        height: 72px;
+        border-bottom: 1px solid
+          color-mix(in srgb, var(--text) 12%, transparent);
+        background: var(--swatch);
+      }
+
+      .swatch-copy {
+        padding: var(--space-3);
+      }
+
+      .swatch-copy strong,
+      .swatch-copy span {
+        display: block;
+      }
+
+      .swatch-copy strong {
+        font-size: 0.75rem;
+      }
+
+      .swatch-copy span {
+        margin-top: var(--space-1);
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        font-size: 0.6875rem;
+      }
+
+      .grid-two {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-4);
+      }
+
+      .surface {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: var(--surface);
+      }
+
+      .surface.raised {
+        background: var(--surface-raised);
+        box-shadow: var(--shadow-raised);
+      }
+
+      .sample-block {
+        padding: var(--space-6);
+      }
+
+      .type-display {
+        margin-bottom: var(--space-3);
+        font-size: 1.875rem;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+
+      .type-section {
+        margin-bottom: var(--space-3);
+        font-size: 1.0625rem;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+
+      .type-body {
+        max-width: 58ch;
+        margin-bottom: var(--space-3);
+        color: var(--text-muted);
+        font-size: 0.9375rem;
+      }
+
+      .type-meta {
+        margin-bottom: 0;
+        color: var(--text-subtle);
+        font-size: 0.75rem;
+      }
+
+      .timer {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .control-stack {
+        display: grid;
+        gap: var(--space-4);
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        min-height: 40px;
+        padding: 0 var(--space-4);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        transition:
+          transform var(--duration-fast) var(--ease-standard),
+          color var(--duration-interaction) var(--ease-standard),
+          border-color var(--duration-interaction) var(--ease-standard),
+          background-color var(--duration-interaction) var(--ease-standard),
+          box-shadow var(--duration-interaction) var(--ease-standard);
+      }
+
+      .button:hover {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .button:active {
+        transform: scale(0.98);
+      }
+
+      .button.primary {
+        color: var(--accent-contrast);
+        border-color: var(--accent);
+        background: var(--accent);
+      }
+
+      .button.primary:hover {
+        border-color: var(--accent-hover);
+        background: var(--accent-hover);
+      }
+
+      .button.danger {
+        color: var(--error);
+        border-color: color-mix(in srgb, var(--error) 42%, var(--border));
+        background: var(--error-soft);
+      }
+
+      .button:disabled {
+        color: var(--text-subtle);
+        border-color: var(--border);
+        background: var(--surface-inset);
+        cursor: not-allowed;
+        opacity: 0.56;
+      }
+
+      .field {
+        display: grid;
+        gap: var(--space-2);
+      }
+
+      .field label {
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+
+      .field input {
+        width: 100%;
+        min-height: 40px;
+        padding: 0 var(--space-3);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        background: var(--surface-inset);
+        transition:
+          border-color var(--duration-interaction) var(--ease-standard),
+          box-shadow var(--duration-interaction) var(--ease-standard),
+          background-color var(--duration-interaction) var(--ease-standard);
+      }
+
+      .field input:hover {
+        border-color: var(--accent);
+      }
+
+      .field input:focus {
+        border-color: var(--accent);
+        background: var(--surface);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+
+      .status-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--space-3);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: 44px;
+        padding: 0 var(--space-3);
+        border: 1px solid color-mix(in srgb, var(--status) 36%, var(--border));
+        border-radius: var(--radius-md);
+        color: var(--status);
+        background: var(--status-soft);
+        font-size: 0.8125rem;
+        font-weight: 600;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        flex: none;
+        border-radius: var(--radius-pill);
+        background: currentColor;
+      }
+
+      .hub-shell {
+        display: grid;
+        grid-template-columns: 168px minmax(0, 1fr) 280px;
+        min-height: 520px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: var(--surface);
+        box-shadow: var(--shadow-raised);
+      }
+
+      .hub-rail {
+        padding: var(--space-4) var(--space-3);
+        border-right: 1px solid var(--border);
+        background: var(--surface-raised);
+      }
+
+      .rail-title {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin: 0 var(--space-2) var(--space-5);
+        font-size: 0.8125rem;
+        font-weight: 700;
+      }
+
+      .rail-signal {
+        display: inline-flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 14px;
+      }
+
+      .rail-signal i {
+        display: block;
+        width: 2px;
+        border-radius: var(--radius-pill);
+        background: var(--accent);
+      }
+
+      .rail-signal i:nth-child(1),
+      .rail-signal i:nth-child(5) {
+        height: 5px;
+      }
+
+      .rail-signal i:nth-child(2),
+      .rail-signal i:nth-child(4) {
+        height: 9px;
+      }
+
+      .rail-signal i:nth-child(3) {
+        height: 14px;
+      }
+
+      .rail-list {
+        display: grid;
+        gap: var(--space-1);
+      }
+
+      .rail-item {
+        position: relative;
+        display: flex;
+        align-items: center;
+        min-height: 40px;
+        padding: 0 var(--space-3);
+        border: 0;
+        border-radius: var(--radius-sm);
+        color: var(--text-muted);
+        background: transparent;
+        font-size: 0.8125rem;
+        text-align: left;
+      }
+
+      .rail-item.active {
+        color: var(--text);
+        background: var(--accent-soft);
+        font-weight: 600;
+      }
+
+      .rail-item.active::before {
+        position: absolute;
+        top: 9px;
+        bottom: 9px;
+        left: 0;
+        width: 2px;
+        border-radius: var(--radius-pill);
+        background: var(--accent);
+        content: "";
+      }
+
+      .hub-main {
+        min-width: 0;
+        padding: var(--space-6);
+      }
+
+      .hub-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-4);
+        margin-bottom: var(--space-6);
+      }
+
+      .hub-header h3 {
+        margin-bottom: var(--space-1);
+        font-size: 1.5rem;
+        letter-spacing: -0.02em;
+      }
+
+      .hub-header p {
+        margin-bottom: 0;
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+      }
+
+      .stats-strip {
+        display: flex;
+        gap: var(--space-6);
+        margin-bottom: var(--space-6);
+        padding: var(--space-4) 0;
+        border-block: 1px solid var(--border);
+      }
+
+      .stat strong,
+      .stat span {
+        display: block;
+      }
+
+      .stat strong {
+        font-family: var(--font-mono);
+        font-size: 1.25rem;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .stat span {
+        color: var(--text-muted);
+        font-size: 0.6875rem;
+      }
+
+      .history {
+        position: relative;
+        display: grid;
+      }
+
+      .history::before {
+        position: absolute;
+        top: 18px;
+        bottom: 18px;
+        left: 7px;
+        width: 1px;
+        background: var(--border);
+        content: "";
+      }
+
+      .history-row {
+        position: relative;
+        display: grid;
+        grid-template-columns: 16px 48px minmax(0, 1fr);
+        gap: var(--space-3);
+        padding: var(--space-3) 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .history-row:last-child {
+        border-bottom: 0;
+      }
+
+      .history-node {
+        position: relative;
+        z-index: 1;
+        width: 8px;
+        height: 8px;
+        margin-top: 7px;
+        border: 2px solid var(--surface);
+        border-radius: var(--radius-pill);
+        background: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent);
+      }
+
+      .history-row.command .history-node {
+        background: var(--command);
+        box-shadow: 0 0 0 1px var(--command);
+      }
+
+      .history-time {
+        padding-top: 2px;
+        color: var(--text-subtle);
+        font-family: var(--font-mono);
+        font-size: 0.6875rem;
+      }
+
+      .history-copy strong,
+      .history-copy span {
+        display: block;
+      }
+
+      .history-copy strong {
+        font-size: 0.8125rem;
+      }
+
+      .history-copy span {
+        display: -webkit-box;
+        margin-top: var(--space-1);
+        overflow: hidden;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+
+      .hub-detail {
+        padding: var(--space-6) var(--space-5);
+        border-left: 1px solid var(--border);
+        background: var(--surface-raised);
+      }
+
+      .detail-label {
+        margin-bottom: var(--space-2);
+        color: var(--text-subtle);
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .detail-copy {
+        margin-bottom: var(--space-6);
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+      }
+
+      .flow-stage {
+        position: relative;
+        min-height: 620px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background:
+          radial-gradient(
+            circle at 75% 20%,
+            var(--accent-soft),
+            transparent 38%
+          ),
+          var(--surface-inset);
+      }
+
+      .flow-stage::after {
+        position: absolute;
+        right: var(--space-4);
+        bottom: var(--space-4);
+        color: var(--text-subtle);
+        font-size: 0.6875rem;
+        content: "Preview em escala real";
+      }
+
+      .flow-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-6) var(--space-8);
+        padding: var(--space-8);
+      }
+
+      .flow-sample {
+        display: grid;
+        min-height: 88px;
+        grid-template-columns: 120px minmax(0, 1fr);
+        align-items: center;
+        gap: var(--space-4);
+      }
+
+      .flow-label strong,
+      .flow-label span {
+        display: block;
+      }
+
+      .flow-label strong {
+        font-size: 0.8125rem;
+      }
+
+      .flow-label span {
+        margin-top: var(--space-1);
+        color: var(--text-muted);
+        font-size: 0.6875rem;
+      }
+
+      .flow-demo {
+        display: flex;
+        min-width: 170px;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .flowbar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        color: var(--flow-text);
+        border: 1px solid var(--flow-border);
+        border-radius: var(--radius-pill);
+        background: var(--flow-surface);
+        box-shadow: var(--shadow-floating);
+        font-family: var(--font-sans);
+        font-size: 0.6875rem;
+        font-weight: 600;
+        transition:
+          width var(--duration-state) var(--ease-enter),
+          height var(--duration-state) var(--ease-enter),
+          background-color var(--duration-interaction) var(--ease-standard);
+      }
+
+      .flowbar.idle {
+        width: 48px;
+        height: 8px;
+        box-shadow: 0 2px 10px
+          color-mix(in srgb, var(--flow-surface) 35%, transparent);
+      }
+
+      .flowbar.hover {
+        width: 88px;
+        height: 36px;
+        padding: 3px;
+        background: var(--flow-surface-raised);
+      }
+
+      .flow-action {
+        display: inline-flex;
+        width: 28px;
+        height: 28px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: var(--radius-pill);
+        color: var(--flow-text);
+        background: color-mix(in srgb, var(--flow-text) 8%, transparent);
+      }
+
+      .flow-action.primary {
+        color: var(--flow-surface);
+        background: var(--flow-accent);
+      }
+
+      .flow-action svg {
+        width: 13px;
+        height: 13px;
+      }
+
+      .flowbar.recording {
+        width: 128px;
+        height: 36px;
+        justify-content: space-between;
+        padding: 0 7px;
+        background: var(--flow-surface-raised);
+      }
+
+      .mini-action {
+        display: inline-flex;
+        width: 24px;
+        height: 24px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: var(--radius-pill);
+        color: var(--flow-muted);
+        background: color-mix(in srgb, var(--flow-text) 8%, transparent);
+      }
+
+      .mini-action svg {
+        width: 11px;
+        height: 11px;
+      }
+
+      .wave {
+        display: inline-flex;
+        height: 18px;
+        align-items: center;
+        gap: 2px;
+      }
+
+      .wave i {
+        width: 3px;
+        border-radius: var(--radius-pill);
+        background: var(--flow-recording);
+        animation: wave var(--duration-feedback-loop) var(--ease-standard)
+          infinite alternate;
+      }
+
+      .wave i:nth-child(1),
+      .wave i:nth-child(7) {
+        height: 6px;
+      }
+
+      .wave i:nth-child(2),
+      .wave i:nth-child(6) {
+        height: 11px;
+        animation-delay: 100ms;
+      }
+
+      .wave i:nth-child(3),
+      .wave i:nth-child(5) {
+        height: 16px;
+        animation-delay: 200ms;
+      }
+
+      .wave i:nth-child(4) {
+        height: 9px;
+        animation-delay: 300ms;
+      }
+
+      @keyframes wave {
+        to {
+          opacity: 0.55;
+          transform: scaleY(0.55);
+        }
+      }
+
+      .flowbar.command {
+        width: 150px;
+        height: 36px;
+        color: var(--flow-command);
+        border-color: color-mix(
+          in srgb,
+          var(--flow-command) 55%,
+          var(--flow-border)
+        );
+      }
+
+      .command-mark {
+        display: inline-flex;
+        width: 16px;
+        height: 16px;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        color: var(--flow-surface);
+        background: var(--flow-command);
+        font-family: var(--font-mono);
+        font-size: 0.625rem;
+      }
+
+      .flowbar.processing,
+      .flowbar.error,
+      .flowbar.done,
+      .flowbar.meeting {
+        height: 24px;
+        padding: 0 var(--space-2);
+      }
+
+      .flowbar.processing,
+      .flowbar.error {
+        width: 64px;
+      }
+
+      .flowbar.done {
+        width: 48px;
+        color: var(--flow-success);
+      }
+
+      .flowbar.error {
+        color: var(--flow-error);
+        border-color: var(--flow-error);
+      }
+
+      .flowbar.meeting {
+        width: 96px;
+        color: var(--flow-text);
+      }
+
+      .dots {
+        display: inline-flex;
+        gap: 3px;
+      }
+
+      .dots i {
+        width: 4px;
+        height: 4px;
+        border-radius: var(--radius-pill);
+        background: var(--flow-processing);
+        animation: dot var(--duration-feedback-loop) var(--ease-standard)
+          infinite;
+      }
+
+      .dots i:nth-child(2) {
+        animation-delay: 120ms;
+      }
+
+      .dots i:nth-child(3) {
+        animation-delay: 240ms;
+      }
+
+      @keyframes dot {
+        50% {
+          opacity: 0.4;
+          transform: translateY(-2px);
+        }
+      }
+
+      .meeting-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: var(--radius-pill);
+        background: var(--flow-recording);
+        box-shadow: 0 0 0 3px
+          color-mix(in srgb, var(--flow-recording) 20%, transparent);
+      }
+
+      .meeting-area {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: var(--space-4);
+      }
+
+      .meeting-canvas {
+        display: grid;
+        min-height: 220px;
+        place-items: center;
+        padding: var(--space-6);
+        border-radius: var(--radius-xl);
+        background: var(--surface-inset);
+      }
+
+      .toast {
+        width: min(360px, 100%);
+        padding: var(--space-3);
+        color: var(--flow-text);
+        border: 1px solid var(--flow-border);
+        border-radius: var(--radius-lg);
+        background: var(--flow-surface-raised);
+        box-shadow: var(--shadow-floating);
+      }
+
+      .toast-head {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--space-3);
+      }
+
+      .toast-icon {
+        display: inline-flex;
+        width: 32px;
+        height: 32px;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-md);
+        color: var(--flow-surface);
+        background: var(--flow-warning);
+      }
+
+      .toast-icon svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .toast-copy strong,
+      .toast-copy span {
+        display: block;
+      }
+
+      .toast-copy strong {
+        font-size: 0.75rem;
+      }
+
+      .toast-copy span {
+        margin-top: 1px;
+        color: var(--flow-muted);
+        font-size: 0.6875rem;
+      }
+
+      .toast-now {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+        color: var(--flow-warning);
+        font-size: 0.6875rem;
+        font-weight: 600;
+      }
+
+      .toast.expanded .toast-actions {
+        display: flex;
+      }
+
+      .toast-actions {
+        display: none;
+        align-items: center;
+        gap: var(--space-2);
+        margin-top: var(--space-3);
+        padding-top: var(--space-3);
+        border-top: 1px solid var(--flow-border);
+      }
+
+      .toast-button {
+        min-height: 36px;
+        padding: 0 var(--space-3);
+        border: 1px solid var(--flow-border);
+        border-radius: var(--radius-md);
+        color: var(--flow-text);
+        background: color-mix(in srgb, var(--flow-text) 7%, transparent);
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+
+      .toast-button.primary {
+        flex: 1;
+        color: var(--flow-surface);
+        border-color: var(--flow-accent);
+        background: var(--flow-accent);
+      }
+
+      .meeting-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: 36px;
+        padding: 0 var(--space-3);
+        color: var(--flow-text);
+        border: 1px solid
+          color-mix(in srgb, var(--flow-recording) 50%, var(--flow-border));
+        border-radius: var(--radius-pill);
+        background: var(--flow-surface);
+        box-shadow: var(--shadow-floating);
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+
+      .meeting-pill .timer {
+        color: var(--flow-muted);
+      }
+
+      .a11y-note {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: var(--space-4);
+        padding: var(--space-5);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+      }
+
+      .a11y-mark {
+        display: inline-flex;
+        width: 36px;
+        height: 36px;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-pill);
+        color: var(--accent-contrast);
+        background: var(--accent);
+        font-weight: 700;
+      }
+
+      .a11y-note strong {
+        display: block;
+        margin-bottom: var(--space-1);
+      }
+
+      .a11y-note p {
+        margin-bottom: 0;
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+      }
+
+      @media (max-width: 960px) {
+        .palette {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .hub-shell {
+          grid-template-columns: 136px minmax(0, 1fr);
+        }
+
+        .hub-detail {
+          display: none;
+        }
+
+        .flow-list {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .intro,
+        .grid-two,
+        .meeting-area {
+          grid-template-columns: 1fr;
+        }
+
+        .section-head {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: var(--space-1);
+        }
+
+        .section-head p {
+          text-align: left;
+        }
+
+        .status-row {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .hub-shell {
+          display: block;
+        }
+
+        .hub-rail {
+          display: flex;
+          align-items: center;
+          overflow-x: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+
+        .rail-title {
+          margin: 0 var(--space-3) 0 0;
+        }
+
+        .rail-list {
+          display: flex;
+        }
+
+        .rail-item {
+          white-space: nowrap;
+        }
+
+        .stats-strip {
+          overflow-x: auto;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .brand-copy span,
+        .theme-toggle span {
+          display: none;
+        }
+
+        main {
+          width: min(100% - 24px, 1180px);
+        }
+
+        .palette {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .flow-list {
+          padding: var(--space-4);
+        }
+
+        .flow-sample {
+          grid-template-columns: 96px minmax(0, 1fr);
+        }
+
+        .flow-demo {
+          min-width: 0;
+          justify-content: flex-start;
+        }
+
+        .hub-main {
+          padding: var(--space-4);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 1ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path
+              d="M4 14v-4M8 17V7M12 20V4M16 17V7M20 14v-4"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </span>
+        <span class="brand-copy">
+          <strong>Transcreve.ai</strong>
+          <span>Direção de design · T-008</span>
+        </span>
+      </div>
+      <button
+        id="theme-toggle"
+        class="theme-toggle"
+        type="button"
+        aria-pressed="false"
+      >
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 3v2M12 19v2M3 12h2M19 12h2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+          <circle
+            cx="12"
+            cy="12"
+            r="4"
+            stroke="currentColor"
+            stroke-width="1.8"
+          />
+        </svg>
+        <span id="theme-label">Tema escuro</span>
+      </button>
+    </header>
+
+    <main>
+      <div class="intro">
+        <div>
+          <p class="eyebrow">Sinal Calmo</p>
+          <h1>Presente quando importa. Discreto no resto do tempo.</h1>
+          <p class="lede">
+            Uma linguagem de instrumento desktop: neutros quentes, sinais de
+            estado precisos e superfícies contínuas para ditar, revisar e seguir
+            trabalhando sem ruído.
+          </p>
+        </div>
+        <aside class="principle">
+          <strong>Detalhe distintivo</strong>
+          <p>
+            O trilho de sinal conecta seleção, tempo, áudio e progresso entre o
+            Hub, a Flow Bar e os toasts.
+          </p>
+        </aside>
+      </div>
+
+      <section aria-labelledby="palette-title">
+        <div class="section-head">
+          <h2 id="palette-title">Paleta semântica</h2>
+          <p>Troque o tema para verificar as duas variantes.</p>
+        </div>
+        <div class="palette">
+          <div class="swatch" style="--swatch: var(--canvas)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Canvas</strong><span>canvas</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--surface)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Superfície</strong><span>surface</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--accent)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Sinal</strong><span>accent</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--recording)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Gravação</strong><span>recording</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--processing)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Processando</strong><span>processing</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--command)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Comando</strong><span>command</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--success)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Sucesso</strong><span>success</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--warning)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Aviso</strong><span>warning</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--error)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Erro</strong><span>error</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--text)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Texto</strong><span>text</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--text-muted)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Secundário</strong><span>text-muted</span>
+            </div>
+          </div>
+          <div class="swatch" style="--swatch: var(--border)">
+            <div class="swatch-color"></div>
+            <div class="swatch-copy">
+              <strong>Borda</strong><span>border</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="foundation-title">
+        <div class="section-head">
+          <h2 id="foundation-title">Tipografia e controles</h2>
+          <p>Segoe UI Variable, escala compacta e alvos confortáveis.</p>
+        </div>
+        <div class="grid-two">
+          <div class="surface sample-block">
+            <p class="type-display">Ditado pronto para revisar</p>
+            <p class="type-section">Histórico de hoje</p>
+            <p class="type-body">
+              Texto principal em 15 px, com largura de leitura estável e
+              contraste AA. Descrições curtas usam ritmo de 1,5 para continuarem
+              legíveis sem aumentar a densidade.
+            </p>
+            <p class="type-meta">
+              Google Chrome · <span class="timer">14:32</span> · 42 palavras
+            </p>
+          </div>
+          <div class="surface raised sample-block control-stack">
+            <div class="button-row">
+              <button class="button primary" type="button">
+                Ação principal
+              </button>
+              <button class="button" type="button">Secundária</button>
+              <button class="button danger" type="button">Excluir</button>
+              <button class="button" type="button" disabled>
+                Indisponível
+              </button>
+            </div>
+            <div class="field">
+              <label for="sample-input">Nome do perfil</label>
+              <input id="sample-input" value="Português · Trabalho" />
+            </div>
+            <div class="status-row">
+              <div
+                class="status"
+                style="
+                  --status: var(--success);
+                  --status-soft: var(--success-soft);
+                "
+              >
+                <span class="status-dot"></span>Concluído
+              </div>
+              <div
+                class="status"
+                style="
+                  --status: var(--warning);
+                  --status-soft: var(--warning-soft);
+                "
+              >
+                <span class="status-dot"></span>Atenção
+              </div>
+              <div
+                class="status"
+                style="--status: var(--error); --status-soft: var(--error-soft)"
+              >
+                <span class="status-dot"></span>Erro
+              </div>
+              <div
+                class="status"
+                style="
+                  --status: var(--command);
+                  --status-soft: var(--command-soft);
+                "
+              >
+                <span class="status-dot"></span>Comando
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="hub-title">
+        <div class="section-head">
+          <h2 id="hub-title">Hub como superfície contínua</h2>
+          <p>Trilho compacto + histórico + detalhe, sem grade de cartões.</p>
+        </div>
+        <div class="hub-shell">
+          <nav class="hub-rail" aria-label="Seções do Hub">
+            <div class="rail-title">
+              <span class="rail-signal" aria-hidden="true">
+                <i></i><i></i><i></i><i></i><i></i>
+              </span>
+              Transcreve.ai
+            </div>
+            <div class="rail-list">
+              <button class="rail-item active" type="button">Início</button>
+              <button class="rail-item" type="button">Notas</button>
+              <button class="rail-item" type="button">Reuniões</button>
+              <button class="rail-item" type="button">Dicionário</button>
+              <button class="rail-item" type="button">Modelos</button>
+              <button class="rail-item" type="button">Configurações</button>
+            </div>
+          </nav>
+          <div class="hub-main">
+            <div class="hub-header">
+              <div>
+                <h3>Hoje</h3>
+                <p>Seu histórico local de ditados</p>
+              </div>
+              <button class="button primary" type="button">Novo ditado</button>
+            </div>
+            <div class="stats-strip" aria-label="Estatísticas de hoje">
+              <div class="stat">
+                <strong>1.248</strong><span>palavras</span>
+              </div>
+              <div class="stat">
+                <strong>132</strong><span>palavras/min</span>
+              </div>
+              <div class="stat">
+                <strong>24 min</strong><span>economizados</span>
+              </div>
+            </div>
+            <div class="history">
+              <div class="history-row">
+                <span class="history-node"></span>
+                <span class="history-time">14:32</span>
+                <span class="history-copy">
+                  <strong>Chrome · E-mail</strong>
+                  <span
+                    >Olá, confirmei nossa conversa e envio os próximos passos
+                    ainda hoje.</span
+                  >
+                </span>
+              </div>
+              <div class="history-row command">
+                <span class="history-node"></span>
+                <span class="history-time">13:08</span>
+                <span class="history-copy">
+                  <strong>VS Code · Comando</strong>
+                  <span
+                    >Transformar este trecho em uma lista objetiva com três
+                    itens.</span
+                  >
+                </span>
+              </div>
+              <div class="history-row">
+                <span class="history-node"></span>
+                <span class="history-time">11:47</span>
+                <span class="history-copy">
+                  <strong>Slack · Mensagem</strong>
+                  <span
+                    >Consigo revisar a proposta depois do almoço e retorno no
+                    canal.</span
+                  >
+                </span>
+              </div>
+              <div class="history-row">
+                <span class="history-node"></span>
+                <span class="history-time">09:15</span>
+                <span class="history-copy">
+                  <strong>Notion · Nota</strong>
+                  <span
+                    >Registrar as decisões da pesquisa e alinhar os critérios da
+                    próxima entrega.</span
+                  >
+                </span>
+              </div>
+            </div>
+          </div>
+          <aside class="hub-detail">
+            <p class="detail-label">Selecionado</p>
+            <h3>Chrome · E-mail</h3>
+            <p class="detail-copy">
+              Olá, confirmei nossa conversa e envio os próximos passos ainda
+              hoje.
+            </p>
+            <p class="detail-label">Pipeline</p>
+            <p class="detail-copy">Whisper local · Português · Limpeza leve</p>
+            <div class="button-row">
+              <button class="button primary" type="button">Copiar</button>
+              <button class="button" type="button">Detalhes</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section aria-labelledby="flow-title">
+        <div class="section-head">
+          <h2 id="flow-title">Estados principais da Flow Bar</h2>
+          <p>Instrumento grafite, sinais próprios e dimensões da F001.</p>
+        </div>
+        <div class="flow-stage">
+          <div class="flow-list">
+            <div class="flow-sample">
+              <div class="flow-label">
+                <strong>Idle</strong><span>48 × 8</span>
+              </div>
+              <div class="flow-demo">
+                <div class="flowbar idle" aria-label="Flow Bar ociosa"></div>
+              </div>
+            </div>
+            <div class="flow-sample">
+              <div class="flow-label">
+                <strong>Hover</strong><span>duas ações</span>
+              </div>
+              <div class="flow-demo">
+                <div class="flowbar hover" aria-label="Flow Bar com ações">
+                  <button
+                    class="flow-action primary"
+                    type="button"
+                    aria-label="Ditar"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <rect
+                        x="9"
+                        y="3"
+                        width="6"
+                        height="11"
+                        rx="3"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      />
+                      <path
+                        d="M6 11a6 6 0 0 0 12 0M12 17v4"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    class="flow-action"
+                    type="button"
+                    aria-label="Notas de reunião"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="7"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      />
+                      <circle cx="12" cy="12" r="2" fill="currentColor" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="flow-sample">
+              <div class="flow-label">
+                <strong>Recording</strong><span>coral + áudio</span>
+              </div>
+              <div class="flow-demo">
+                <div class="flowbar recording" aria-label="Gravando ditado">
+                  <button
+                    class="mini-action"
+                    type="button"
+                    aria-label="Cancelar"
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path
+                        d="M4 4l8 8M12 4l-8 8"
+                        stroke="currentColor"
+                        stroke-width="1.7"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </button>
+                  <span class="wave" aria-hidden="true"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                  ></span>
+                  <button class="mini-action" type="button" aria-label="Parar">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                      <rect
+                        x="5"
+                        y="5"
+                        width="6"
+                        height="6"
+                        rx="1"
+                        fill="currentColor"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="flow-sample">
+              <div class="flow-label">
+                <strong>Command</strong><span>violeta</span>
+              </div>
+              <div class="flow-demo">
+                <div class="flowbar command" aria-label="Gravando comando">
+                  <span class="command-mark" aria-hidden="true">⌘</span>
+                  <span>Comando</span>
+                  <span class="wave" aria-hidden="true"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+              </div>
+            </div>
+            <div class="flow-sample">
+              <div class="flow-label">
+                <strong>Processing</strong><span>âmbar</span>
+              </div>
+              <div class="flow-demo">
+                <div class="flowbar processing" aria-label="Processando">
+                  <span class="dots" aria-hidden="true"
+                    ><i></i><i></i><i></i
+                  ></span>
+                </div>
+              </div>
+            </div>
+            <div class="flow-sample">
+              <div class="flow-label">
+                <strong>Done</strong><span>600 ms</span>
+              </div>
+              <div class="flow-demo">
+                <div class="flowbar done" aria-label="Concluído">✓</div>
+              </div>
+            </div>
+            <div class="flow-sample">
+              <div class="flow-label">
+                <strong>Error</strong><span>falha acionável</span>
+              </div>
+              <div class="flow-demo">
+                <div class="flowbar error" aria-label="Erro">! Erro</div>
+              </div>
+            </div>
+            <div class="flow-sample">
+              <div class="flow-label">
+                <strong>Meeting</strong><span>cronômetro mono</span>
+              </div>
+              <div class="flow-demo">
+                <div class="flowbar meeting" aria-label="Reunião sendo gravada">
+                  <span class="meeting-dot" aria-hidden="true"></span>
+                  <span class="timer">12:34</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="meeting-title">
+        <div class="section-head">
+          <h2 id="meeting-title">Reunião: toast e pílula</h2>
+          <p>Âmbar convida; coral confirma captura persistente.</p>
+        </div>
+        <div class="meeting-area">
+          <div class="meeting-canvas">
+            <div class="toast">
+              <div class="toast-head">
+                <span class="toast-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <rect
+                      x="3"
+                      y="6"
+                      width="13"
+                      height="12"
+                      rx="2"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    />
+                    <path
+                      d="m16 10 5-3v10l-5-3"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span class="toast-copy"
+                  ><strong>Reunião detectada</strong
+                  ><span>Google Meet</span></span
+                >
+                <span class="toast-now"
+                  ><span class="status-dot"></span>Agora</span
+                >
+              </div>
+            </div>
+          </div>
+          <div class="meeting-canvas">
+            <div>
+              <div class="toast expanded">
+                <div class="toast-head">
+                  <span class="toast-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <rect
+                        x="3"
+                        y="6"
+                        width="13"
+                        height="12"
+                        rx="2"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      />
+                      <path
+                        d="m16 10 5-3v10l-5-3"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span class="toast-copy"
+                    ><strong>Reunião detectada</strong
+                    ><span>Google Meet</span></span
+                  >
+                  <span class="toast-now"
+                    ><span class="status-dot"></span>Agora</span
+                  >
+                </div>
+                <div class="toast-actions">
+                  <button
+                    class="toast-button"
+                    type="button"
+                    aria-label="Dispensar"
+                  >
+                    ×
+                  </button>
+                  <button class="toast-button primary" type="button">
+                    Iniciar Notetaker
+                  </button>
+                  <button
+                    class="toast-button"
+                    type="button"
+                    aria-label="Mais opções"
+                  >
+                    ⌄
+                  </button>
+                </div>
+              </div>
+              <div style="height: var(--space-4)"></div>
+              <div
+                class="meeting-pill"
+                aria-label="Gravando reunião há doze minutos e trinta e quatro segundos"
+              >
+                <span class="meeting-dot" aria-hidden="true"></span>
+                <span>Gravando</span>
+                <span class="timer">12:34</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="a11y-title">
+        <div class="section-head">
+          <h2 id="a11y-title">Acessibilidade incorporada</h2>
+          <p>WCAG 2.2 AA como restrição do sistema, não acabamento.</p>
+        </div>
+        <div class="a11y-note">
+          <span class="a11y-mark" aria-hidden="true">AA</span>
+          <div>
+            <strong>Contraste, foco, alvo e movimento</strong>
+            <p>
+              Texto normal ≥ 4,5:1; indicadores e limites essenciais ≥ 3:1; foco
+              de 2 px com offset; alvo preferencial de 44 px; estados com
+              texto/ícone além da cor; e troca instantânea quando o sistema pede
+              movimento reduzido.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const root = document.documentElement;
+      const toggle = document.querySelector("#theme-toggle");
+      const label = document.querySelector("#theme-label");
+
+      toggle.addEventListener("click", () => {
+        const dark = root.dataset.theme !== "dark";
+        root.dataset.theme = dark ? "dark" : "light";
+        toggle.setAttribute("aria-pressed", String(dark));
+        label.textContent = dark ? "Tema claro" : "Tema escuro";
+      });
+    </script>
+  </body>
+</html>
