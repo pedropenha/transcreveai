@@ -2,13 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  BellRing,
-  ChevronDown,
-  TriangleAlert,
-  Video,
-  X,
-} from "lucide-react";
+import { BellRing, ChevronDown, TriangleAlert, Video, X } from "lucide-react";
 import "./ToastOverlay.css";
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
@@ -16,10 +10,12 @@ import {
   COLLAPSE_AFTER_MS,
   CONFIRMATION_MS,
   meetingMenuItems,
+  noticeActionFor,
   resolveToastView,
   startsRecording,
   toastWindowHeight,
   type DetectorAction,
+  type NoticeAction,
   type ToastStateEvent,
 } from "./toastView";
 
@@ -37,6 +33,18 @@ interface CommandEnvelope {
   status: "ok" | "error";
   data?: unknown;
   error?: unknown;
+}
+
+/** Kinds that render the warning triangle rather than the bell —
+ *  `toast://show.kind` is a semantic discriminator, not a style. */
+function isWarningKind(kind: string | undefined): boolean {
+  return (
+    kind === "warning" ||
+    kind === "error" ||
+    kind === "meeting_warning" ||
+    kind === "meeting_limit" ||
+    kind === "meeting_auto_stop"
+  );
 }
 
 async function detectorRespond(
@@ -78,8 +86,19 @@ const ToastOverlay: React.FC = () => {
   const collapseTimerRef = useRef<number | undefined>(undefined);
   const confirmTimerRef = useRef<number | undefined>(undefined);
 
-  const view = resolveToastView({ state, hovered, menuOpen, confirming });
   const detection = state.detection;
+  // FR-008-13 (T-069): an `auto_start` detection is already recording —
+  // resolve the "Gravando · <App>" face on the very first paint so the ask
+  // prompt never flashes; the effect below only arms its 3 s dismissal.
+  const autoConfirm =
+    detection?.action === "auto_start" ? detection.app_label : null;
+  const confirmingApp = confirming ?? autoConfirm;
+  const view = resolveToastView({
+    state,
+    hovered,
+    menuOpen,
+    confirming: confirmingApp,
+  });
 
   // ---- Collapse timer (FR-008-10) ------------------------------------------
   // 60 s without interaction hides the window; every pointer event on the
@@ -144,6 +163,20 @@ const ToastOverlay: React.FC = () => {
     void invoke("toast_dismiss");
   }, []);
 
+  // FR-008-14/FR-009-08 (T-069): a notice carrying a known action gets a
+  // button; the command answer is the dismissal either way.
+  const runNoticeAction = useCallback(
+    async (action: NoticeAction) => {
+      try {
+        await invoke(action.command);
+      } catch (e) {
+        console.warn(`${action.command} failed:`, e);
+      }
+      dismissToast();
+    },
+    [dismissToast],
+  );
+
   const dismissTransient = useCallback(() => {
     setMenuOpen(false);
     setHovered(false);
@@ -173,45 +206,66 @@ const ToastOverlay: React.FC = () => {
     [detection, dismissToast, dismissTransient],
   );
 
-  // FR-008-13: an `auto_start` detection is already recording — the toast is
-  // the "Gravando · <App>" confirmation only, then it collapses away.
+  // FR-008-13: the auto-start confirmation self-dismisses after 3 s (the
+  // face itself is resolved at paint time via `autoConfirm` above).
   useEffect(() => {
-    if (view === "compact" && detection?.action === "auto_start") {
-      setConfirming(detection.app_label);
-      window.clearTimeout(confirmTimerRef.current);
-      confirmTimerRef.current = window.setTimeout(dismissToast, CONFIRMATION_MS);
+    if (autoConfirm === null) {
+      return;
     }
-  }, [view, detection, dismissToast]);
+    window.clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = window.setTimeout(dismissToast, CONFIRMATION_MS);
+  }, [autoConfirm, dismissToast]);
 
   if (view === "hidden") return null;
 
   // ---- Render ---------------------------------------------------------------
 
-  const renderNotice = () => (
-    <div
-      className="tcard tnotice"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onPointerMove={armCollapse}
-    >
-      {state.notice?.kind === "warning" || state.notice?.kind === "error" ? (
-        <TriangleAlert size={16} className="ticon-warn" aria-hidden="true" />
-      ) : (
-        <BellRing size={16} className="ticon" aria-hidden="true" />
-      )}
-      <span className="tnotice-msg">{state.notice?.message}</span>
-      {view === "notice-expanded" && (
-        <button
-          type="button"
-          className="sx tclose"
-          aria-label={t("toast.dismiss")}
-          onClick={dismissToast}
-        >
-          <X size={10} aria-hidden="true" />
-        </button>
-      )}
-    </div>
-  );
+  const renderNotice = () => {
+    const expanded = view === "notice-expanded";
+    const noticeAction = noticeActionFor(state.notice?.action);
+    return (
+      <div
+        className={`tcard tnotice ${expanded && noticeAction ? "expanded" : ""}`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onPointerMove={armCollapse}
+      >
+        <div className="tnotice-main">
+          {isWarningKind(state.notice?.kind) ? (
+            <TriangleAlert
+              size={16}
+              className="ticon-warn"
+              aria-hidden="true"
+            />
+          ) : (
+            <BellRing size={16} className="ticon" aria-hidden="true" />
+          )}
+          <span className="tnotice-msg">{state.notice?.message}</span>
+          {expanded && (
+            <button
+              type="button"
+              className="sx tclose"
+              aria-label={t("toast.dismiss")}
+              onClick={dismissToast}
+            >
+              <X size={10} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        {expanded && noticeAction && (
+          <div className="tactions">
+            <button
+              type="button"
+              className="tprimary"
+              onClick={() => void runNoticeAction(noticeAction)}
+            >
+              {t(`toast.${noticeAction.labelKey}`)}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderMeeting = () => {
     if (view === "confirming") {
@@ -219,7 +273,7 @@ const ToastOverlay: React.FC = () => {
         <div className="tcard tconfirm">
           <span className="tdot-rec" aria-hidden="true" />
           <span className="ttitle">
-            {t("toast.recording", { app: confirming })}
+            {t("toast.recording", { app: confirmingApp })}
           </span>
         </div>
       );

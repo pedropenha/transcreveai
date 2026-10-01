@@ -148,6 +148,31 @@ impl Worker {
                 let _ = reply.send(result);
                 self.flush();
             }
+            Command::DetectionEnded { detection_id } => {
+                // FR-008-14 (T-069): the machine ignores ids it is not linked
+                // to and every id when auto-stop is off — this forward is
+                // deliberately dumb.
+                if let Some(m) = self.machine.as_mut() {
+                    m.detection_ended(&detection_id, Instant::now());
+                }
+                self.flush();
+            }
+            Command::ContinueRecording { reply } => {
+                let result = match self.machine.as_mut() {
+                    None => Err(CommandError::new(
+                        CommandErrorCode::NotFound,
+                        "No meeting is recording",
+                    )),
+                    Some(m) => {
+                        // Idempotent: cancelling when nothing is pending is
+                        // fine (the toast's click is also a dismiss).
+                        m.continue_recording();
+                        Ok(())
+                    }
+                };
+                let _ = reply.send(result);
+                self.flush();
+            }
         }
     }
 
@@ -233,7 +258,31 @@ impl Worker {
             MeetingPolicy::from_settings(&settings),
             true,          // mic live unless TrackUnavailable says otherwise
             !req.mic_only, // system track only in call mode
+            req.detection_id.clone(),
         ));
+
+        // FR-008-14 race (T-069): the detection that triggered this start
+        // may already be gone — the meeting ended while the capture/db work
+        // was in flight, and its `Ended` event drained to an idle session
+        // (a no-op). Arm the auto-stop now so the recording does not outlive
+        // its meeting by accident.
+        if let Some(id) = req.detection_id.as_deref() {
+            let still_live = self
+                .app
+                .try_state::<crate::meeting::SharedDetector>()
+                .is_some_and(|detector| {
+                    detector
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .find(id)
+                        .is_some()
+                });
+            if !still_live {
+                if let Some(m) = self.machine.as_mut() {
+                    m.detection_ended(id, now);
+                }
+            }
+        }
 
         // FR-009-02: discreet consent reminder on every start (opt-out).
         if settings.meeting_consent_reminder {
@@ -453,6 +502,12 @@ impl Worker {
             } => self.write_gap_marker(track, start_ms, end_ms),
             Effect::PersistStatus { status, error_code } => self.persist_status(status, error_code),
             Effect::Toast(kind) => self.emit_kind(kind),
+            // Only a still-pending `meeting_auto_stop` notice is cleared —
+            // a toast another lane just showed (new detection, consent)
+            // must survive the race.
+            Effect::DismissToast => {
+                crate::toast::dismiss_notice_if_kind(&self.app, ToastKind::AutoStop.kind())
+            }
             Effect::RequestProcessing => {
                 let Some(meeting) = &self.meeting else {
                     return;

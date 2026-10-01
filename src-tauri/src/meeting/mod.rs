@@ -19,10 +19,15 @@
 //!   `meeting_detection_paused_until_ms` and `offline_mode`
 //!   ([`monitor::DetectionGate`]) before any classification runs.
 //!
-//! Deliberately **out of scope** (later tasks): the toast window (T-062), the
-//! meeting session itself (T-064 — it listens for `detector://start-requested`
-//! emitted by `commands::detector::detector_respond`), auto-start/auto-stop
-//! wiring (T-069).
+//! Also here (T-069): FR-008-13 auto-start — [`detector::wants_auto_start`]
+//! decides and `emit_detector_outputs` fires `detector://start-requested`
+//! alongside `detector://meeting`; FR-008-14 auto-stop consumes
+//! `meeting_ended` ends at the session layer.
+//!
+//! Deliberately **out of scope** (other tasks): the toast window (T-062) and
+//! the meeting session itself (T-064 — it listens for
+//! `detector://start-requested`, emitted by
+//! `commands::detector::detector_respond` and by the T-069 auto-start path).
 
 mod classifier;
 mod consent;
@@ -151,30 +156,65 @@ fn run(app: tauri::AppHandle, detector: SharedDetector) {
 
 /// Translate detector outputs into `detector://meeting` IPC events
 /// (contracts.md §5); emit failures are logged, never fatal.
+///
+/// FR-008-13 (T-069): a detection whose rule is `auto_start` — or any
+/// detection while the global `meeting_auto_start` is on — additionally
+/// fires `detector://start-requested` so the session starts without a
+/// click (AC-008-04). Its `detector://meeting` action is reported as
+/// `"auto_start"` so the toast renders the "Gravando · <App>"
+/// confirmation instead of the ask prompt.
 #[cfg(target_os = "windows")]
 fn emit_detector_outputs(app: &tauri::AppHandle, outputs: Vec<DetectorOutput>) {
     use tauri::Emitter;
 
+    let auto_start_global = crate::settings::get_settings(app).meeting_auto_start;
     for output in outputs {
-        let event = match output {
+        match output {
             DetectorOutput::Started(detection) => {
+                let auto = detector::wants_auto_start(detection.action, auto_start_global);
                 log::info!(
-                    "Meeting detected: {} (id={}, exe={}, action={:?}, source={:?})",
+                    "Meeting detected: {} (id={}, exe={}, action={:?}, source={:?}, auto_start={auto})",
                     detection.app_label,
                     detection.detection_id,
                     detection.exe_name,
                     detection.action,
                     detection.source
                 );
-                DetectorMeetingEvent::started(&detection)
+                let mut event = DetectorMeetingEvent::started(&detection);
+                if auto {
+                    // The toast keys the "Gravando · <App>" confirmation
+                    // face off `action == "auto_start"` — global-toggle
+                    // starts must present identically to rule ones.
+                    event.action = Some(RuleAction::AutoStart.as_str().to_string());
+                }
+                if let Err(e) = app.emit(DETECTOR_MEETING_EVENT, event) {
+                    log::warn!("detector://meeting emit failed: {e}");
+                }
+                if auto {
+                    if let Err(e) = app.emit(
+                        DETECTOR_START_REQUESTED_EVENT,
+                        DetectorStartRequest {
+                            detection_id: detection.detection_id.clone(),
+                            app_label: detection.app_label.clone(),
+                            exe: detection.exe_name.clone(),
+                            mic_only: false,
+                            auto: true,
+                        },
+                    ) {
+                        log::warn!("detector://start-requested emit failed: {e}");
+                    }
+                }
             }
-            DetectorOutput::Ended { ref detection_id } => {
-                log::info!("Meeting ended (id={detection_id})");
-                DetectorMeetingEvent::ended(detection_id)
+            DetectorOutput::Ended {
+                ref detection_id,
+                meeting_over,
+            } => {
+                log::info!("Meeting ended (id={detection_id}, meeting_over={meeting_over})");
+                let event = DetectorMeetingEvent::ended(detection_id, meeting_over);
+                if let Err(e) = app.emit(DETECTOR_MEETING_EVENT, event) {
+                    log::warn!("detector://meeting emit failed: {e}");
+                }
             }
-        };
-        if let Err(e) = app.emit(DETECTOR_MEETING_EVENT, event) {
-            log::warn!("detector://meeting emit failed: {e}");
         }
     }
 }

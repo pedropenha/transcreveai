@@ -3,6 +3,7 @@ import {
   CONFIRMATION_MS,
   COLLAPSE_AFTER_MS,
   meetingMenuItems,
+  noticeActionFor,
   resolveToastView,
   startsRecording,
   toastWindowHeight,
@@ -22,7 +23,11 @@ const detection: MeetingDetection = {
 
 const notice: ToastNotice = { kind: "warning", message: "mic fallback" };
 
-const idle: ToastStateEvent = { collapsed: false, detection: null, notice: null };
+const idle: ToastStateEvent = {
+  collapsed: false,
+  detection: null,
+  notice: null,
+};
 const meeting: ToastStateEvent = { collapsed: false, detection, notice: null };
 
 const base: ToastViewInput = {
@@ -68,9 +73,77 @@ assert.equal(
 );
 
 // Generic toast://show notices: compact, expand on hover.
-const noticed: ToastViewInput = { ...base, state: { collapsed: false, detection: null, notice } };
+const noticed: ToastViewInput = {
+  ...base,
+  state: { collapsed: false, detection: null, notice },
+};
 assert.equal(resolveToastView(noticed), "notice");
-assert.equal(resolveToastView({ ...noticed, hovered: true }), "notice-expanded");
+assert.equal(
+  resolveToastView({ ...noticed, hovered: true }),
+  "notice-expanded",
+);
+
+// T-069 (AC-008-05): notices carrying a known action open expanded without
+// hover — the "Continuar gravando" button must be reachable inside 15 s.
+const autoStopNotice: ToastNotice = {
+  kind: "meeting_auto_stop",
+  message: "A reunião terminou — finalizando a gravação em 15 s…",
+  action: "continue_recording",
+};
+assert.equal(
+  resolveToastView({
+    ...base,
+    state: { collapsed: false, detection: null, notice: autoStopNotice },
+  }),
+  "notice-expanded",
+);
+const limitNotice: ToastNotice = {
+  kind: "meeting_limit",
+  message: "limite em 5 min",
+  action: "extend_30",
+};
+assert.equal(
+  resolveToastView({
+    ...base,
+    state: { collapsed: false, detection: null, notice: limitNotice },
+  }),
+  "notice-expanded",
+);
+// Actions the toast cannot answer inline keep the compact notice face.
+assert.equal(
+  resolveToastView({
+    ...base,
+    state: {
+      collapsed: false,
+      detection: null,
+      notice: { kind: "meeting_checkin", message: "x", action: "checkin" },
+    },
+  }),
+  "notice",
+);
+assert.equal(
+  noticeActionFor("continue_recording")?.command,
+  "meeting_continue_recording",
+);
+assert.equal(noticeActionFor("extend_30")?.command, "meeting_extend_30");
+assert.equal(noticeActionFor("checkin"), null);
+assert.equal(noticeActionFor("bogus"), null);
+assert.equal(noticeActionFor(undefined), null);
+// T-069: an auto-start detection never renders the ask prompt — the
+// overlay feeds `confirming = app_label` into the resolver on the very
+// first paint, so it lands on the "Gravando · <App>" face directly.
+assert.equal(
+  resolveToastView({
+    ...base,
+    state: {
+      collapsed: false,
+      detection: { ...detection, action: "auto_start" },
+      notice: null,
+    },
+    confirming: "Google Meet",
+  }),
+  "confirming",
+);
 
 // Which actions end in the "Gravando · <App>" confirmation (FR-008-09).
 assert.equal(startsRecording("start"), true);

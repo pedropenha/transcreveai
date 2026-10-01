@@ -67,7 +67,12 @@ export function resolveToastView(input: ToastViewInput): ToastView {
   if (state.detection !== null) {
     return hovered || menuOpen ? "expanded" : "compact";
   }
-  return hovered ? "notice-expanded" : "notice";
+  // Notices carrying a known action open expanded straight away — the
+  // button must be clickable without a hover dance (AC-008-05 gives the
+  // user 15 s).
+  return hovered || noticeActionFor(state.notice?.action) !== null
+    ? "notice-expanded"
+    : "notice";
 }
 
 /** FR-008-10: collapse the toast after this much no-interaction time. */
@@ -97,6 +102,34 @@ export function startsRecording(action: DetectorAction): boolean {
   return RECORDING_ACTIONS.has(action);
 }
 
+/** A `toast://show` action the toast can answer inline (T-069): the button
+ *  an expanded notice renders. `command` is invoked raw — meeting commands
+ *  ship in bindings.ts, but this webview deliberately calls `invoke` (same
+ *  style as `detector_respond` above). */
+export interface NoticeAction {
+  command: string;
+  /** Key under `toast.*` holding the button label. */
+  labelKey: string;
+}
+
+/** Known notice actions, keyed by `toast://show.action`. Notices whose
+ *  action is absent here render without a button — e.g. `open_consent`
+ *  opens the Hub modal (MeetingConsentGate) and `checkin` needs the
+ *  two-choice prompt (Continuar/Parar) that belongs to T-066's surface. */
+const NOTICE_ACTIONS: Readonly<Record<string, NoticeAction>> = {
+  // FR-008-14: "Continuar gravando" cancels the 15 s auto-stop.
+  continue_recording: {
+    command: "meeting_continue_recording",
+    labelKey: "keepRecording",
+  },
+  // FR-009-08: "Estender 30 min" on the duration-limit warning.
+  extend_30: { command: "meeting_extend_30", labelKey: "extend30" },
+};
+
+export function noticeActionFor(action: unknown): NoticeAction | null {
+  return typeof action === "string" ? (NOTICE_ACTIONS[action] ?? null) : null;
+}
+
 export interface ToastMenuItem {
   action: DetectorAction;
   /** Key under `toast.*` in the translation files (takes `{{app}}`). */
@@ -120,10 +153,7 @@ export function meetingMenuItems(): ToastMenuItem[] {
  * so the native window is only ever as tall as the card (no click-through
  * dead zone, and expansion grows upward from the anchored bottom edge).
  */
-export function toastWindowHeight(
-  view: ToastView,
-  menuOpen: boolean,
-): number {
+export function toastWindowHeight(view: ToastView, menuOpen: boolean): number {
   switch (view) {
     case "hidden":
       return 0;
