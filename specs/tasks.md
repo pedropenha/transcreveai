@@ -57,7 +57,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [ ] **T-006** [P] **Adaptar** IPC: `tauri-specta` já gera `src/bindings.ts`; alinhar comandos e erros ao envelope `ok/error` do contrato. — Refs: [contracts §5](architecture/contracts.md#5-ipc-tauri)
 - [ ] **T-007** **Adaptar** instância única, autostart e bandeja (já existem no Handy): verificar contra os AC e ajustar o menu à FR-010-14. — Refs: FR-010-13..15, FR-010-18
 - [x] **T-008** [P] **Direção de design** (`rules/web/design-quality.md`): estilo, paleta, tipografia e tokens a partir dos prints do Wispr, com as skills `frontend-design-direction` / `design-system`. Saída: `DESIGN.md` + tokens. Antes de T-040/T-042. — Refs: F001, NFR-010-05
-- [ ] **T-009** [P] **Base de testes E2E**: Playwright nas webviews (`e2e-testing`) + `windows-desktop-e2e` (pywinauto/UI Automation) para fluxos nativos, com fonte de áudio WAV em builds de teste. Inclui fixtures WAV pt-BR (fala curta/longu com muletas) usados também pela T-035. — Refs: `rules/common/testing.md`, F002 notas técnicas
+- [x] **T-009** [P] **Base de testes E2E**: Playwright nas webviews (`e2e-testing`) + `windows-desktop-e2e` (pywinauto/UI Automation) para fluxos nativos, com fonte de áudio WAV em builds de teste. Inclui fixtures WAV pt-BR (fala curta/longa com muletas) usados também pela T-035. — Refs: `rules/common/testing.md`, F002 notas técnicas
 
 ## Fase 1 — Ditado (v1)
 

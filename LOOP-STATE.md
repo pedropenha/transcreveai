@@ -25,10 +25,11 @@
 ## Em andamento (lanes)
 
 - **T-016** `feat/t-016-keyring-secrets` @ `ecc-t016` (70b66b95)
+- **T-009** `chore/t-009-e2e-base` @ `ecc-t009` — Playwright + mock IPC (`tests/helpers/tauri-mock.ts`), harness nativo `e2e/native/` (pywinauto, smoke manual), feature `audio-fixture` (`TRANSCREVE_AUDIO_FIXTURE`), fixtures WAV pt-BR sintéticos em `e2e/fixtures/pt-br/`.
 
 ## Próximas na DAG (prontas para lanes)
 
-- **T-002** [P] CI · **T-003** [P] logging · **T-006** [P] IPC/specta · **T-007** instância única/bandeja · **T-009** [P] E2E + fixtures WAV pt-BR · **T-015** [P] modelos · **T-060** monitor de mic · **T-063** loopback · **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade
+- **T-002** [P] CI · **T-003** [P] logging · **T-006** [P] IPC/specta · **T-007** instância única/bandeja · **T-015** [P] modelos · **T-060** monitor de mic · **T-063** loopback · **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade
 
 ## Merges pendentes
 
@@ -47,6 +48,7 @@
 - Aviso de fallback de mic (T-010) depende de `toast://show` — pendente de lane de UI.
 - `managers/transcription.rs` virou diretório — lanes futuras devem editar os submódulos.
 - Infra: `CARGO_TARGET_DIR` compartilhado (`C:\t`) — lanes devem usar `-TargetDir C:\t-<lane>`; fixar `TEMP/TMP` único por lane (race em `temp_dir()`).
+- Infra: o disco C: encheu durante a T-009 (0 bytes livres → `ENOSPC` no `bun install` e no `rustc`). `C:\t-t010` (7,3 GB, lane mergeada) foi removido para destravar; `C:\t` ainda ocupa ~26 GB de cache compartilhado — vale um `cargo clean`/purge agendado.
 
 ## Notas operacionais
 
