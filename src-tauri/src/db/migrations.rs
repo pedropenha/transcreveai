@@ -271,4 +271,34 @@ pub(crate) static MIGRATIONS: &[M] = &[
         INSERT INTO notes_fts(notes_fts) VALUES ('rebuild');
         INSERT INTO meeting_fts(meeting_fts) VALUES ('rebuild');",
     ),
+    // --- Builtin meeting-app detection rules (10, T-060) ----------------------
+    // Closed v1 set per spec F008/ADR-0002: Zoom, Teams, Meet (browser) and
+    // Webex. `action='ask'` is the default posture; the user flips to
+    // 'auto_start'/'ignore' from the toast (T-062) or rules settings.
+    //
+    // title_pattern semantics in `meeting::classifier`: when set, a window of
+    // the same exe must match the regex (mandatory for browsers — an exe match
+    // alone is never enough). When NULL, the exe match suffices, which is why
+    // Zoom/Teams/Webex ship without a pattern.
+    //
+    // `MSTeams` is not an exe name: new Teams is packaged, so its ConsentStore
+    // subkey is `MSTeams_<publisher>!MSTeams` and the classifier's `exe_name`
+    // is the `!` tail.
+    //
+    // Ids are deterministic so later migrations can UPDATE them (regex fixes)
+    // and INSERT OR IGNORE keeps re-runs and edited copies conflict-free.
+    M::up(
+        "INSERT OR IGNORE INTO meeting_app_rules (id, exe, title_pattern, label, action, builtin) VALUES
+            ('builtin-zoom',         'Zoom.exe',           NULL, 'Zoom',            'ask', 1),
+            ('builtin-teams-new',    'ms-teams.exe',       NULL, 'Microsoft Teams', 'ask', 1),
+            ('builtin-teams-classic','Teams.exe',          NULL, 'Microsoft Teams', 'ask', 1),
+            ('builtin-teams-packaged','MSTeams',           NULL, 'Microsoft Teams', 'ask', 1),
+            ('builtin-meet-chrome',  'chrome.exe',  '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-meet-edge',    'msedge.exe',  '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-meet-firefox', 'firefox.exe', '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-meet-brave',   'brave.exe',   '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-meet-arc',     'arc.exe',     '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-webex-host',   'CiscoCollabHost.exe', NULL, 'Webex',          'ask', 1),
+            ('builtin-webex-mta',    'webexmta.exe',        NULL, 'Webex',          'ask', 1);",
+    ),
 ];

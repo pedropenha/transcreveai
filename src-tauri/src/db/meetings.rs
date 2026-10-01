@@ -485,21 +485,64 @@ mod tests {
     fn app_rules_find_by_exe_is_case_insensitive() {
         let conn = setup();
         let rules = SqliteMeetingAppRuleRepository::new(&conn);
+        // Migration 10 ships builtin rules — count relative to them and use
+        // exes outside the seeded set.
+        let seeded = rules.list().expect("list").len();
 
         rules
-            .create(&MeetingAppRule::new("Zoom.exe", "Zoom", "ask"))
+            .create(&MeetingAppRule::new("MyApp.exe", "My App", "ask"))
             .expect("create");
-        let mut meet = MeetingAppRule::new("chrome.exe", "Google Meet", "ask");
+        let mut meet = MeetingAppRule::new("other.exe", "Other Meet", "ask");
         meet.title_pattern = Some("Meet".to_string());
         meet.builtin = true;
         rules.create(&meet).expect("create");
 
-        assert_eq!(rules.find_by_exe("zoom.EXE").expect("find").len(), 1);
-        assert_eq!(rules.list().expect("list").len(), 2);
+        assert_eq!(rules.find_by_exe("myapp.EXE").expect("find").len(), 1);
+        assert_eq!(rules.list().expect("list").len(), seeded + 2);
 
-        rules
-            .delete(&rules.list().expect("list")[0].id)
-            .expect("delete");
-        assert_eq!(rules.list().expect("list").len(), 1);
+        let created_id = rules.find_by_exe("MyApp.exe").expect("find")[0].id.clone();
+        rules.delete(&created_id).expect("delete");
+        assert_eq!(rules.list().expect("list").len(), seeded + 1);
+    }
+
+    #[test]
+    fn builtin_meeting_app_rules_are_seeded_by_migration() {
+        // T-060 / spec F008: the closed v1 set — Zoom, Teams (packaged key +
+        // both exes), Meet on the five browsers, Webex.
+        let conn = setup();
+        let rules = SqliteMeetingAppRuleRepository::new(&conn);
+        let all = rules.list().expect("list seeded rules");
+
+        assert_eq!(all.len(), 11);
+        for r in &all {
+            assert!(r.builtin, "{} must be builtin", r.id);
+            assert_eq!(r.action, "ask");
+            assert!(r.id.starts_with("builtin-"));
+        }
+
+        // Exe-only rules carry no title pattern; browser rules require one
+        // (the classifier enforces that browsers can never match on exe alone).
+        let by_exe = |exe: &str| {
+            rules
+                .find_by_exe(exe)
+                .expect("find_by_exe")
+                .into_iter()
+                .next()
+        };
+        assert!(by_exe("Zoom.exe").unwrap().title_pattern.is_none());
+        assert_eq!(
+            by_exe("MSTeams").unwrap().label,
+            "Microsoft Teams",
+            "packaged Teams ConsentStore key"
+        );
+        let chrome = by_exe("chrome.exe").unwrap();
+        assert_eq!(chrome.label, "Google Meet");
+        let pattern = chrome.title_pattern.expect("browser rule needs a pattern");
+        let re = regex::Regex::new(&pattern).expect("seeded pattern must compile");
+        assert!(re.is_match("Meet - abc-defg-hij"));
+        assert!(re.is_match("meet.google.com call"));
+        assert!(!re.is_match("YouTube - Google Chrome"));
+        assert!(by_exe("CiscoCollabHost.exe").is_some());
+        assert!(by_exe("webexmta.exe").is_some());
     }
 }
