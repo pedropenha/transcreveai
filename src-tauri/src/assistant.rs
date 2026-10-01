@@ -312,7 +312,10 @@ fn choose_provider(
     let byok_ready = byok.is_some_and(|p| {
         if cli_agent::is_cli_agent(&p.id) {
             let cfg = settings.cli_agent_config(&p.id);
-            cfg.enabled && cli_detected(&p.id)
+            // Experimental adapters refuse `complete()` — never auto-pick one.
+            !cli_agent::adapter_for(&p.id).is_some_and(|s| s.experimental)
+                && cfg.enabled
+                && cli_detected(&p.id)
         } else if router::requires_api_key(p) {
             has_api_key(&p.id)
                 && settings
@@ -331,7 +334,7 @@ fn choose_provider(
     }
     let detected_cli = cli_agent::ADAPTERS.iter().find(|spec| {
         let cfg = settings.cli_agent_config(spec.provider_id);
-        cfg.enabled && cli_detected(spec.provider_id)
+        !spec.experimental && cfg.enabled && cli_detected(spec.provider_id)
     });
     if let Some(spec) = detected_cli {
         return settings.post_process_provider(spec.provider_id);
@@ -339,10 +342,12 @@ fn choose_provider(
     if byok.is_some() {
         return byok;
     }
-    // Last resort for the hint: the first CLI adapter's provider row even
-    // when undetected — the panel can still point at "install codex/claude".
+    // Last resort for the hint: the first non-experimental CLI adapter's
+    // provider row even when undetected — the panel can still point at
+    // "install codex/claude".
     cli_agent::ADAPTERS
-        .first()
+        .iter()
+        .find(|spec| !spec.experimental)
         .and_then(|spec| settings.post_process_provider(spec.provider_id))
 }
 
