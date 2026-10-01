@@ -480,6 +480,252 @@
   text-overflow: ellipsis;
 }
 
+/* ============================================================
+   Flow Bar states (F001 / T-040). Every compact face sizes itself off the
+   --flowbar-size-* semantic tokens from theme.css (T-008); the native window
+   is a fixed 288x104 (FLOWBAR_* in overlay.rs) and the card never leaves the
+   docked edge — the CSS morphs between sizes while the window stands still.
+   ============================================================ */
+
+/* Edge docking on the stage: the card hugs the same screen edge the native
+   window is docked to (geometry.rs / FR-001-08). */
+.ov-stage.left {
+  justify-content: flex-start;
+  align-items: center;
+}
+.ov-stage.right {
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* Interactive zone = card + tooltip, reported to the core as the bounds that
+   keep receiving cursor events; everything else stays click-through
+   (NFR-001-02). Column stack keeps the tooltip visually attached above the
+   card; a top-docked bar drops the tooltip below it instead (window top edge
+   is the screen edge — a tooltip above the card would clip off-screen). */
+.fbar-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+.ov-stage.top .fbar-zone {
+  flex-direction: column-reverse;
+}
+
+/* Shared compact-card base: same surface/border as .scard, but heights and
+   width transitions are the Flow Bar's. Height is transitioned too — the idle
+   slit grows into the hover card on screen. */
+.fbar-card {
+  height: auto;
+  transition:
+    width var(--motion-duration-slow) var(--motion-easing-enter),
+    height var(--motion-duration-slow) var(--motion-easing-enter),
+    border-radius var(--motion-duration-slow) var(--motion-easing-enter),
+    opacity var(--motion-duration-interaction) var(--motion-easing-standard);
+}
+
+/* Idle slit — 48x8, "quase invisível" (FR-001-01). The reported interactive
+   rect wraps .fbar-hitbox instead of this element: T-008 enlarges the hit
+   area without changing the visible silhouette. */
+.f-idle {
+  width: var(--flowbar-size-idle-width);
+  height: var(--flowbar-size-idle-height);
+  border-radius: var(--radius-pill);
+  opacity: 0.66;
+  animation: none;
+  padding: 0;
+}
+.fbar-hitbox {
+  padding: 10px 14px;
+}
+
+/* Hover card — 88x36, exactly two 28px actions + gap (F001 FR-001-02..04). */
+.f-hover {
+  width: var(--flowbar-size-hover-width);
+  height: var(--flowbar-size-hover-height);
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+}
+.fbtn {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--flowbar-text);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-interaction)
+      var(--motion-easing-standard),
+    color var(--motion-duration-interaction) var(--motion-easing-standard);
+}
+.fbtn:hover {
+  background: var(--s-hair);
+  color: var(--flowbar-accent);
+}
+.fbtn:focus-visible {
+  outline: 2px solid var(--flowbar-accent);
+  outline-offset: 2px;
+}
+.fbtn:active {
+  background: var(--s-accent-soft);
+}
+
+/* Recording pill — 128x36: ✕ | waveform | ■ (F001 FR-001-05/06). */
+.f-rec {
+  width: var(--flowbar-size-recording-width);
+  height: var(--flowbar-size-recording-height);
+}
+.frow {
+  height: 100%;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.frow .fside {
+  width: var(--control-target-min);
+  height: var(--control-target-min);
+}
+.frow .fstop {
+  color: var(--s-accent);
+}
+
+/* Working pill — 64x24, three pulsing dots (F001 "processing"). The phase
+   name is in the live region; dots carry no information by themselves
+   (T-008: state never rides on color/motion alone). */
+.f-work {
+  width: var(--flowbar-size-processing-width);
+  height: var(--flowbar-size-processing-height);
+}
+.frow-work {
+  justify-content: center;
+}
+.fdots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.fdots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--flowbar-processing);
+  opacity: 0.4;
+  animation: fdots-pulse var(--motion-duration-pulse) ease-in-out infinite;
+}
+.fdots i:nth-child(2) {
+  animation-delay: 150ms;
+}
+.fdots i:nth-child(3) {
+  animation-delay: 300ms;
+}
+@keyframes fdots-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Done flash — 48x24, success check (dwell 600 ms, AC-001-08). */
+.f-done {
+  width: var(--flowbar-size-done-width);
+  height: var(--flowbar-size-done-height);
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  padding: 0;
+}
+.fdone-icon {
+  color: var(--flowbar-success);
+}
+
+/* Error pill — 64x24, ⚠ (AC-001-08). Icon + border, not color alone; the
+   concise cause and retry affordance are on .fbar-tip while hovered. */
+.f-error {
+  width: var(--flowbar-size-error-width);
+  height: var(--flowbar-size-error-height);
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  padding: 0;
+  border-color: color-mix(in srgb, var(--flowbar-error) 55%, transparent);
+  cursor: default;
+}
+.ferror-icon {
+  color: var(--flowbar-error);
+}
+
+/* "Nada ouvido" flash (FR-002-14) — content-sized label pill. */
+.f-heard {
+  width: max-content;
+  height: var(--flowbar-size-error-height);
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  padding: 0 12px;
+}
+
+/* Shortcut / error tooltip — the informational layer, always inside the
+   reported interactive rect so hovering it never kills interactivity. */
+.fbar-tip {
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--s-border);
+  background: var(--s-surface);
+  color: var(--flowbar-text);
+  font-size: 11.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  animation: scard-pop var(--motion-duration-interaction)
+    var(--motion-easing-enter);
+}
+.ov-stage.top .fbar-tip {
+  margin: 8px 0 0;
+}
+.fbtn.fretry {
+  width: auto;
+  height: 22px;
+  padding: 0 9px;
+  font-size: 11px;
+  color: var(--flowbar-accent);
+  background: var(--s-hair);
+}
+
+/* Screen-reader-only text (live region + AT-only labels). */
+.fbar-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scard,
   .scard.leaving,
@@ -488,7 +734,11 @@
   .sdot,
   .swave i,
   .stimer,
-  .sx {
+  .sx,
+  .fbar-card,
+  .fbar-tip,
+  .fbtn,
+  .fdots i {
     animation: none;
     transition-duration: 1ms;
   }

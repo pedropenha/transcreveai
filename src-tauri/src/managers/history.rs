@@ -353,6 +353,18 @@ impl HistoryManager {
         Ok(repo.latest_completed()?.map(HistoryEntry::from))
     }
 
+    /// Get the newest `failed` dictation row — backs the Flow Bar error
+    /// state's "Tentar novamente" button (AC-001-08), which re-transcribes the
+    /// preserved recording through the same path as history's retry action.
+    /// `None` when the last failure is too old to have kept its audio file is
+    /// *not* filtered here — the caller checks `file_name` (still present as
+    /// `Some` when the wav exists) before offering the retry.
+    pub fn get_latest_failed_entry(&self) -> Result<Option<HistoryEntry>> {
+        let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
+        Ok(repo.latest_failed()?.map(HistoryEntry::from))
+    }
+
     pub async fn toggle_saved_status(&self, id: i64) -> Result<()> {
         let conn = self.get_connection()?;
         let repo = SqliteDictationRepository::new(&conn);

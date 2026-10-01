@@ -1052,6 +1052,38 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, Comm
     else return { status: "error", error: e  as any };
 }
 },
+async flowbarSetHover(rect: FlowbarRect | null) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_set_hover", { rect }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async flowbarToggleDictation() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_toggle_dictation") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async flowbarStartNotetaker() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_start_notetaker") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_retry_last_failed") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
@@ -1333,6 +1365,14 @@ export type FlowbarFollow =
  * Always the primary monitor.
  */
 "primary_monitor"
+/**
+ * Interactive rectangle in CSS px, relative to the Flow Bar window's
+ * top-left corner, reported by the webview through `flowbar_set_hover`
+ * (contracts.md §5 — the "bounds" form; a bare `hovering` bool cannot work
+ * because the webview never sees the cursor while click-through is on).
+ * `None` means nothing on screen is interactive: pass everything through.
+ */
+export type FlowbarRect = { x: number; y: number; width: number; height: number }
 /**
  * When the Flow Bar is on screen (FR-001-10).
  */

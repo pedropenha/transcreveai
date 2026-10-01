@@ -134,6 +134,10 @@ pub trait DictationRepository {
     fn latest(&self) -> Result<Option<Dictation>>;
     /// Latest entry with non-empty `raw_text`.
     fn latest_completed(&self) -> Result<Option<Dictation>>;
+    /// Latest `failed` row — backs the Flow Bar's "Tentar novamente"
+    /// (AC-001-08). `audio_path` may be NULL once the recording retention
+    /// cleanup ran; the caller must check before retrying.
+    fn latest_failed(&self) -> Result<Option<Dictation>>;
     /// Unflagged entries (retention candidates), newest first.
     /// `older_than` restricts to `created_at < older_than`.
     fn unflagged(&self, older_than: Option<i64>) -> Result<Vec<Dictation>>;
@@ -317,6 +321,16 @@ impl DictationRepository for SqliteDictationRepository<'_> {
         Ok(entry)
     }
 
+    fn latest_failed(&self) -> Result<Option<Dictation>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {} FROM dictations WHERE status = 'failed'
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+            COLUMNS
+        ))?;
+        let entry = stmt.query_row([], Self::map_row).optional()?;
+        Ok(entry)
+    }
+
     fn unflagged(&self, older_than: Option<i64>) -> Result<Vec<Dictation>> {
         let sql = format!(
             "SELECT {} FROM dictations
@@ -418,6 +432,29 @@ mod tests {
         assert_eq!(d.status, "inserted");
         assert_eq!(d.error_code, None);
         assert_eq!(d.final_text, "cheguei");
+    }
+
+    #[test]
+    fn latest_failed_returns_newest_failed_row() {
+        let conn = setup();
+        let repo = repo(&conn);
+
+        // Empty table → nothing to retry (AC-001-08 hides the affordance).
+        assert_eq!(repo.latest_failed().expect("latest_failed"), None);
+
+        repo.insert(&NewDictation::new("ok".to_string(), None))
+            .expect("insert ok");
+        let mut n = NewDictation::new(String::new(), Some("lost.wav".to_string()));
+        n.status = "failed".to_string();
+        n.error_code = Some("stt unavailable".to_string());
+        let failed = repo.insert(&n).expect("insert failed");
+        // A newer non-failed row must not win over the failed one.
+        repo.insert(&NewDictation::new("ok2".to_string(), None))
+            .expect("insert ok2");
+
+        let found = repo.latest_failed().expect("latest_failed").expect("some");
+        assert_eq!(found.id, failed.id);
+        assert_eq!(found.error_code.as_deref(), Some("stt unavailable"));
     }
 
     #[test]

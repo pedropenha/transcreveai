@@ -80,6 +80,18 @@ pub async fn retry_history_entry_transcription(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
     id: i64,
 ) -> CommandResult<()> {
+    retry_entry_transcription(&app, &history_manager, &transcription_manager, id).await
+}
+
+/// Re-transcribe the preserved recording of one history entry. Shared by the
+/// history screen's retry button and the Flow Bar error state's
+/// "Tentar novamente" (`flowbar_retry_last_failed`, AC-001-08).
+pub(crate) async fn retry_entry_transcription(
+    app: &AppHandle,
+    history_manager: &HistoryManager,
+    transcription_manager: &Arc<TranscriptionManager>,
+    id: i64,
+) -> CommandResult<()> {
     let entry = history_manager
         .get_entry_by_id(id)
         .await
@@ -105,7 +117,7 @@ pub async fn retry_history_entry_transcription(
 
     transcription_manager.initiate_model_load();
 
-    let tm = Arc::clone(&transcription_manager);
+    let tm = Arc::clone(transcription_manager);
     let transcription = tauri::async_runtime::spawn_blocking(move || tm.transcribe(samples))
         .await
         .map_err(|e| {
@@ -121,7 +133,7 @@ pub async fn retry_history_entry_transcription(
     }
 
     let processed =
-        process_transcription_output(&app, &transcription, entry.post_process_requested).await;
+        process_transcription_output(app, &transcription, entry.post_process_requested).await;
     history_manager
         .update_transcription(
             id,
