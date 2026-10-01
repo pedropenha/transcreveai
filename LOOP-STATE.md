@@ -44,7 +44,7 @@
 
 ## Merges pendentes
 
-- **T-021** `feat/t-021-matcher` (5 commits) — conflitos prováveis: `matcher.rs`, `handy_keys.rs`, `settings.rs`, `lib.rs`, `bindings.ts`, `build.rs` (manter fix de manifest da T-022).
+- (nenhum) — onda 3 fechada: T-011, T-021, T-022, T-060, T-063, T-013 mergeadas.
 
 ## Bloqueios
 

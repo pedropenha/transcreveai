@@ -75,7 +75,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 ### Atalhos e sessão
 
 - [x] **T-020** **Adaptar** hook de teclado (`handy-keys` numa thread dedicada, fallback Tauri): verificar watchdog e callback < 1 ms. — Refs: NFR-002-01, NFR-002-03
-- [ ] **T-021** **Estender** matcher (`shortcut/`): combos só de modificadores e cancelamento dinâmico já existem. Faltam promoção de modo por prefixo, duplo toque, supressão e menu mask key. — Refs: FR-002-01..08, AC-002-01..08
+- [x] **T-021** **Estender** matcher (`shortcut/`): combos só de modificadores e cancelamento dinâmico já existem. Faltam promoção de modo por prefixo, duplo toque, supressão e menu mask key. — Refs: FR-002-01..08, AC-002-01..08
 - [x] **T-022** **Estender** `transcription_coordinator.rs` (`Idle/Recording/Processing` + toque pendente) para a máquina completa (`Arming`, `Transcribing`, `Inserting`…), fila FIFO de N sessões (N = 5 pendentes, padrão), limite de duração (padrão 5 min, configurável 1–20 no Avançado), preservação de áudio e comando "enviar" (partir de `auto_submit`). — Refs: FR-002-09..19, AC-002-09..11
 
 ### Inserção

@@ -60,7 +60,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::settings::{self, get_settings, ShortcutActivation, ShortcutBinding};
-use crate::transcription_coordinator::is_transcribe_binding;
+use crate::transcription_coordinator::{is_transcribe_binding, SessionPolicy};
 
 use super::handler::handle_shortcut_event;
 use super::matcher::{HotkeyAction, HotkeyMatcher};
@@ -454,6 +454,7 @@ impl HandyKeysState {
             coordinator.send_external_input(
                 binding_id,
                 matcher.hotkey_string(binding_id).unwrap_or("double-tap"),
+                SessionPolicy::from_settings(&settings),
             );
         }
     }

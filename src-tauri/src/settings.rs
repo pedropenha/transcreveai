@@ -576,10 +576,6 @@ pub struct AppSettings {
     /// session is still processing (FR-002-16). Default 5.
     #[serde(default = "default_session_queue_size")]
     pub session_queue_size: usize,
-    /// Double tap on the push-to-talk shortcut starts hands-free dictation
-    /// (FR-002-07).
-    #[serde(default = "default_double_tap_enabled")]
-    pub double_tap_enabled: bool,
     /// Trailing voice "send" phrases per language (FR-002-17): a dictation
     /// ending in one of these is inserted followed by `auto_submit_key`.
     /// The `"default"` list always applies; a language key ("pt", "en") adds
@@ -795,10 +791,6 @@ fn default_max_dictation_minutes() -> u64 {
 
 fn default_session_queue_size() -> usize {
     5
-}
-
-fn default_double_tap_enabled() -> bool {
-    true
 }
 
 /// Built-in voice "send" phrases (FR-002-17): the `default` list applies to
@@ -1174,7 +1166,6 @@ pub fn get_default_settings() -> AppSettings {
         insertion_method: InsertionMethod::default(),
         max_dictation_minutes: default_max_dictation_minutes(),
         session_queue_size: default_session_queue_size(),
-        double_tap_enabled: default_double_tap_enabled(),
         voice_submit_phrases: default_voice_submit_phrases(),
         flowbar_visibility: FlowbarVisibility::default(),
         flowbar_follow: FlowbarFollow::default(),

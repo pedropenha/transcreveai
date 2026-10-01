@@ -37,6 +37,18 @@ async changeHoldThresholdMsSetting(ms: number) : Promise<Result<null, CommandErr
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * FR-002-07: whether a double-tap on the push-to-talk shortcut starts a
+ * hands-free session. Read at dispatch time; no re-registration needed.
+ */
+async changeDoubleTapEnabledSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_double_tap_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAudioFeedbackSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_audio_feedback_setting", { enabled }) };
@@ -1103,6 +1115,13 @@ shortcut_activation?: ShortcutActivation;
  */
 hold_threshold_ms?: number; 
 /**
+ * FR-002-07: two short taps (< 250 ms each, gap ≤ 350 ms) on the
+ * push-to-talk shortcut start a hands-free session. Only meaningful
+ * under `ShortcutActivation::PushToTalk` — toggle mode is hands-free
+ * on every press and hold-or-toggle already locks on a single tap.
+ */
+double_tap_enabled?: boolean; 
+/**
  * Start/stop recording sounds. On by default per FR-001-13; users who
  * already turned it off keep their stored `false` (migrations never
  * overwrite an explicit preference).
@@ -1157,11 +1176,6 @@ max_dictation_minutes?: number;
  * session is still processing (FR-002-16). Default 5.
  */
 session_queue_size?: number; 
-/**
- * Double tap on the push-to-talk shortcut starts hands-free dictation
- * (FR-002-07).
- */
-double_tap_enabled?: boolean; 
 /**
  * Trailing voice "send" phrases per language (FR-002-17): a dictation
  * ending in one of these is inserted followed by `auto_submit_key`.
