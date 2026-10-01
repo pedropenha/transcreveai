@@ -6,6 +6,38 @@
   ],
   "models": [
     {
+      "id": "handy-computer/whisper-large-v3-turbo-gguf",
+      "revision": "5eaf945c7978e564bae5b28a5b1639dd93c2bfb1",
+      "slug": "whisper-large-v3-turbo",
+      "name": "Whisper Large v3 Turbo",
+      "architecture": "whisper",
+      "family": "whisper",
+      "parameters": "809M",
+      "description": "Best balance of accuracy and speed, 100 languages",
+      "base_model": "openai/whisper-large-v3-turbo",
+      "license": "apache-2.0",
+      "language_count": 100,
+      "languages": ["en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo", "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue"],
+      "capabilities": {
+        "streaming": false,
+        "translate": false,
+        "lang_detect": true,
+        "timestamps": "segment"
+      },
+      "speed_score": 35,
+      "accuracy_score": 88,
+      "files": [
+        {"filename": "whisper-large-v3-turbo-Q4_K_M.gguf", "quant": "Q4_K_M", "size_bytes": 536069728, "sha256": "ecfe9b6beb4ab18fef49187cc968cc74b5168b94629c8830e2ca6b794c6e25ed"},
+        {"filename": "whisper-large-v3-turbo-Q5_K_M.gguf", "quant": "Q5_K_M", "size_bytes": 619628128, "sha256": "977b5db4e004349dffd1ab9caa10ba5aaba3fc3edd3ba72cadb84328a3203e36"},
+        {"filename": "whisper-large-v3-turbo-Q6_K.gguf", "quant": "Q6_K", "size_bytes": 692536928, "sha256": "3881dc17bf345f7ce4a3c48327074951e1550c8a1e89fa58d554d9f26a1b6274"},
+        {"filename": "whisper-large-v3-turbo-Q8_0.gguf", "quant": "Q8_0", "size_bytes": 886381760, "sha256": "b2e30cc286bc9f3aba4db9099fc7403543497c05ce7100d0d83091ddfd25a183"},
+        {"filename": "whisper-large-v3-turbo-F16.gguf", "quant": "F16", "size_bytes": 1625935520, "sha256": "e1d0144e9afc9f479d9e51fc92c7dea9dc36059655eeb3819f16ad2de779046a"}
+      ],
+      "default_quant": "Q8_0",
+      "recommended": true,
+      "recommended_rank": 0
+    },
+    {
       "id": "handy-computer/parakeet-unified-en-0.6b-gguf",
       "revision": "7e948f21b7bdbac698d3318db9d350f1096f3b6c",
       "slug": "parakeet-unified-en-0.6b",
@@ -2067,38 +2099,6 @@
         {"filename": "whisper-medium.en-Q8_0.gguf", "quant": "Q8_0", "size_bytes": 831460928, "sha256": "03d7257fef498750ce272631bc6a34de322fc2b438aab5c268ff49dfd1b64c49"},
         {"filename": "whisper-medium.en-F16.gguf", "quant": "F16", "size_bytes": 1541853248, "sha256": "c8be41b68306ad35382af749d4681b33da403b7d82eb3b6d3225a01a02dc1196"},
         {"filename": "whisper-medium.en-F32.gguf", "quant": "F32", "size_bytes": 3057356864, "sha256": "6a0bcb8c3360dbc8101a1ebcf2776d1e3463538c4b9486da97b8f21e462e6039"}
-      ],
-      "default_quant": "Q8_0",
-      "recommended": false,
-      "recommended_rank": null
-    },
-    {
-      "id": "handy-computer/whisper-large-v3-turbo-gguf",
-      "revision": "5eaf945c7978e564bae5b28a5b1639dd93c2bfb1",
-      "slug": "whisper-large-v3-turbo",
-      "name": "Whisper Large v3 Turbo",
-      "architecture": "whisper",
-      "family": "whisper",
-      "parameters": "809M",
-      "description": "100-language speech-to-text with auto language detection, segment-level timestamps.",
-      "base_model": "openai/whisper-large-v3-turbo",
-      "license": "apache-2.0",
-      "language_count": 100,
-      "languages": ["en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo", "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue"],
-      "capabilities": {
-        "streaming": false,
-        "translate": false,
-        "lang_detect": true,
-        "timestamps": "segment"
-      },
-      "speed_score": 35,
-      "accuracy_score": 88,
-      "files": [
-        {"filename": "whisper-large-v3-turbo-Q4_K_M.gguf", "quant": "Q4_K_M", "size_bytes": 536069728, "sha256": "ecfe9b6beb4ab18fef49187cc968cc74b5168b94629c8830e2ca6b794c6e25ed"},
-        {"filename": "whisper-large-v3-turbo-Q5_K_M.gguf", "quant": "Q5_K_M", "size_bytes": 619628128, "sha256": "977b5db4e004349dffd1ab9caa10ba5aaba3fc3edd3ba72cadb84328a3203e36"},
-        {"filename": "whisper-large-v3-turbo-Q6_K.gguf", "quant": "Q6_K", "size_bytes": 692536928, "sha256": "3881dc17bf345f7ce4a3c48327074951e1550c8a1e89fa58d554d9f26a1b6274"},
-        {"filename": "whisper-large-v3-turbo-Q8_0.gguf", "quant": "Q8_0", "size_bytes": 886381760, "sha256": "b2e30cc286bc9f3aba4db9099fc7403543497c05ce7100d0d83091ddfd25a183"},
-        {"filename": "whisper-large-v3-turbo-F16.gguf", "quant": "F16", "size_bytes": 1625935520, "sha256": "e1d0144e9afc9f479d9e51fc92c7dea9dc36059655eeb3819f16ad2de779046a"}
       ],
       "default_quant": "Q8_0",
       "recommended": false,

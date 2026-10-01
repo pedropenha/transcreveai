@@ -85,7 +85,8 @@ impl ModelManager {
     }
 
     /// Computes the SHA256 hex digest of a file, reading in 64KB chunks to handle large models.
-    fn compute_sha256(path: &Path) -> Result<String> {
+    /// Also used by import (FR-003-07: the hash is shown to the user).
+    pub(crate) fn compute_sha256(path: &Path) -> Result<String> {
         let mut file = File::open(path)?;
         let mut hasher = Sha256::new();
         let mut buffer = [0u8; 65536];

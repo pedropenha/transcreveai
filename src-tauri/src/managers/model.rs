@@ -12,6 +12,7 @@ use specta::Type;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,8 +20,10 @@ use std::time::{Duration, Instant};
 use tar::Archive;
 use tauri::{AppHandle, Emitter, Manager};
 
+mod disk;
 mod download;
 
+use disk::ensure_disk_space;
 use download::{HttpDownloadOutcome, DOWNLOAD_STALL_TIMEOUT};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -325,6 +328,14 @@ pub struct DownloadProgress {
     pub percentage: f64,
 }
 
+/// Result of importing a user-provided model file (FR-003-07): the registry
+/// entry plus the file's SHA-256, which the UI displays for transparency.
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct ImportedModel {
+    pub model: ModelInfo,
+    pub sha256: String,
+}
+
 /// Resolve a Hugging Face model file in the shared HF cache, if already present.
 /// Uses hf-hub's stock location (HF_HOME or ~/.cache/huggingface/hub) so
 /// downloads are shared with other tools.
@@ -381,6 +392,65 @@ fn local_caps(probe: &CapabilityProbe) -> LocalCaps {
         supports_language_selection: languages.len() > 1,
         supports_language_detection: probe.supports_language_detect.unwrap_or(false),
         supported_languages: languages,
+    }
+}
+
+/// The single-file formats a local import can carry (FR-003-07).
+/// Directory-based ONNX engines (Parakeet & friends) have no single-file form,
+/// so import only ever produces transcribe-cpp entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImportFormat {
+    Gguf,
+    /// Legacy whisper.cpp `.bin` (GGML magic).
+    LegacyBin,
+}
+
+fn import_format(filename: &str) -> Option<ImportFormat> {
+    let lower = filename.to_ascii_lowercase();
+    if lower.ends_with(".gguf") {
+        Some(ImportFormat::Gguf)
+    } else if lower.ends_with(".bin") {
+        Some(ImportFormat::LegacyBin)
+    } else {
+        None
+    }
+}
+
+/// whisper.cpp legacy `.bin` models open with the GGML magic u32
+/// (`0x67676d6c`). Anything else named `.bin` is just a file that happens to
+/// share the extension. Accept the literal `ggml` bytes too — some older
+/// pipelines wrote the four ASCII characters directly.
+fn has_legacy_ggml_magic(path: &Path) -> bool {
+    const GGML_MAGIC: u32 = 0x6767_6d6c;
+    let mut buf = [0u8; 4];
+    if File::open(path)
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .is_err()
+    {
+        return false;
+    }
+    buf == *b"ggml" || u32::from_le_bytes(buf) == GGML_MAGIC
+}
+
+/// Format-check `source` as an importable model (FR-003-07). GGUFs must parse
+/// their header; an unknown architecture still passes the *format* check
+/// (transcribe-cpp is the final arbiter at load time), but bytes that aren't a
+/// readable GGUF at all are rejected. Legacy `.bin` must carry the GGML magic.
+fn validate_import_source(source: &Path, filename: &str) -> Result<()> {
+    match import_format(filename) {
+        Some(ImportFormat::Gguf) => match GgufHeaderProber.probe_file(source).verdict {
+            Compatibility::Unsupported => Err(anyhow::anyhow!(
+                "Not a supported model file: {filename} is not a readable GGUF model"
+            )),
+            _ => Ok(()),
+        },
+        Some(ImportFormat::LegacyBin) if has_legacy_ggml_magic(source) => Ok(()),
+        Some(ImportFormat::LegacyBin) => Err(anyhow::anyhow!(
+            "Not a supported model file: {filename} is missing the whisper.cpp header"
+        )),
+        None => Err(anyhow::anyhow!(
+            "Unsupported file type: {filename} (only .gguf and .bin model files can be imported)"
+        )),
     }
 }
 
@@ -539,6 +609,53 @@ impl ModelManager {
             fs::create_dir_all(&models_dir)?;
         }
 
+        let mut available_models = Self::seeded_legacy_models();
+
+        // Seed the bundled offline catalog before the on-disk scans, so a model
+        // already in the HF cache dedups onto its richer catalog entry (the scans
+        // only insert ids not already present) instead of showing as a bare cache
+        // find. Additive — see `seed_catalog_models`.
+        Self::seed_catalog_models(&mut available_models);
+
+        // Auto-discover custom transcribe-cpp models (.bin / .gguf) in the models directory
+        if let Err(e) = Self::discover_custom_transcribe_models(&models_dir, &mut available_models)
+        {
+            warn!("Failed to discover custom models: {}", e);
+        }
+
+        // Auto-discover transcribe-cpp GGUF models already in the shared HF cache.
+        Self::discover_hf_cache_models(&mut available_models);
+
+        let manager = Self {
+            app_handle: app_handle.clone(),
+            models_dir,
+            available_models: Mutex::new(available_models),
+            cancel_flags: Arc::new(Mutex::new(HashMap::new())),
+            extracting_models: Arc::new(Mutex::new(HashSet::new())),
+            is_rescanning: Arc::new(AtomicBool::new(false)),
+        };
+
+        // Migrate any bundled models to user directory
+        manager.migrate_bundled_models()?;
+
+        // Migrate GigaAM from single-file to directory format
+        manager.migrate_gigaam_to_directory()?;
+
+        // Check which models are already downloaded
+        manager.update_download_status()?;
+
+        // Auto-select a model if none is currently selected
+        manager.auto_select_model_if_needed()?;
+
+        Ok(manager)
+    }
+
+    /// The hardcoded legacy-URL model table (pre-catalog `.bin`/ONNX
+    /// downloads served from `blob.handy.computer`). Kept as a pure
+    /// function so supply-chain invariants — every bundled `Url` source
+    /// carries a pinned SHA-256 (FR-011-24) — are testable without an
+    /// `AppHandle`.
+    fn seeded_legacy_models() -> HashMap<String, ModelInfo> {
         let mut available_models = HashMap::new();
 
         // Whisper supported languages (99 languages from tokenizer)
@@ -1120,45 +1237,8 @@ impl ModelManager {
             },
         );
 
-        // Seed the bundled offline catalog before the on-disk scans, so a model
-        // already in the HF cache dedups onto its richer catalog entry (the scans
-        // only insert ids not already present) instead of showing as a bare cache
-        // find. Additive — see `seed_catalog_models`.
-        Self::seed_catalog_models(&mut available_models);
-
-        // Auto-discover custom transcribe-cpp models (.bin / .gguf) in the models directory
-        if let Err(e) = Self::discover_custom_transcribe_models(&models_dir, &mut available_models)
-        {
-            warn!("Failed to discover custom models: {}", e);
-        }
-
-        // Auto-discover transcribe-cpp GGUF models already in the shared HF cache.
-        Self::discover_hf_cache_models(&mut available_models);
-
-        let manager = Self {
-            app_handle: app_handle.clone(),
-            models_dir,
-            available_models: Mutex::new(available_models),
-            cancel_flags: Arc::new(Mutex::new(HashMap::new())),
-            extracting_models: Arc::new(Mutex::new(HashSet::new())),
-            is_rescanning: Arc::new(AtomicBool::new(false)),
-        };
-
-        // Migrate any bundled models to user directory
-        manager.migrate_bundled_models()?;
-
-        // Migrate GigaAM from single-file to directory format
-        manager.migrate_gigaam_to_directory()?;
-
-        // Check which models are already downloaded
-        manager.update_download_status()?;
-
-        // Auto-select a model if none is currently selected
-        manager.auto_select_model_if_needed()?;
-
-        Ok(manager)
+        available_models
     }
-
     pub fn get_available_models(&self) -> Vec<ModelInfo> {
         let mut list: Vec<ModelInfo> = {
             let models = self.available_models.lock().unwrap();
@@ -1914,6 +1994,14 @@ impl ModelManager {
             return Ok(());
         }
 
+        // FR-003-06: same pre-download space gate as the URL path, against the
+        // HF cache dir — it can live on a different volume than the models dir.
+        // hf-hub's resume offset isn't visible from here, so the check uses the
+        // full catalog size (conservative).
+        if let Some((_, file)) = crate::catalog::file_in_catalog(&filename, Some(&repo_id)) {
+            ensure_disk_space(Cache::from_env().path(), file.size_bytes, &model_info.name)?;
+        }
+
         // Mark downloading; the guard resets the flag on any error path.
         {
             let mut models = self.available_models.lock().unwrap();
@@ -2172,6 +2260,13 @@ impl ModelManager {
             return Ok(true);
         }
 
+        let partial_len = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
+        ensure_disk_space(
+            &self.models_dir,
+            mirror.size_bytes.saturating_sub(partial_len),
+            model_id,
+        )?;
+
         match self
             .download_http_resumable(
                 model_id,
@@ -2228,6 +2323,22 @@ impl ModelManager {
             }
             self.update_download_status()?;
             return Ok(());
+        }
+
+        // FR-003-06: refuse before the first byte when the disk can't hold the
+        // remaining download. Directory models unpack a tar.gz of about the
+        // same size afterwards, so they budget both legs.
+        {
+            let already_have = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
+            let expected = model_info
+                .size_mb
+                .saturating_mul(1024 * 1024)
+                .saturating_mul(if model_info.is_directory { 2 } else { 1 });
+            ensure_disk_space(
+                &self.models_dir,
+                expected.saturating_sub(already_have),
+                &model_info.name,
+            )?;
         }
 
         // Mark as downloading
@@ -2634,6 +2745,128 @@ impl ModelManager {
             }
             Ok(model_path)
         }
+    }
+
+    /// Import a user-provided local model file (FR-003-07): validate the
+    /// format, copy it into the models directory (disk-space checked first,
+    /// FR-003-06), and register it through the normal discovery scan. Returns
+    /// the entry plus the file's SHA-256 for display.
+    ///
+    /// A file named like a catalog quant must carry exactly the catalog bytes:
+    /// the pinned hash stays the trust anchor even for drop-ins (FR-011-24).
+    /// Colliding with a predefined legacy filename is rejected outright —
+    /// discovery skips those names, so the import would silently never surface.
+    pub fn import_custom_model(&self, source: &Path) -> Result<ImportedModel> {
+        if !source.is_file() {
+            return Err(anyhow::anyhow!("Not a file: {}", source.display()));
+        }
+        let filename = source
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| !n.starts_with('.'))
+            .ok_or_else(|| anyhow::anyhow!("File has no usable name: {}", source.display()))?;
+        validate_import_source(source, filename)?;
+
+        let sha256 = Self::compute_sha256(source)?;
+
+        // Normalize the extension to lowercase so the copy is picked up by
+        // discovery (which strips `.gguf`/`.bin` case-sensitively).
+        let ext = filename
+            .rsplit('.')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let stem = &filename[..filename.len() - ext.len() - 1];
+        let normalized = format!("{stem}.{ext}");
+
+        let mut model_id = stem.to_string();
+        if let Some((desc, file)) = crate::catalog::file_in_catalog(&normalized, None) {
+            // A catalog-named file surfaces as the catalog model — so its
+            // bytes must be the catalog's.
+            if let Some(expected) = &file.sha256 {
+                if *expected != sha256 {
+                    return Err(anyhow::anyhow!(
+                        "{normalized} does not match the catalog model of the same name (SHA-256 mismatch)"
+                    ));
+                }
+            }
+            if let ModelSource::HuggingFace { repo_id, .. } = &desc.source {
+                model_id = format!("{repo_id}/{normalized}");
+            }
+        } else {
+            let reserved = {
+                let models = self.available_models.lock().unwrap();
+                models.values().any(|m| {
+                    m.filename == normalized
+                        && !m.is_custom
+                        && !matches!(m.source, ModelSource::HuggingFace { .. })
+                })
+            };
+            if reserved {
+                return Err(anyhow::anyhow!(
+                    "{normalized} is a reserved model filename; rename the file and try again"
+                ));
+            }
+        }
+
+        let dest = self.models_dir.join(&normalized);
+        let same_file = fs::canonicalize(source).ok() == fs::canonicalize(&dest).ok();
+        if !same_file {
+            if dest.exists() {
+                // Same name + same bytes is an idempotent re-import.
+                if Self::compute_sha256(&dest).unwrap_or_default() != sha256 {
+                    return Err(anyhow::anyhow!(
+                        "A different file named {normalized} already exists in the models folder"
+                    ));
+                }
+            } else {
+                let needed = source.metadata().map(|m| m.len()).unwrap_or(0);
+                ensure_disk_space(&self.models_dir, needed, &normalized)?;
+                // Copy via a temp sibling so a mid-copy crash can't leave a
+                // file discovery would pick up as a complete model.
+                let staging = self.models_dir.join(format!("{normalized}.importing"));
+                fs::copy(source, &staging)
+                    .and_then(|_| fs::rename(&staging, &dest))
+                    .map_err(|e| {
+                        let _ = fs::remove_file(&staging);
+                        anyhow::anyhow!("Failed to copy the model into the models folder: {e}")
+                    })?;
+            }
+        }
+
+        self.rescan_local_models()?;
+        // A concurrent rescan may have held the single-flight slot; make the
+        // registration deterministic by forcing discovery if the entry is
+        // still missing.
+        let model = self.get_model_info(&model_id).or_else(|| {
+            let mut models = self.available_models.lock().unwrap();
+            let _ = Self::discover_custom_transcribe_models(&self.models_dir, &mut models);
+            models.get(&model_id).cloned()
+        });
+        model
+            .map(|model| ImportedModel { model, sha256 })
+            .ok_or_else(|| {
+                anyhow::anyhow!("{normalized} was copied but did not register as a model")
+            })
+    }
+
+    /// SHA-256 of an on-disk model file, computed on demand — the hash the UI
+    /// shows for imported models (FR-003-07) and offers for any file model.
+    pub fn model_file_sha256(&self, model_id: &str) -> Result<String> {
+        let path = self.get_model_path(model_id)?;
+        if path.is_dir() {
+            return Err(anyhow::anyhow!(
+                "Directory-based model has no single-file hash: {model_id}"
+            ));
+        }
+        Self::compute_sha256(&path)
+    }
+
+    /// First-run hardware probe + per-model suitability labels (FR-003-05).
+    /// The probe informs labels only — it never filters or forces a choice.
+    pub fn model_recommendations(&self) -> crate::managers::hardware::ModelRecommendations {
+        let hardware = crate::managers::hardware::detect_hardware();
+        crate::managers::hardware::recommendations_for(&self.get_available_models(), &hardware)
     }
 
     pub fn cancel_download(&self, model_id: &str) -> Result<()> {
@@ -3086,5 +3319,75 @@ mod tests {
             !models.contains_key("someone/llama-7b/llama-q8.gguf"),
             "non-ASR gguf must be ignored"
         );
+    }
+
+    #[test]
+    fn every_bundled_url_model_has_pinned_sha256() {
+        // FR-011-24: downloads only ever come from catalog/bundled URLs with a
+        // fixed hash, or files the user imported — so every `Url` source in the
+        // legacy table must pin one.
+        for (id, m) in ModelManager::seeded_legacy_models() {
+            if let ModelSource::Url { sha256, .. } = &m.source {
+                assert!(
+                    sha256
+                        .as_deref()
+                        .is_some_and(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())),
+                    "{id} lacks a pinned SHA-256"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn import_format_recognizes_model_extensions() {
+        assert_eq!(import_format("model.gguf"), Some(ImportFormat::Gguf));
+        assert_eq!(import_format("MODEL.GGUF"), Some(ImportFormat::Gguf));
+        assert_eq!(
+            import_format("ggml-small.bin"),
+            Some(ImportFormat::LegacyBin)
+        );
+        assert_eq!(import_format("model.onnx"), None);
+        assert_eq!(import_format("model.bin.partial"), None);
+        assert_eq!(import_format("readme.txt"), None);
+    }
+
+    #[test]
+    fn import_validation_accepts_real_gguf_rejects_garbage() {
+        let tmp = TempDir::new().unwrap();
+
+        let good = tmp.path().join("fine.gguf");
+        write_synthetic_gguf(&good, "whisper", &["en"]);
+        assert!(validate_import_source(&good, "fine.gguf").is_ok());
+
+        // A GGUF from an architecture we don't know still passes the *format*
+        // check — transcribe-cpp decides loadability.
+        let unknown_arch = tmp.path().join("other.gguf");
+        write_synthetic_gguf(&unknown_arch, "llama", &[]);
+        assert!(validate_import_source(&unknown_arch, "other.gguf").is_ok());
+
+        let garbage = tmp.path().join("junk.gguf");
+        fs::write(&garbage, b"not a model").unwrap();
+        assert!(validate_import_source(&garbage, "junk.gguf").is_err());
+
+        let wrong_ext = tmp.path().join("model.txt");
+        fs::write(&wrong_ext, b"gguf-looking").unwrap();
+        assert!(validate_import_source(&wrong_ext, "model.txt").is_err());
+    }
+
+    #[test]
+    fn import_validation_checks_legacy_bin_magic() {
+        let tmp = TempDir::new().unwrap();
+
+        let real = tmp.path().join("ggml-real.bin");
+        fs::write(&real, 0x6767_6d6cu32.to_le_bytes()).unwrap();
+        assert!(validate_import_source(&real, "ggml-real.bin").is_ok());
+
+        let real_ascii = tmp.path().join("ggml-ascii.bin");
+        fs::write(&real_ascii, b"ggml").unwrap();
+        assert!(validate_import_source(&real_ascii, "ggml-ascii.bin").is_ok());
+
+        let fake = tmp.path().join("fake.bin");
+        fs::write(&fake, b"MZ\x90\x00").unwrap();
+        assert!(validate_import_source(&fake, "fake.bin").is_err());
     }
 }

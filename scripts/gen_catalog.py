@@ -43,6 +43,9 @@ def acc_from_wer(wer):
 # badge / onboarding subset — independent of rank, so a model can rank high
 # without carrying the recommended tag.
 CURATION = {
+    # large-v3-turbo is the v1 default recommended model (FR-003-05): rank 0
+    # puts it first among the recommended set so onboarding preselects it.
+    "whisper-large-v3-turbo":          {"rank": 0, "rec": True, "desc": "Best balance of accuracy and speed, 100 languages"},
     "parakeet-unified-en-0.6b":        {"rank": 1, "rec": True, "desc": "Fast, accurate live English transcription"},
     "nemotron-3.5-asr-streaming-0.6b": {"rank": 2, "rec": True, "desc": "Live multilingual transcription across 28 languages"},
     "canary-180m-flash":               {"rank": 3, "rec": True, "desc": "Tiny and instant, runs well on any hardware"},
