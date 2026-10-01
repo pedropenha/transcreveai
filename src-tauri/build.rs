@@ -34,7 +34,24 @@ fn main() {
     // Must run after transcribe staging because that helper recreates transcribe-libs/.
     stage_vc_runtime_dlls();
 
-    tauri_build::build()
+    tauri_build::build();
+
+    // tauri-build compiles the Windows resource (version info + the
+    // Common-Controls v6 manifest) but only links it into `bin` targets via
+    // `cargo:rustc-link-arg-bins`. The lib's unit-test binary links GUI crates
+    // that import comctl32 v6 exports (e.g. `TaskDialogIndirect`); without the
+    // manifest those imports resolve against System32's comctl32 v5 and the
+    // test process dies at load with STATUS_ENTRYPOINT_NOT_FOUND (0xC0000139).
+    // Link the same resource into every target of this package so
+    // `cargo test --lib` works on Windows.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        if let Ok(out_dir) = std::env::var("OUT_DIR") {
+            let resource_lib = std::path::Path::new(&out_dir).join("resource.lib");
+            if resource_lib.exists() {
+                println!("cargo:rustc-link-arg={}", resource_lib.display());
+            }
+        }
+    }
 }
 
 /// Stage the MSVC runtime DLLs into `transcribe-libs/` for app-local deployment.
