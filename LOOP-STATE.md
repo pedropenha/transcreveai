@@ -7,9 +7,7 @@
 
 - **Alvo de merges**: `integration/v1` (worktree `C:\multimidia\ecc-v1`). `main` nunca é tocada.
 - **Base**: `chore/t-001a-baseline` + `chore/t-008-design-direction` (já mergeada em `3a82c14`).
-- **Última atualização**: 2026-09-30 — Passo 0 concluído.
-
-- **Última atualização**: 2026-09-30 — Passo 0 + merges T-005 e T-020.
+- **Última atualização**: 2026-09-30 — ondas 1+2 mergeadas (11 tasks + 2 fix-forwards).
 
 ## Concluído
 
@@ -26,18 +24,19 @@
 - [x] **T-002** — merge (ver git log). CI: jobs windows-latest, clippy multi-OS, coverage llvm-cov+frontend c/ catraca ADR-0001, cargo deny/audit, debt-ratchet (`scripts/check-*.ts`). Teto unwrap/expect re-medido: 158.
 - [x] **T-003** — merge (ver git log). `redact_secret_patterns` nos erros de LLM, `LLMPrompt` Debug redigido, `redact_text` segue `debug_mode` em runtime (não perfil), log dir/KeepOne confirmados. Ajuste pós-merge: teste de dump não usa mais `post_process_api_keys` (campo removido na T-016).
 
+- [x] **T-006** — merge (ver git log). Envelope ok/error uniforme: ~105 comandos `Result<T,String>` → `Result<T,CommandError {code,message}>`; `CommandErrorCode` tipado; 13 comandos puros envelopados; callers ajustados (`.error.message`). 388 testes.
+- [x] **fix/review-t016** — merge (ver git log). Cofre vence migração (sem sobrescrever chave nova); mutex serializando blob de settings; `store:default` removido; memory-store não migra; backoff de retentativa do cofre; comandos `secret_*` async; `ApiKeyField` não grava fragmento da máscara; validação 2560B/control chars; hint ≤len/4; contrato §5 atualizado; teste trava drift de bindings vs specta. 391 testes.
+- [x] **T-015** — merge (ver git log). `managers/hardware.rs` (RAM/AVX2/VRAM → tiers + recomendações FR-003-05); `model/disk.rs` (gate de espaço); `import_model` (GGUF probe + sha256 + cópia atômica); turbo = recommended no catálogo; 3 comandos novos reconciliados a CommandError no merge. 398 testes.
+- [x] **T-009** — merge (ver git log). Playwright nas webviews (`tests/helpers/tauri-mock.ts` + 3 specs); harness nativo pywinauto em `e2e/native/` (smoke manual); feature cargo `audio-fixture` com `TRANSCREVE_AUDIO_FIXTURE` alimentando o ring do recorder; fixtures WAV pt-BR sintéticos. 380 testes (c/ feature).
 - [x] **T-007** — merge (ver git log). Menu da bandeja = FR-010-14 (Hub, ditado, reunião desabilitada até T-064, Flow Bar show/hide, pausa de detecção 1h, modo offline, sair); autostart default on; `offline_mode` + `meeting_detection_paused_until_ms` no schema; quit c/ confirmação se gravando; `--no-tray` fecha de verdade; relaunch hidden. 373 testes + `cargo check` pós-merge verde.
 
 ## Em andamento (lanes)
 
-- **T-009** `chore/t-009-e2e-base` @ `ecc-t009` (c8b313c3)
-- **T-015** `chore/t-015-models` @ `ecc-t015` (eb5b6a88)
-- **T-006** `chore/t-006-ipc` @ `ecc-t006` (0a1ec490)
-- **fix/review-t016** @ `ecc-fix-t016` (cc32c248) — cofre-vence-na-migração, mutex de escrita, store:default, ApiKeyField, async commands
+- (nenhuma — todas as lanes mergeadas)
 
 ## Próximas na DAG (prontas para lanes)
 
-- **T-060** monitor de mic · **T-063** loopback · **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade
+- **T-060** monitor de mic · **T-063** loopback · **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade · **T-011** VAD · **T-021** matcher (dep. T-020 ✔) · **T-013** whisper provider (dep. T-012 ✔, T-015 ✔) · **T-050** LLM BYOK (dep. T-016 ✔) · **T-022** coordinator · **T-030/T-031** inserção · **T-035** pipeline · **T-045** onboarding · **T-041/T-042** Flow Bar pt2/Hub · **T-061..T-069** reuniões
 
 ## Merges pendentes
 
@@ -56,6 +55,7 @@
 - Aviso de fallback de mic (T-010) depende de `toast://show` — pendente de lane de UI.
 - `managers/transcription.rs` virou diretório — lanes futuras devem editar os submódulos.
 - Infra: `CARGO_TARGET_DIR` compartilhado (`C:\t`) — lanes devem usar `-TargetDir C:\t-<lane>`; fixar `TEMP/TMP` único por lane (race em `temp_dir()`).
+- Infra: o disco C: encheu durante a T-009 (0 bytes livres → `ENOSPC` no `bun install` e no `rustc`). `C:\t-t010` (7,3 GB, lane mergeada) foi removido para destravar; `C:\t` ainda ocupa ~26 GB de cache compartilhado — vale um `cargo clean`/purge agendado.
 
 ## Notas operacionais
 

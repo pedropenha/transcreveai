@@ -1,5 +1,9 @@
 // Re-export all audio components
 mod device;
+/// WAV-file audio source for E2E test builds (T-009). Compiled out of normal
+/// builds; see the module docs for the `TRANSCREVE_AUDIO_FIXTURE` contract.
+#[cfg(feature = "audio-fixture")]
+pub(crate) mod fixture;
 mod recorder;
 mod resampler;
 mod utils;
