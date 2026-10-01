@@ -22,13 +22,16 @@ use super::{
 };
 use crate::audio_toolkit::audio::loopback::SystemAudioEvent;
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
+use crate::db::meeting_blocks::{
+    MeetingBlock, MeetingBlockRepository, SqliteMeetingBlockRepository,
+};
 use crate::db::meetings::{
     Meeting, MeetingRepository, MeetingSegment, MeetingSegmentRepository, SqliteMeetingRepository,
     SqliteMeetingSegmentRepository,
 };
 use crate::db::notes::{Note, NoteRepository, SqliteNoteRepository};
 use crate::managers::audio::AudioRecordingManager;
-use crate::meeting::blocks::{meeting_audio_dir, Track};
+use crate::meeting::blocks::{meeting_audio_dir, SealedBlock, Track};
 use crate::meeting::capture::{
     CaptureConfig, MeetingCapture, MeetingCaptureEvent, MicTap, SystemSource,
 };
@@ -350,6 +353,13 @@ impl Worker {
         };
         match event {
             MeetingCaptureEvent::BlockSealed(block) => {
+                // T-067: persist the block's meeting-clock placement the
+                // moment it is fsync'd — the post-processor maps
+                // `<track>-NNNN.wav` files back to the clock through these
+                // rows instead of guessing from indices.
+                if let (Some(meeting), Some(conn)) = (self.meeting.as_ref(), self.conn.as_ref()) {
+                    record_sealed_block(conn, &meeting.id, &block);
+                }
                 let has_speech = self.speech.has_speech(&block);
                 machine.block_sealed(block.track, has_speech, now);
             }
@@ -439,6 +449,15 @@ impl Worker {
                 self.capture_rx = None;
                 if let Some(capture) = self.capture.take() {
                     let summary = capture.stop();
+                    // The tail seals *after* `capture_rx` is gone, so its
+                    // `BlockSealed` events never arrive — the summary is the
+                    // last chance to record those blocks' clock placement.
+                    if let (Some(meeting), Some(conn)) = (self.meeting.as_ref(), self.conn.as_ref())
+                    {
+                        for block in summary.mic.iter().chain(summary.system.iter()) {
+                            record_sealed_block(conn, &meeting.id, block);
+                        }
+                    }
                     log::debug!(
                         "Meeting capture stopped: {} mic / {} system blocks",
                         summary.mic.len(),
@@ -563,5 +582,22 @@ impl Worker {
                 "Meeting database is unavailable",
             )),
         }
+    }
+}
+
+/// T-067 seam: one `meeting_blocks` row per sealed block — the durable copy
+/// of `SealedBlock.start_offset_ms`/`duration_ms` that post-processing needs
+/// to place WAV files on the meeting clock. Best-effort: a failed row only
+/// means the coverage fallback reconstructs the offset.
+fn record_sealed_block(conn: &Connection, meeting_id: &str, block: &SealedBlock) {
+    let row = MeetingBlock {
+        meeting_id: meeting_id.to_string(),
+        track: block.track.label().to_string(),
+        index: block.index,
+        start_ms: block.start_offset_ms as i64,
+        duration_ms: block.duration_ms as i64,
+    };
+    if let Err(e) = SqliteMeetingBlockRepository::new(conn).upsert(&row) {
+        log::warn!("Failed to persist meeting block placement: {e}");
     }
 }

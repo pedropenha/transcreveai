@@ -205,9 +205,12 @@ fn open_rules_conn(app: &tauri::AppHandle) -> Option<rusqlite::Connection> {
 // Captura (T-063): [`blocks`] grava WAVs de 60 s por trilha sob
 // `audio/meetings/<id>/` com fsync por bloco (FR-009-05); [`capture`] liga o
 // mic compartilhado (`FrameTap::Raw` + `when_idle`) e o loopback WASAPI;
-// [`recovery`] marca reuniões órfãs como `recovered` no startup.
+// [`recovery`] marca reuniões órfãs como `recovered` no startup;
+// [`postprocess`] (T-067) escuta `meeting://process-requested` e roda
+// transcrição de blocos pendentes → resumo → título sugerido (FR-009-16..22).
 
 pub mod blocks;
 pub mod capture;
+pub mod postprocess;
 pub mod recovery;
 pub mod session;

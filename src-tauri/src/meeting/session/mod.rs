@@ -114,8 +114,9 @@ pub struct ToastPayload {
     pub action: Option<String>,
 }
 
-/// `meeting://process-requested` payload — the T-067 seam.
-#[derive(Clone, Debug, Serialize)]
+/// `meeting://process-requested` payload — the T-067 seam. `Deserialize` so
+/// the post-processor's event listener can parse it back.
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
 pub struct ProcessRequestedPayload {
     pub meeting_id: String,
 }

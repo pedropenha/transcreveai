@@ -1384,6 +1384,58 @@ async meetingConsentCopy() : Promise<Result<string, CommandError>> {
 }
 },
 /**
+ * FR-009-20: re-run the summary + title suggestion only (steps 4–5) —
+ * transcript and notes are untouched. A missing summary key answers with
+ * `missing_api_key`; other provider failures with `provider`.
+ */
+async meetingRegenerateSummary(meetingId: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_regenerate_summary", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-22: re-run the whole pipeline for a meeting that ended in
+ * `error` (or `recovered` after a crash). Pending-block coverage makes the
+ * re-run idempotent — only audio still missing a segment is retranscribed.
+ */
+async meetingRetryProcessing(meetingId: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_retry_processing", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Every `summary_templates` row for the meeting-window picker (FR-009-17).
+ */
+async meetingSummaryTemplates() : Promise<Result<SummaryTemplate[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_summary_templates") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Select the template a meeting summarizes under (FR-009-17/20):
+ * `meeting_id` set → per-meeting override (`meetings.template_id`;
+ * `template_id: null` clears it back to the default); `meeting_id: null`
+ * → global default (`summary_templates.is_default`). Unknown template ids
+ * are rejected.
+ */
+async meetingSetSummaryTemplate(meetingId: string | null, templateId: string | null) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_set_summary_template", { meetingId, templateId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Answer a `detector://meeting` toast. See the module docs for the action
  * table (contracts.md §5).
  */
@@ -2048,6 +2100,12 @@ started_at: number; ended_at: number | null; capture_system_audio: boolean; stt_
  */
 summary_md: string | null; 
 /**
+ * 'pending' | 'ready' | 'disabled' | 'error' — FR-009-16 step (4).
+ * 'disabled' is FR-009-21 (no BYOK key): the meeting is `ready` with
+ * transcript + notes but no summary.
+ */
+summary_status: string; 
+/**
  * Directory with the 60 s audio blocks; NULL after retention expiry.
  */
 audio_dir: string | null; language: string | null; error_code: string | null }
@@ -2269,6 +2327,19 @@ export type Suitability =
  * Unlikely to run acceptably here.
  */
 "not_advised"
+/**
+ * Serialized+exported for the `meeting_summary_templates` IPC command —
+ * the meeting-window template picker binds straight to this shape.
+ */
+export type SummaryTemplate = { 
+/**
+ * uuid
+ */
+id: string; name: string; prompt: string; is_default: boolean; 
+/**
+ * Shipped with the app; not user-deletable.
+ */
+builtin: boolean }
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.

@@ -14,6 +14,7 @@ pub mod app_profiles;
 pub mod dictations;
 pub mod dictionary;
 pub mod local_models;
+pub mod meeting_blocks;
 pub mod meetings;
 mod migrations;
 pub mod notes;
@@ -205,6 +206,7 @@ mod tests {
             "notes",
             "meetings",
             "meeting_segments",
+            "meeting_blocks",
             "summary_templates",
             "meeting_app_rules",
             "dictations_fts",

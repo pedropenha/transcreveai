@@ -301,4 +301,55 @@ pub(crate) static MIGRATIONS: &[M] = &[
             ('builtin-webex-host',   'CiscoCollabHost.exe', NULL, 'Webex',          'ask', 1),
             ('builtin-webex-mta',    'webexmta.exe',        NULL, 'Webex',          'ask', 1);",
     ),
+    // --- Meeting summary state + default template (11, T-067) ------------------
+    // `summary_status` tracks FR-009-16 step (4) independently of the meeting
+    // status: FR-009-21 needs `ready` meetings whose summary is `disabled`
+    // (no BYOK key) to be distinguishable from `ready`+`error` (retryable).
+    // ADD COLUMN supports CHECK but forbids UNIQUE/PK; the default keeps
+    // existing rows at 'pending'.
+    //
+    // The pt-BR template is the spec's FR-009-17 default (fixed id so later
+    // migrations can UPDATE its text); `is_default` is what the pipeline reads
+    // when a meeting row carries no `template_id` override.
+    M::up(
+        "ALTER TABLE meetings ADD COLUMN summary_status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (summary_status IN ('pending','ready','disabled','error'));
+        -- T-067: durable clock placement per sealed block (FR-009-16 step 1).
+        -- `SealedBlock.start_offset_ms` is in-memory during capture; a row per
+        -- block makes it survive the session so post-processing can place
+        -- every `<track>-NNNN.wav` on the meeting clock (and re-run cheaply —
+        -- coverage is blocks ⨯ existing `speech` segments).
+        CREATE TABLE meeting_blocks (
+            meeting_id    TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+            track         TEXT NOT NULL CHECK (track IN ('mic','system')),
+            idx           INTEGER NOT NULL,
+            start_ms      INTEGER NOT NULL,
+            duration_ms   INTEGER NOT NULL,
+            PRIMARY KEY (meeting_id, track, idx)
+        );
+        INSERT OR IGNORE INTO summary_templates (id, name, prompt, is_default, builtin) VALUES (
+            'builtin-default',
+            'Padrão',
+            'Você é o assistente de atas do Transcreve.ai. Resuma a reunião seguindo exatamente esta estrutura Markdown:
+
+## Resumo
+
+(3 a 5 tópicos)
+
+## Decisões
+
+## Próximos passos
+
+- [ ] Tarefa — Responsável (ou Todos) — Prazo (se mencionado)
+
+## Pontos em aberto
+
+## Tópicos discutidos
+
+- Tópico (mm:ss)
+
+Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todos; trate Minhas notas do usuário como contexto prioritário; escreva no idioma predominante da reunião; cite horários (mm:ss) quando relevante.',
+            1,
+            1);",
+    ),
 ];
