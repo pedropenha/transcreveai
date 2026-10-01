@@ -135,8 +135,13 @@ struct ChatMessageResponse {
     content: Option<String>,
 }
 
-/// Build headers for API requests based on provider type
-fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<HeaderMap, String> {
+/// Build headers for API requests based on provider type.
+/// `pub(crate)` for the `llm` module — the `LlmProvider` impls share the same
+/// auth-header rules (`Bearer` vs `x-api-key` + `anthropic-version`).
+pub(crate) fn build_headers(
+    provider: &PostProcessProvider,
+    api_key: &str,
+) -> Result<HeaderMap, String> {
     let mut headers = HeaderMap::new();
 
     // Common headers
@@ -168,8 +173,12 @@ fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<Header
     Ok(headers)
 }
 
-/// Create an HTTP client with provider-specific headers
-fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwest::Client, String> {
+/// Create an HTTP client with provider-specific headers.
+/// `pub(crate)` for the `llm` module.
+pub(crate) fn create_client(
+    provider: &PostProcessProvider,
+    api_key: &str,
+) -> Result<reqwest::Client, String> {
     let headers = build_headers(provider, api_key)?;
     reqwest::Client::builder()
         .default_headers(headers)
@@ -237,7 +246,8 @@ fn reqwest_error_kinds(error: &reqwest::Error) -> String {
     }
 }
 
-fn sanitized_url(url: &reqwest::Url) -> String {
+/// `pub(crate)` for the `llm` module's request logging.
+pub(crate) fn sanitized_url(url: &reqwest::Url) -> String {
     let mut url = url.clone();
 
     // Custom endpoints should not contain credentials or query-string tokens,
@@ -250,7 +260,8 @@ fn sanitized_url(url: &reqwest::Url) -> String {
     url.to_string()
 }
 
-fn sanitized_url_for_log(url: &str) -> String {
+/// `pub(crate)` for the `llm` module's request logging.
+pub(crate) fn sanitized_url_for_log(url: &str) -> String {
     reqwest::Url::parse(url)
         .map(|url| sanitized_url(&url))
         // Do not echo an invalid URL: the parse failure might have been caused
@@ -258,7 +269,9 @@ fn sanitized_url_for_log(url: &str) -> String {
         .unwrap_or_else(|_| "<invalid URL>".to_string())
 }
 
-fn report_reqwest_error(context: &str, error: &reqwest::Error) -> String {
+/// `pub(crate)` for the `llm` module — its transport classifies the error
+/// first, then uses this to log the same bounded, sanitized detail line.
+pub(crate) fn report_reqwest_error(context: &str, error: &reqwest::Error) -> String {
     let kinds = reqwest_error_kinds(error);
     let url = error
         .url()

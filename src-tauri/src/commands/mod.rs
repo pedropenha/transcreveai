@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod error;
 pub mod history;
+pub mod llm;
 pub mod models;
 pub mod secrets;
 pub mod transcription;
