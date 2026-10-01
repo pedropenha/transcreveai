@@ -266,6 +266,13 @@
   overflow-wrap: anywhere;
 }
 
+.as-error-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--flowbar-text-muted);
+  font-size: var(--font-size-xxs);
+}
+
 .as-retry {
   border: 1px solid var(--flowbar-border);
   border-radius: var(--radius-pill);

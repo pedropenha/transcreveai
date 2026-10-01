@@ -446,6 +446,7 @@
           "detected": "Detectado",
           "missing": "Ausente",
           "disabled": "Desabilitado",
+          "experimental": "Experimental",
           "detectedDetail": "Detectado em {{path}}. Usa o login do próprio CLI — não precisa de chave de API."
         },
         "missingHint": "Não encontrado no PATH. Instale com: {{command}}",
@@ -906,6 +907,17 @@
     "empty": "Dite ou digite uma pergunta para começar.",
     "privacyHint": "O áudio é transcrito neste dispositivo — nada é enviado até você enviar.",
     "errorTitle": "O assistente não conseguiu responder.",
+    "error": {
+      "provider": "O assistente não conseguiu responder.",
+      "network": "Não foi possível alcançar o provedor.",
+      "timeout": "O provedor não respondeu a tempo.",
+      "auth": "O provedor recusou a chave de API.",
+      "rateLimited": "O provedor está limitando requisições.",
+      "unavailable": "O provedor retornou um erro de servidor.",
+      "missingApiKey": "Este provedor precisa de uma chave de API.",
+      "offline": "O modo offline está ativo — o assistente não alcança nenhum provedor.",
+      "unsupported": "Este provedor não pode responder ao assistente."
+    },
     "noProvider": "O assistente precisa de um provedor de IA para responder.",
     "hint": {
       "noProvider": "Ative um agente CLI local (Codex, Claude Code…) ou configure um provedor de API nas Configurações.",
@@ -913,7 +925,8 @@
       "missingApiKey": "Este provedor precisa de uma chave de API.",
       "missingModel": "Escolha um modelo para este provedor nas Configurações.",
       "cliAgentDisabled": "Este agente CLI está desativado nas Configurações.",
-      "cliAgentNotDetected": "Este agente CLI não foi encontrado no PATH."
+      "cliAgentNotDetected": "Este agente CLI não foi encontrado no PATH.",
+      "cliAgentExperimental": "Este agente CLI é experimental e ainda não pode responder."
     },
     "openSettings": "Abrir configurações"
   },

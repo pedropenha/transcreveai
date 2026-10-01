@@ -98,9 +98,51 @@ export function providerHintKey(hint: string | null | undefined): string {
       return "assistant.hint.cliAgentDisabled";
     case "cli_agent_not_detected":
       return "assistant.hint.cliAgentNotDetected";
+    case "cli_agent_experimental":
+      return "assistant.hint.cliAgentExperimental";
     case "no_provider":
       return "assistant.hint.noProvider";
     default:
       return "assistant.hint.noProvider";
   }
+}
+
+/** snake_case `LlmErrorKind` → the localized `assistant.error.*` key.
+ * The panel shows this as the primary error line — `errorDetail` (raw,
+ * English, backend-generated) stays as secondary diagnostic text, never
+ * as the user-facing message. `null`/unknown maps to the generic title. */
+export function errorKindKey(kind: string | null | undefined): string {
+  switch (kind) {
+    case "network":
+      return "assistant.error.network";
+    case "timeout":
+      return "assistant.error.timeout";
+    case "auth":
+      return "assistant.error.auth";
+    case "rate_limited":
+      return "assistant.error.rateLimited";
+    case "unavailable":
+      return "assistant.error.unavailable";
+    case "missing_api_key":
+      return "assistant.error.missingApiKey";
+    case "offline":
+      return "assistant.error.offline";
+    case "unsupported":
+      return "assistant.error.unsupported";
+    default:
+      return "assistant.error.provider";
+  }
+}
+
+/** `react-markdown` `urlTransform`: only http/https/mailto links survive —
+ * model output must never be able to smuggle `javascript:`/`data:`/`file:`
+ * URLs into the panel's click-through `openUrl`. Anything else renders as
+ * inert text. */
+export function safeMarkdownUrl(url: string): string {
+  const trimmed = url.trim();
+  // Relative URLs and fragments carry no scheme → nothing external loads.
+  const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed);
+  if (!match) return url;
+  const protocol = match[1].toLowerCase();
+  return ["http", "https", "mailto"].includes(protocol) ? url : "";
 }

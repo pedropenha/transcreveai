@@ -14,10 +14,12 @@ import {
   canDragPanel,
   canSend,
   composerValue,
+  errorKindKey,
   hotkeyIntent,
   isPanelDragging,
   pinToggleKey,
   providerHintKey,
+  safeMarkdownUrl,
   type AssistantViewState,
   type PanelGrab,
 } from "./assistantView";
@@ -111,40 +113,44 @@ const AssistantPanel: React.FC = () => {
         // `assistant://state` event recovers it.
       }
 
-      const unlistenState = await listen<AssistantStateEvent>(
-        "assistant://state",
-        (event) => {
+      // Each listener self-unlistens if the effect was torn down while its
+      // `listen` promise was still in flight — otherwise the callbacks keep
+      // firing on a dead component for the rest of the session.
+      const add = async (
+        register: () => Promise<() => void>,
+      ): Promise<void> => {
+        const unlisten = await register();
+        if (cancelled) unlisten();
+        else unlisteners.push(unlisten);
+      };
+
+      await add(() =>
+        listen<AssistantStateEvent>("assistant://state", (event) => {
           setState(event.payload);
-        },
+        }),
       );
 
-      const unlistenDictated = await listen<DictatedPayload>(
-        "assistant://dictated",
-        (event) => {
+      await add(() =>
+        listen<DictatedPayload>("assistant://dictated", (event) => {
           setDraft((d) => appendDictated(d, event.payload.text));
           setLive("");
-        },
+        }),
       );
 
-      const unlistenHotkey = await listen("assistant://hotkey", () => {
-        handleHotkey();
-      });
+      await add(() => listen("assistant://hotkey", () => handleHotkey()));
 
       // The streaming engine broadcasts committed+tentative text to every
       // window; the panel only shows it while this dictation is routed here.
-      const unlistenStream = await events.streamTextEvent.listen((event) => {
-        if (stateRef.current?.dictating) {
-          const p = event.payload as StreamTextEvent;
-          setLive(`${p.committed}${p.tentative ? ` ${p.tentative}` : ""}`);
-        }
-      });
-
-      unlisteners = [
-        unlistenState,
-        unlistenDictated,
-        unlistenHotkey,
-        unlistenStream,
-      ];
+      // The streaming engine broadcasts committed+tentative text to every
+      // window; the panel only shows it while this dictation is routed here.
+      await add(() =>
+        events.streamTextEvent.listen((event) => {
+          if (stateRef.current?.dictating) {
+            const p = event.payload as StreamTextEvent;
+            setLive(`${p.committed}${p.tentative ? ` ${p.tentative}` : ""}`);
+          }
+        }),
+      );
     };
 
     void setup();
@@ -205,10 +211,11 @@ const AssistantPanel: React.FC = () => {
   };
 
   // ---- Drag & pin (T-092, FR-012-16) ------------------------------------
-  // Pointer-based drag → commands: each move reports screenX/Y plus the
-  // grab offset (clientX/Y at pointerdown — constant while the window
-  // tracks the cursor); the backend owns unit conversion and monitor
-  // clamping. Persistence happens once on drag end, not at move rate.
+  // Pointer-based drag → commands: each move reports only the grab offset
+  // (clientX/Y at pointerdown — constant while the window tracks the
+  // cursor); the backend reads the cursor itself in physical px, because a
+  // webview screenX/Y is DIP and ambiguous on mixed-DPI layouts.
+  // Persistence happens once on drag end, not at move rate.
 
   const onTitlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
@@ -219,19 +226,18 @@ const AssistantPanel: React.FC = () => {
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
-  const onTitlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
+  const onTitlePointerMove = () => {
     const grab = grabRef.current;
     if (!isPanelDragging(grab) || !grab) return;
     if (dragFrameRef.current !== 0) return;
-    const { screenX, screenY } = e;
     const { clientX, clientY } = grab;
     dragFrameRef.current = requestAnimationFrame(() => {
       dragFrameRef.current = 0;
-      void commands.assistantMovePanel(screenX, screenY, clientX, clientY);
+      void commands.assistantMovePanel(clientX, clientY);
     });
   };
 
-  const endTitleDrag = (e: React.PointerEvent<HTMLElement>) => {
+  const endTitleDrag = () => {
     const grab = grabRef.current;
     if (!isPanelDragging(grab) || !grab) return;
     grabRef.current = null;
@@ -239,12 +245,7 @@ const AssistantPanel: React.FC = () => {
       cancelAnimationFrame(dragFrameRef.current);
       dragFrameRef.current = 0;
     }
-    void commands.assistantSavePanelPosition(
-      e.screenX,
-      e.screenY,
-      grab.clientX,
-      grab.clientY,
-    );
+    void commands.assistantSavePanelPosition(grab.clientX, grab.clientY);
   };
 
   // FR-012-16 "Fixar": the toggle persists; while pinned every drag is
@@ -361,6 +362,12 @@ const AssistantPanel: React.FC = () => {
                 <div className="as-md">
                   <ReactMarkdown
                     skipHtml
+                    // Model output is untrusted: no images (an <img> would
+                    // silently fetch an arbitrary URL — tracking/beacon
+                    // surface), and links limited to http/https/mailto by
+                    // the url transform before they ever reach openUrl.
+                    disallowedElements={["img"]}
+                    urlTransform={safeMarkdownUrl}
                     components={{
                       a: ({ children, href }) => (
                         <a
@@ -392,7 +399,12 @@ const AssistantPanel: React.FC = () => {
           {phase === "error" && (
             <div className="as-msg as-error" role="alert">
               <span className="as-error-text">
-                {state?.errorDetail ?? t("assistant.errorTitle")}
+                {/* Primary line is localized via errorKind — errorDetail
+                    (raw backend text) stays as secondary diagnostics. */}
+                {t(errorKindKey(state?.errorKind))}
+                {state?.errorDetail && (
+                  <span className="as-error-detail">{state.errorDetail}</span>
+                )}
               </span>
               <button type="button" className="as-retry" onClick={retry}>
                 {t("assistant.retry")}
@@ -402,6 +414,9 @@ const AssistantPanel: React.FC = () => {
           {phase === "cancelled" && (
             <div className="as-msg as-cancelled" role="status">
               {t("assistant.cancelled")}
+              <button type="button" className="as-retry" onClick={retry}>
+                {t("assistant.retry")}
+              </button>
             </div>
           )}
         </div>

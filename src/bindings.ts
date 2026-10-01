@@ -1427,13 +1427,14 @@ async assistantFocus() : Promise<Result<null, CommandError>> {
  * FR-012-16: live title-strip drag — repositions the panel clamped onto
  * the monitor under the cursor. Fires at pointer-move rate and persists
  * nothing; drag end goes through `assistant_save_panel_position`.
- * `screen_*` are the event's `screenX/Y`, `grab_*` the `clientX/Y`
- * captured where the drag started (the pointer's offset inside the
- * window, constant while the window tracks the cursor).
+ * `grab_*` are the `clientX/Y` captured where the drag started (the
+ * pointer's offset inside the window, constant while the window tracks
+ * the cursor); the cursor itself is read OS-side in physical px — a
+ * webview `screenX/Y` is DIP and ambiguous on mixed-DPI layouts.
  */
-async assistantMovePanel(screenX: number, screenY: number, grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
+async assistantMovePanel(grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("assistant_move_panel", { screenX, screenY, grabX, grabY }) };
+    return { status: "ok", data: await TAURI_INVOKE("assistant_move_panel", { grabX, grabY }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1444,9 +1445,9 @@ async assistantMovePanel(screenX: number, screenY: number, grabX: number, grabY:
  * persists it (with monitor context) so the panel reopens where it was
  * left. A pinned panel ignores the drop.
  */
-async assistantSavePanelPosition(screenX: number, screenY: number, grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
+async assistantSavePanelPosition(grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("assistant_save_panel_position", { screenX, screenY, grabX, grabY }) };
+    return { status: "ok", data: await TAURI_INVOKE("assistant_save_panel_position", { grabX, grabY }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1466,7 +1467,9 @@ async assistantSetPanelPinned(pinned: boolean) : Promise<Result<null, CommandErr
 },
 /**
  * FR-012-04: persist the assistant provider choice (`None` resets to auto).
- * Accepts any known `post_process_providers` id, including `cli_agent/*`.
+ * Accepts any known `post_process_providers` id, including `cli_agent/*` —
+ * except experimental adapters, which have no verified non-mutating mode
+ * and are refused outright (NFR-012-02).
  */
 async setAssistantProvider(providerId: string | null) : Promise<Result<null, CommandError>> {
     try {
@@ -2263,7 +2266,12 @@ export type AssistantProviderHint =
 /**
  * `cli_agent/*` provider enabled but the binary is not on PATH.
  */
-"cli_agent_not_detected"
+"cli_agent_not_detected" | 
+/**
+ * `cli_agent/*` adapter without a verified non-mutating headless mode —
+ * refused outright (NFR-012-02), no matter its config or detection.
+ */
+"cli_agent_experimental"
 /**
  * Snapshot pushed to the panel on every transition.
  */

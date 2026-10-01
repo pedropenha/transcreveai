@@ -446,6 +446,7 @@
           "detected": "Detected",
           "missing": "Absent",
           "disabled": "Disabled",
+          "experimental": "Experimental",
           "detectedDetail": "Detected at {{path}}. Uses the CLI's own sign-in — no API key needed."
         },
         "missingHint": "Not found on PATH. Install with: {{command}}",
@@ -980,6 +981,17 @@
     "empty": "Dictate or type a question to start.",
     "privacyHint": "Audio is transcribed on this device — nothing is sent until you press send.",
     "errorTitle": "The assistant could not answer.",
+    "error": {
+      "provider": "The assistant could not answer.",
+      "network": "Could not reach the provider.",
+      "timeout": "The provider did not answer in time.",
+      "auth": "The provider rejected the API key.",
+      "rateLimited": "The provider is rate limiting requests.",
+      "unavailable": "The provider returned a server error.",
+      "missingApiKey": "This provider needs an API key.",
+      "offline": "Offline mode is on — the assistant cannot reach any provider.",
+      "unsupported": "This provider cannot answer the assistant."
+    },
     "noProvider": "The assistant needs an AI provider to answer.",
     "hint": {
       "noProvider": "Enable a local CLI agent (Codex, Claude Code…) or configure an API provider in Settings.",
@@ -987,7 +999,8 @@
       "missingApiKey": "This provider needs an API key.",
       "missingModel": "Choose a model for this provider in Settings.",
       "cliAgentDisabled": "This CLI agent is disabled in Settings.",
-      "cliAgentNotDetected": "This CLI agent was not found on PATH."
+      "cliAgentNotDetected": "This CLI agent was not found on PATH.",
+      "cliAgentExperimental": "This CLI agent is experimental and is not allowed to answer yet."
     },
     "openSettings": "Open settings"
   },
