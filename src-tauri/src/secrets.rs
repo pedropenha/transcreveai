@@ -8,13 +8,19 @@
 //!
 //! Migration contract (T-016): plaintext `post_process_api_keys` entries from
 //! the previous release move into the vault on settings load. A key is only
-//! removed from the JSON after the vault confirms the write, so a temporarily
-//! unavailable credential store can never strand a working key; the migration
-//! simply retries on the next load (or on the next internal read).
+//! removed from the JSON after the vault confirms the write — and a vault
+//! entry that already holds a key always wins over the plaintext copy (the
+//! migration discards the leftover rather than overwriting a newer key).
+//! Failed writes keep the plaintext pending so a temporarily unavailable
+//! credential store can never strand a working key; retries are throttled by
+//! an exponential backoff so a down vault doesn't stall every settings read.
 //!
 //! Additional guarantees: secrets must never reach logs or error messages
 //! (FR-011-03) — [`redact_sensitive`] rewrites log output — and the only
-//! non-vault backend is an opt-in in-memory store for tests/CI.
+//! non-vault backend is an opt-in in-memory store for tests/CI. Because that
+//! store is process-local, migration and the read-path heal are skipped while
+//! `TRANSCREVE_SECRETS_MEMORY_STORE` is active: "moving" a key into a volatile
+//! store and deleting the plaintext would silently lose it on restart.
 
 use log::{debug, warn};
 use serde_json::Value;
@@ -22,6 +28,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
@@ -155,9 +162,16 @@ impl SecretStore for OsSecretStore {
 
 /// In-memory store for unit tests and CI-only dev builds. State is process
 /// local and never touches disk or the OS vault.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct MemorySecretStore {
     inner: Mutex<HashMap<String, String>>,
+}
+
+// Manual Debug so a log/inspect slip can never dump stored key material.
+impl fmt::Debug for MemorySecretStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemorySecretStore").finish_non_exhaustive()
+    }
 }
 
 impl SecretStore for MemorySecretStore {
@@ -209,6 +223,21 @@ impl SecretStore for FailingSecretStore {
     }
 }
 
+/// Whether the process-local volatile store is the active backend. Only
+/// possible in dev/test builds (`TRANSCREVE_SECRETS_MEMORY_STORE`): anything
+/// "migrated" into it would vanish on restart, so while it is active the
+/// plaintext-to-vault migration and the read-path heal are skipped entirely —
+/// pending plaintext stays in settings.json until a real vault is in use.
+#[cfg(debug_assertions)]
+fn memory_store_active() -> bool {
+    crate::utils::env_flag_enabled("TRANSCREVE_SECRETS_MEMORY_STORE")
+}
+
+#[cfg(not(debug_assertions))]
+fn memory_store_active() -> bool {
+    false
+}
+
 /// The store implementation in use. In dev/test builds only,
 /// `TRANSCREVE_SECRETS_MEMORY_STORE` swaps in the process-local store so
 /// tests and CI can run without an OS credential service (the only
@@ -227,18 +256,40 @@ pub fn secret_store() -> Arc<dyn SecretStore> {
     OS.get_or_init(|| Arc::new(OsSecretStore)).clone()
 }
 
-/// Masked display string: `••••` plus at most the last four characters. Keys
-/// of four characters or fewer reveal no characters at all, so the hint can
-/// never carry enough information to reconstruct a secret (FR-011-02).
+/// Masked display string: `••••` plus a trailing suffix of at most a quarter
+/// of the key's length, capped at four characters. A short key therefore
+/// reveals proportionally less (a 5–7 char key reveals 1 char, never the old
+/// fixed 4), so the hint can never carry enough information to reconstruct a
+/// secret (FR-011-02).
 pub fn hint_for(secret: Option<&str>) -> Option<String> {
     let secret = secret.filter(|s| !s.is_empty())?;
     let len = secret.chars().count();
-    if len > 4 {
-        let suffix: String = secret.chars().skip(len - 4).collect();
-        Some(format!("••••{suffix}"))
-    } else {
-        Some("••••".to_string())
+    let reveal = (len / 4).min(4);
+    if reveal == 0 {
+        return Some("••••".to_string());
     }
+    let suffix: String = secret.chars().skip(len - reveal).collect();
+    Some(format!("••••{suffix}"))
+}
+
+/// Hard input ceiling for [`commands::secret_set`]: Windows Credential
+/// Manager blobs cap at 2560 bytes, and control characters (a pasted
+/// newline, NUL, …) are never legitimate key material.
+pub const MAX_SECRET_BYTES: usize = 2560;
+
+/// Reject input the OS vault cannot store or that can never be a real key.
+pub fn validate_secret(secret: &str) -> Result<(), SecretError> {
+    if secret.len() > MAX_SECRET_BYTES {
+        return Err(SecretError(format!(
+            "key is too long for the OS credential vault (max {MAX_SECRET_BYTES} bytes)"
+        )));
+    }
+    if secret.chars().any(char::is_control) {
+        return Err(SecretError(
+            "key contains control characters (e.g. a pasted newline)".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Expected key prefixes for providers with a stable public format. Unknown
@@ -271,43 +322,86 @@ pub fn format_warning(provider_id: &str, provider_label: &str, key: &str) -> Opt
 /// Move plaintext `post_process_api_keys` entries into the vault and strip
 /// them from `settings_json`. A key is removed only after the vault accepts
 /// it — anything the store rejects stays in place so it is never lost, and
-/// the migration retries on the next load. Returns true when the JSON
-/// changed.
+/// the migration retries on the next load. A vault entry that already holds
+/// a non-empty key always wins: the plaintext leftover is then dropped
+/// without touching the vault, so a stale pending key can never overwrite a
+/// newer one saved since. Non-string leftovers are dropped outright — they
+/// were never usable keys. Returns true when the JSON changed.
 pub(crate) fn migrate_plaintext_api_keys(
     settings_json: &mut Value,
     store: &dyn SecretStore,
 ) -> bool {
+    if memory_store_active() {
+        // The in-memory backend is process-local (CI/dev only): "migrating"
+        // into it and deleting the plaintext would lose the key on restart.
+        static WARNED: OnceLock<()> = OnceLock::new();
+        WARNED.get_or_init(|| {
+            warn!("TRANSCREVE_SECRETS_MEMORY_STORE is active — skipping plaintext API key migration (the in-memory store is volatile)");
+        });
+        return false;
+    }
+
     let mut changed = false;
     let Some(map) = settings_json
         .get_mut(LEGACY_API_KEYS_FIELD)
         .and_then(Value::as_object_mut)
     else {
+        // A non-object leftover can never be migrated — drop it outright
+        // rather than letting it ride along on settings writes forever.
+        if settings_json.get(LEGACY_API_KEYS_FIELD).is_some() {
+            if let Some(obj) = settings_json.as_object_mut() {
+                obj.remove(LEGACY_API_KEYS_FIELD);
+            }
+            return true;
+        }
         return false;
     };
 
-    let entries: Vec<(String, String)> = map
+    let entries: Vec<(String, Option<String>)> = map
         .iter()
-        .filter_map(|(id, v)| v.as_str().map(|s| (id.clone(), s.to_string())))
+        .map(|(id, v)| (id.clone(), v.as_str().map(|s| s.trim().to_string())))
         .collect();
 
     for (provider_id, key) in entries {
-        if key.is_empty() {
+        let Some(key) = key.filter(|k| !k.is_empty()) else {
+            // Empty strings and non-string leftovers are dropped outright.
             map.remove(&provider_id);
             changed = true;
             continue;
-        }
-        match store.set(&provider_id, &key) {
-            Ok(()) => {
+        };
+        match store.get(&provider_id) {
+            // The vault already holds a key — it is newer than this pending
+            // plaintext copy (a `secret_set` landed after the vault write
+            // that stranded it failed). The vault wins; discard the stale
+            // plaintext without writing.
+            Ok(Some(existing)) if !existing.is_empty() => {
                 map.remove(&provider_id);
                 changed = true;
-                debug!("Migrated '{provider_id}' API key into the OS credential vault");
-            }
-            Err(e) => {
-                warn!(
-                    "Could not move '{provider_id}' API key into the OS vault ({e}); \
-                     keeping it in settings until the vault accepts it"
+                debug!(
+                    "Dropped pending '{provider_id}' plaintext key: the OS vault already holds one"
                 );
             }
+            // Vault state unknown — a blind `set` could overwrite a key we
+            // could not see. Keep the plaintext pending and retry later.
+            Err(e) => {
+                warn!(
+                    "Could not read the OS vault before migrating '{provider_id}' ({e}); \
+                     keeping the plaintext key until the vault accepts it"
+                );
+            }
+            Ok(_) => match store.set(&provider_id, &key) {
+                Ok(()) => {
+                    map.remove(&provider_id);
+                    changed = true;
+                    debug!("Migrated '{provider_id}' API key into the OS credential vault");
+                }
+                Err(e) => {
+                    warn!(
+                        "Could not move '{provider_id}' API key into the OS vault ({e}); \
+                         keeping it in settings until the vault accepts it"
+                    );
+                }
+            },
         }
     }
 
@@ -355,7 +449,20 @@ fn legacy_pending_api_key(app: &AppHandle, provider_id: &str) -> Option<String> 
     }
 }
 
-fn remove_pending_api_key(app: &AppHandle, provider_id: &str) -> Result<(), SecretError> {
+/// Drop a still-unmigrated plaintext copy for `provider_id` from the settings
+/// blob. Called after a successful vault write (migration, `secret_set`, the
+/// read-path heal) and by `secret_clear`. Best-effort: callers warn-log a
+/// failure — the vaulted key is already durable and a leftover is discarded
+/// by the next migration pass anyway (the vault wins).
+///
+/// The settings-blob lock serializes this read-modify-write with
+/// `get_settings`/`write_settings` so a concurrent settings write can never
+/// resurrect the plaintext or lose the removal.
+pub(crate) fn remove_pending_api_key(
+    app: &AppHandle,
+    provider_id: &str,
+) -> Result<(), SecretError> {
+    let _blob_guard = crate::settings::lock_settings_blob();
     let store = app
         .store(crate::portable::store_path(
             crate::settings::SETTINGS_STORE_PATH,
@@ -380,25 +487,80 @@ fn remove_pending_api_key(app: &AppHandle, provider_id: &str) -> Result<(), Secr
     Ok(())
 }
 
+/// Vault-write retry throttle for the best-effort paths (settings-load
+/// migration and the read-path heal). A down OS credential store is usually
+/// durable for a while; without throttling, every `get_settings` call would
+/// synchronously hit it and log the same warning again.
+static VAULT_WRITE_RETRY: Mutex<Option<VaultWriteRetry>> = Mutex::new(None);
+
+struct VaultWriteRetry {
+    failures: u32,
+    next_attempt: Instant,
+}
+
+const VAULT_RETRY_BASE: Duration = Duration::from_secs(1);
+const VAULT_RETRY_MAX: Duration = Duration::from_secs(5 * 60);
+
+/// Whether another best-effort vault write may be attempted now. The first
+/// call is always allowed; each recorded failure pushes the next attempt back
+/// exponentially (1s → 2s → … → 5min cap) until a success resets the schedule.
+pub(crate) fn vault_write_retry_allowed() -> bool {
+    let guard = VAULT_WRITE_RETRY.lock().unwrap_or_else(|e| e.into_inner());
+    match &*guard {
+        None => true,
+        Some(retry) => Instant::now() >= retry.next_attempt,
+    }
+}
+
+/// Record the outcome of a best-effort vault write. `succeeded` means either
+/// the write landed or there was nothing pending — anything else backs off.
+pub(crate) fn vault_write_retry_record(succeeded: bool) {
+    let mut guard = VAULT_WRITE_RETRY.lock().unwrap_or_else(|e| e.into_inner());
+    if succeeded {
+        *guard = None;
+        return;
+    }
+    let failures = guard.as_ref().map_or(0, |r| r.failures).saturating_add(1);
+    let delay = VAULT_RETRY_BASE
+        .saturating_mul(1u32 << (failures.saturating_sub(1)).min(8))
+        .min(VAULT_RETRY_MAX);
+    *guard = Some(VaultWriteRetry {
+        failures,
+        next_attempt: Instant::now() + delay,
+    });
+}
+
 /// Internal read path for provider keys — there is intentionally no Tauri
 /// command exposing it. Prefers the OS vault; falls back to a not-yet
 /// migrated plaintext copy so a temporarily unavailable vault cannot strand
-/// a working key, and re-attempts the vault write opportunistically.
+/// a working key, and re-attempts the vault write opportunistically
+/// (throttled by the same backoff as the settings-load migration).
 pub fn provider_api_key(app: &AppHandle, provider_id: &str) -> Option<String> {
     match secret_store().get(provider_id) {
         Ok(Some(key)) if !key.is_empty() => return Some(key),
         Ok(_) => {}
-        Err(e) => warn!("Could not read '{provider_id}' key from the OS vault: {e}"),
+        Err(e) => {
+            warn!("Could not read '{provider_id}' key from the OS vault: {e}");
+            // Vault state unknown — serve the pending plaintext but skip the
+            // heal write: a blind `set` could overwrite a key we couldn't see.
+            return legacy_pending_api_key(app, provider_id);
+        }
     }
 
     let pending = legacy_pending_api_key(app, provider_id)?;
-    // Opportunistic heal: retry the vault write and drop the plaintext copy as
-    // soon as it succeeds instead of waiting for the next settings load.
-    if secret_store().set(provider_id, &pending).is_ok() {
-        if let Err(e) = remove_pending_api_key(app, provider_id) {
-            warn!("'{provider_id}' is now vaulted but removing its plaintext copy failed: {e}");
+    // Opportunistic heal: retry the vault write and drop the plaintext copy
+    // as soon as it succeeds instead of waiting for the next settings load.
+    // Skipped under the in-memory backend — "healing" into a volatile store
+    // and deleting the plaintext would lose the key on restart.
+    if !memory_store_active() && vault_write_retry_allowed() {
+        let healed = secret_store().set(provider_id, &pending).is_ok();
+        if healed {
+            if let Err(e) = remove_pending_api_key(app, provider_id) {
+                warn!("'{provider_id}' is now vaulted but removing its plaintext copy failed: {e}");
+            }
+            debug!("Moved '{provider_id}' API key into the OS vault on read");
         }
-        debug!("Moved '{provider_id}' API key into the OS vault on read");
+        vault_write_retry_record(healed);
     }
     Some(pending)
 }
@@ -420,9 +582,11 @@ fn redaction_regexes() -> &'static [regex::Regex] {
         r#"csk-[A-Za-z0-9_-]{8,}"#,
         // Authorization headers
         r#"(?i)bearer\s+[A-Za-z0-9._~+/=-]{8,}"#,
-        r#"(?i)x-api-key["'\s]*[:=]\s*["']?[A-Za-z0-9._~+/=-]{8,}"#,
+        // Separator classes also cover `\` so JSON-escaped forms like
+        // `"x-api-key\":\"…"` / `"api_key\":\"…"` are caught too.
+        r#"(?i)x-api-key["'\\\s]*[:=]["'\\\s]*[A-Za-z0-9._~+/=-]{8,}"#,
         // generic `api_key=` / `apikey: ` style parameters
-        r#"(?i)api[-_]?key["'\s]*[:=]\s*["']?[A-Za-z0-9._~+/=-]{8,}"#,
+        r#"(?i)api[-_]?key["'\\\s]*[:=]["'\\\s]*[A-Za-z0-9._~+/=-]{8,}"#,
     ];
     static RES: OnceLock<Vec<regex::Regex>> = OnceLock::new();
     RES.get_or_init(|| {
@@ -440,7 +604,11 @@ fn redaction_regexes() -> &'static [regex::Regex] {
 pub fn redact_sensitive(message: &str) -> String {
     let mut out: Cow<'_, str> = Cow::Borrowed(message);
     for re in redaction_regexes() {
-        out = Cow::Owned(re.replace_all(&out, "<redacted>").into_owned());
+        // `replace_all` borrows when nothing matched — only swap in the
+        // owned copy on an actual rewrite so clean lines never allocate.
+        if let Cow::Owned(replaced) = re.replace_all(&out, "<redacted>") {
+            out = Cow::Owned(replaced);
+        }
     }
     debug_assert_eq!(
         redaction_regexes().len(),
@@ -481,15 +649,41 @@ mod tests {
     }
 
     #[test]
-    fn hint_never_reveals_more_than_four_characters() {
+    fn hint_reveals_at_most_a_quarter_of_the_key() {
         assert_eq!(hint_for(None), None);
         assert_eq!(hint_for(Some("")), None);
-        assert_eq!(hint_for(Some("abcd")), Some("••••".to_string()));
-        assert_eq!(hint_for(Some("abcde")), Some("••••bcde".to_string()));
-        assert_eq!(hint_for(Some("sk-proj-xyzw")), Some("••••xyzw".to_string()));
+        // ≤3 chars: nothing is revealed.
+        assert_eq!(hint_for(Some("abc")), Some("••••".to_string()));
+        // len/4 revealed, capped at 4: never more than 25% of the key.
+        assert_eq!(hint_for(Some("abcd")), Some("••••d".to_string()));
+        assert_eq!(hint_for(Some("abcde")), Some("••••e".to_string()));
+        assert_eq!(hint_for(Some("sk-proj-xyzw")), Some("••••yzw".to_string()));
         let hint = hint_for(Some("sk-proj-123456789")).unwrap();
         assert_eq!(hint, "••••6789");
         assert!(!hint.contains("sk-"), "hint must not leak key material");
+    }
+
+    #[test]
+    fn memory_store_debug_never_leaks_key_material() {
+        let store = MemorySecretStore::default();
+        store.set("openai", "sk-secret-material").unwrap();
+        let rendered = format!("{store:?}");
+        assert!(rendered.contains("MemorySecretStore"));
+        assert!(
+            !rendered.contains("sk-secret-material"),
+            "Debug output must not expose stored secrets: {rendered}"
+        );
+    }
+
+    #[test]
+    fn validate_secret_rejects_control_chars_and_oversized_input() {
+        assert!(validate_secret("sk-ok").is_ok());
+        assert!(validate_secret("bad\nkey").is_err());
+        assert!(validate_secret("bad\r\nkey").is_err());
+        assert!(validate_secret("bad\tkey").is_err());
+        assert!(validate_secret("bad\u{0}key").is_err());
+        assert!(validate_secret(&"x".repeat(MAX_SECRET_BYTES)).is_ok());
+        assert!(validate_secret(&"x".repeat(MAX_SECRET_BYTES + 1)).is_err());
     }
 
     #[test]
@@ -511,6 +705,28 @@ mod tests {
         assert!(!migrate_plaintext_api_keys(&mut json, &store));
     }
 
+    /// Store whose reads always fail but whose writes are recorded — stands
+    /// in for a vault whose state cannot be inspected before migration.
+    struct UnreadableSecretStore {
+        sets: Mutex<Vec<(String, String)>>,
+    }
+
+    impl SecretStore for UnreadableSecretStore {
+        fn get(&self, _provider_id: &str) -> Result<Option<String>, SecretError> {
+            Err(SecretError("store unreadable".to_string()))
+        }
+        fn set(&self, provider_id: &str, secret: &str) -> Result<(), SecretError> {
+            self.sets
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push((provider_id.to_string(), secret.to_string()));
+            Ok(())
+        }
+        fn delete(&self, _provider_id: &str) -> Result<(), SecretError> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn migration_keeps_pending_keys_when_the_vault_fails() {
         let store = FailingSecretStore;
@@ -525,16 +741,88 @@ mod tests {
         );
     }
 
+    /// Regression: a pending plaintext key stranded by an earlier vault
+    /// failure must never overwrite a newer key the user saved since — the
+    /// vault wins and the stale copy is dropped.
     #[test]
-    fn migration_preserves_non_string_leftovers() {
+    fn migration_never_overwrites_a_newer_vaulted_key() {
+        let store = MemorySecretStore::default();
+        store.set("openai", "sk-new-k2").unwrap();
+        let mut json = json!({
+            "post_process_api_keys": {"openai": "sk-stale-k1"},
+        });
+        assert!(migrate_plaintext_api_keys(&mut json, &store));
+        assert!(json.get("post_process_api_keys").is_none());
+        assert_eq!(
+            store.get("openai").unwrap().as_deref(),
+            Some("sk-new-k2"),
+            "the vaulted key must win over the stale plaintext copy"
+        );
+    }
+
+    /// When the vault cannot even be read, migration must not blind-write —
+    /// the key stays pending for a later attempt.
+    #[test]
+    fn migration_never_blind_writes_to_an_unreadable_vault() {
+        let store = UnreadableSecretStore {
+            sets: Mutex::new(Vec::new()),
+        };
+        let mut json = json!({
+            "post_process_api_keys": {"openai": "sk-pending"},
+        });
+        assert!(!migrate_plaintext_api_keys(&mut json, &store));
+        assert_eq!(
+            json["post_process_api_keys"]["openai"].as_str(),
+            Some("sk-pending")
+        );
+        assert!(
+            store
+                .sets
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty(),
+            "migration must not write to a vault whose state it cannot read"
+        );
+    }
+
+    #[test]
+    fn migration_trims_legacy_keys_before_storing() {
+        let store = MemorySecretStore::default();
+        let mut json = json!({
+            "post_process_api_keys": {"openai": "  sk-padded \n"},
+        });
+        assert!(migrate_plaintext_api_keys(&mut json, &store));
+        assert_eq!(store.get("openai").unwrap().as_deref(), Some("sk-padded"));
+    }
+
+    #[test]
+    fn migration_drops_non_string_leftovers() {
         let store = MemorySecretStore::default();
         let mut json = json!({
             "post_process_api_keys": {"weird": 42, "openai": "sk-x1"},
         });
         assert!(migrate_plaintext_api_keys(&mut json, &store));
-        let left = json["post_process_api_keys"].as_object().unwrap();
-        assert_eq!(left.len(), 1);
-        assert_eq!(left["weird"].as_i64(), Some(42));
+        // Non-string entries were never usable keys — they are dropped with
+        // the field instead of pending migration forever.
+        assert!(json.get("post_process_api_keys").is_none());
+        assert_eq!(store.get("openai").unwrap().as_deref(), Some("sk-x1"));
+    }
+
+    #[test]
+    fn vault_write_retry_backoff_throttles_failures() {
+        // Reset the shared schedule first so the test is order-independent.
+        vault_write_retry_record(true);
+        assert!(vault_write_retry_allowed(), "first attempt is allowed");
+        vault_write_retry_record(false);
+        assert!(
+            !vault_write_retry_allowed(),
+            "a failed attempt defers the next one"
+        );
+        vault_write_retry_record(true);
+        assert!(
+            vault_write_retry_allowed(),
+            "a success resets the backoff schedule"
+        );
     }
 
     #[test]
@@ -574,12 +862,15 @@ mod tests {
             "key = sk-proj-AbCdEf123456",
             "gsk_AbCdEfGhIjKlMnOpQrSt",
             "api_key=sk-svcacct-abcdefghi",
+            // JSON-escaped form, as it appears when a payload is embedded in a
+            // serialized request/response inside a log line.
+            "post body {\"api_key\":\"ZXCVBNM1234567\"}",
         ];
         for case in cases {
             let redacted = redact_sensitive(case);
             assert!(redacted.contains("<redacted>"), "{case}");
             assert!(
-                !redacted.contains("abc"),
+                !redacted.contains("abc") && !redacted.contains("ZXCVBNM"),
                 "secret material must not survive: {redacted}"
             );
         }

@@ -1,7 +1,11 @@
 //! Tauri commands for provider API keys (FR-011-01..05).
 //!
 //! These are deliberately write-only: no command returns a secret's value.
-//! `secret_hint` exposes at most the last four characters.
+//! `secret_hint` exposes at most a quarter of the key's length (max four
+//! characters). All three commands are `async fn` so Tauri runs the keyring
+//! I/O on its thread pool instead of blocking the main thread — a serial
+//! `refreshApiKeyHints` round over several providers would otherwise freeze
+//! the UI while the OS credential store answers.
 
 use crate::secrets;
 use crate::settings;
@@ -25,7 +29,7 @@ fn known_provider(
 /// (FR-011-05); the key is saved regardless.
 #[tauri::command]
 #[specta::specta]
-pub fn secret_set(
+pub async fn secret_set(
     app: AppHandle,
     provider_id: String,
     secret: String,
@@ -36,9 +40,15 @@ pub fn secret_set(
         secrets::clear_provider_secret(&app, &provider_id).map_err(|e| e.to_string())?;
         return Ok(None);
     }
+    secrets::validate_secret(&secret).map_err(|e| e.to_string())?;
     secrets::secret_store()
         .set(&provider_id, &secret)
         .map_err(|e| format!("Could not save the key in the system credential vault: {e}"))?;
+    // The vault now holds the new key — drop any plaintext leftover stranded
+    // by an earlier failed migration so it can't linger in settings.json.
+    if let Err(e) = secrets::remove_pending_api_key(&app, &provider_id) {
+        log::warn!("Saved '{provider_id}' key but could not remove its plaintext leftover: {e}");
+    }
     Ok(secrets::format_warning(
         &provider.id,
         &provider.label,
@@ -50,16 +60,16 @@ pub fn secret_set(
 /// pending migration (FR-011-04).
 #[tauri::command]
 #[specta::specta]
-pub fn secret_clear(app: AppHandle, provider_id: String) -> Result<(), String> {
+pub async fn secret_clear(app: AppHandle, provider_id: String) -> Result<(), String> {
     known_provider(&app, &provider_id)?;
     secrets::clear_provider_secret(&app, &provider_id).map_err(|e| e.to_string())
 }
 
-/// Masked presence hint (`••••` + last four chars) — never the key itself
-/// (FR-011-02).
+/// Masked presence hint (`••••` + a short trailing suffix) — never the key
+/// itself (FR-011-02).
 #[tauri::command]
 #[specta::specta]
-pub fn secret_hint(app: AppHandle, provider_id: String) -> Result<Option<String>, String> {
+pub async fn secret_hint(app: AppHandle, provider_id: String) -> Result<Option<String>, String> {
     known_provider(&app, &provider_id)?;
     let key = secrets::provider_api_key(&app, &provider_id);
     Ok(secrets::hint_for(key.as_deref()))
