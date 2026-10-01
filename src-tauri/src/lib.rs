@@ -506,6 +506,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             },
         );
     }
+    // F008/T-062: the non-activatable meeting toast — hidden window created
+    // up front (WebView2 cold start is too slow to launch per detection),
+    // driven by `detector://meeting` / `toast://show` events.
+    toast::init(app_handle);
 }
 
 /// Meeting starts that arrive outside the `meeting_start` command — the
@@ -572,10 +576,6 @@ fn toggle_meeting_from_surface(app: &AppHandle) {
             },
         );
     }
-    // F008/T-062: the non-activatable meeting toast — hidden window created
-    // up front (WebView2 cold start is too slow to launch per detection),
-    // driven by `detector://meeting` / `toast://show` events.
-    toast::init(app_handle);
 }
 
 #[tauri::command]

@@ -1384,6 +1384,99 @@ async meetingConsentCopy() : Promise<Result<string, CommandError>> {
 }
 },
 /**
+ * Answer a `detector://meeting` toast. See the module docs for the action
+ * table (contracts.md §5).
+ */
+async detectorRespond(detectionId: string, action: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("detector_respond", { detectionId, action }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List every rule (builtin seeds first included) for the settings screen.
+ */
+async meetingRulesList() : Promise<Result<MeetingAppRule[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_rules_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Add a user rule. Browser exes (`chrome.exe`, `msedge.exe`, …) must carry a
+ * `title_pattern` — the classifier can never fire them on the exe alone
+ * (FR-008-02), so a pattern-less browser rule would be silently dead.
+ */
+async meetingRuleAdd(exe: string, label: string, titlePattern: string | null, action: string) : Promise<Result<MeetingAppRule, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_rule_add", { exe, label, titlePattern, action }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Change a rule's action (`ask` | `auto_start` | `ignore`) — allowed on
+ * builtin rows too ("always"/"never" from the toast land here via
+ * `detector_respond`, the settings screen uses this command).
+ */
+async meetingRuleSetAction(id: string, action: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_rule_set_action", { id, action }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Remove a user rule. Builtin rows refuse deletion (`InvalidInput`) — the
+ * supported "never ask again" path for them is `set_action(id, "ignore")`.
+ */
+async meetingRuleDelete(id: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_rule_delete", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toastSetCollapsed(collapsed: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toast_set_collapsed", { collapsed }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toastReopen() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toast_reopen") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toastDismiss() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toast_dismiss") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toastSetContentHeight(height: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toast_set_content_height", { height }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
  */
@@ -1654,7 +1747,38 @@ meeting_consent_reminder?: boolean;
  * FR-009-09 / AC-009-08: after 10 min without speech on every track, ask
  * "Ainda em reunião?"; unanswered for 2 min stops the meeting.
  */
-meeting_silence_checkin_enabled?: boolean }
+meeting_silence_checkin_enabled?: boolean; 
+/**
+ * Master switch for meeting detection (FR-008-15 "Detectar reuniões").
+ * On by default; consumed by the detector gate (T-061).
+ */
+meeting_detection_enabled?: boolean; 
+/**
+ * "Detectar qualquer chamada" (FR-008-03): an S1 mic-hold ≥ 10 s by a
+ * non-browser, non-ignored process also fires a detection, labelled with
+ * the exe file stem. Off by default.
+ */
+detect_any_call_enabled?: boolean; 
+/**
+ * Global auto-start toggle (FR-008-13): detections start recording
+ * without asking. Off by default; consumed by T-069 — T-061 only stores
+ * it and flags `auto_start` on the emitted detection.
+ */
+meeting_auto_start?: boolean; 
+/**
+ * Auto-stop on meeting end (FR-008-14). On by default; consumed by
+ * T-069.
+ */
+meeting_auto_stop?: boolean; 
+/**
+ * Where the meeting-detection toast anchors (FR-008-07/15).
+ */
+meeting_toast_position?: ToastPosition; 
+/**
+ * Optional notification sound when the meeting toast first appears
+ * (FR-008-11). Off by default; independent of `audio_feedback`.
+ */
+meeting_toast_sound?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1928,6 +2052,35 @@ summary_md: string | null;
  */
 audio_dir: string | null; language: string | null; error_code: string | null }
 /**
+ * Serialized+exported for the `meeting_rules_*` IPC commands (FR-008-15,
+ * T-061) — the rules-settings screen binds straight to this shape.
+ */
+export type MeetingAppRule = { 
+/**
+ * uuid
+ */
+id: string; 
+/**
+ * e.g. "Zoom.exe", "chrome.exe"
+ */
+exe: string; 
+/**
+ * Optional window-title regex.
+ */
+title_pattern: string | null; 
+/**
+ * e.g. "Zoom", "Google Meet"
+ */
+label: string; 
+/**
+ * 'ask' | 'auto_start' | 'ignore'
+ */
+action: string; 
+/**
+ * Shipped with the app; not user-deletable.
+ */
+builtin: boolean }
+/**
  * `meeting://state` payload (contracts.md §5).
  */
 export type MeetingStateEvent = { meeting_id: string; 
@@ -2121,6 +2274,19 @@ export type Suitability =
  * and `Dark` force one of the two palettes Handy already ships.
  */
 export type Theme = "system" | "light" | "dark"
+/**
+ * Where the meeting-detection toast anchors (FR-008-07/15).
+ */
+export type ToastPosition = 
+/**
+ * Just above the Flow Bar; falls back to the bottom-right corner of the
+ * cursor's monitor when the bar is not on screen.
+ */
+"above_flowbar" | 
+/**
+ * Always the bottom-right corner of the cursor's monitor work area.
+ */
+"bottom_right"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
