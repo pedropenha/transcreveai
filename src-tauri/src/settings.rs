@@ -202,9 +202,12 @@ pub enum ModelUnloadTimeout {
     Never,
     Immediately,
     Min2,
-    #[default]
     Min5,
     Min10,
+    // FR-003-09: "descarregar após N min ocioso (padrão 15, configurável,
+    // 'nunca')". Instalações antigas que gravaram "min5" mantêm o valor
+    // persistido; o default só vale para settings novos/ausentes.
+    #[default]
     Min15,
     Hour1,
     Sec15, // Debug mode only
