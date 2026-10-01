@@ -152,10 +152,10 @@ fn open_rules_conn(app: &tauri::AppHandle) -> Option<rusqlite::Connection> {
         .ok()
 }
 
-//! Captura (T-063): [`blocks`] grava WAVs de 60 s por trilha sob
-//! `audio/meetings/<id>/` com fsync por bloco (FR-009-05); [`capture`] liga o
-//! mic compartilhado (`FrameTap::Raw` + `when_idle`) e o loopback WASAPI;
-//! [`recovery`] marca reuniões órfãs como `recovered` no startup.
+// Captura (T-063): [`blocks`] grava WAVs de 60 s por trilha sob
+// `audio/meetings/<id>/` com fsync por bloco (FR-009-05); [`capture`] liga o
+// mic compartilhado (`FrameTap::Raw` + `when_idle`) e o loopback WASAPI;
+// [`recovery`] marca reuniões órfãs como `recovered` no startup.
 
 pub mod blocks;
 pub mod capture;
