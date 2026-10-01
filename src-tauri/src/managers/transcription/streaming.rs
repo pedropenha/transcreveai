@@ -516,6 +516,10 @@ impl TranscriptionManager {
             false,
             &finalized.output_language,
             &finalized.supported_languages,
+            // O streaming não retém as amostras: sem evidência de energia, o
+            // filtro de alucinação descarta matches exatos da lista de
+            // bloqueio e conserva matches parciais (FR-003-13).
+            None,
         );
 
         self.maybe_unload_immediately("streaming transcription");

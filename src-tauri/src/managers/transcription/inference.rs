@@ -8,11 +8,13 @@
 //! `SttProvider::transcribe` do `LocalSttProvider`.
 
 use super::engine::LoadedEngine;
+use super::hallucination::{filter_spans, overall_rms, PhantomSpan};
 use super::language::{
     effective_language_for_model, normalize_cjk_language, resolve_output_language_evidence,
     transcribe_cpp_run_plan, with_model_detected_language,
 };
 use super::postprocess::post_process_transcription_text;
+use super::prompt::build_initial_prompt;
 use super::{panic_payload_message, real_time_factor, ModelStateEvent, TranscriptionManager};
 use crate::settings::get_settings;
 use crate::stt::types::{SttError, SttOptions, Transcript};
@@ -150,6 +152,9 @@ impl TranscriptionManager {
             let mut output_was_translated = false;
             let mut applied_language_hint: Option<String> = None;
             let mut model_detected_language: Option<String> = None;
+            // Segmentos com janela de áudio (transcribe-cpp) — insumo do
+            // filtro de alucinação por janela de energia (FR-003-13).
+            let mut engine_segments: Vec<PhantomSpan> = Vec::new();
             if let LoadedEngine::TranscribeCpp(session) = &engine {
                 let model = session.model();
                 let caps = model.capabilities();
@@ -185,7 +190,9 @@ impl TranscriptionManager {
                                 None
                             } else {
                                 Some(RunExtension::Whisper(WhisperRunOptions {
-                                    initial_prompt: Some(opts.vocabulary_hints.join(", ")),
+                                    // FR-003-12: dicas de vocabulário como
+                                    // initial_prompt, limitadas a ~200 tokens.
+                                    initial_prompt: build_initial_prompt(&opts.vocabulary_hints),
                                     ..Default::default()
                                 }))
                             };
@@ -221,6 +228,11 @@ impl TranscriptionManager {
                                     // Whisper's audio-based LID (auto mode only;
                                     // `None` when a language hint was passed).
                                     model_detected_language = t.language;
+                                    engine_segments = t
+                                        .segments
+                                        .into_iter()
+                                        .map(|s| PhantomSpan::new(s.t0_ms, s.t1_ms, s.text))
+                                        .collect();
                                     t.text
                                 })
                                 .map_err(|e| {
@@ -342,7 +354,17 @@ impl TranscriptionManager {
                     // Success or normal error: return the engine unless a model
                     // switch/unload invalidated it while it was in use.
                     self.return_engine(engine, &active_model);
-                    inner_result?
+                    let text = inner_result?;
+                    // FR-003-13: filtro de alucinação por segmento — cada trecho
+                    // é testado com a energia RMS da sua janela `t0..t1`, então
+                    // um rabo fantasma sobre silêncio cai mesmo quando o início
+                    // do áudio tinha fala. Motores sem segmentos passam pelo
+                    // filtro de texto inteiro no pós-processamento.
+                    if engine_segments.is_empty() {
+                        text
+                    } else {
+                        filter_spans(&engine_segments, audio, 16_000)
+                    }
                 }
                 Err(panic_payload) => {
                     // Engine panicked — do NOT put it back (it's in an unknown state).
@@ -406,6 +428,7 @@ impl TranscriptionManager {
             model_is_whisper,
             &output_language,
             &model_languages,
+            overall_rms(audio),
         );
 
         let et = std::time::Instant::now();

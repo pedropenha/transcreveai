@@ -1,8 +1,10 @@
-//! Pós-processamento do texto da transcrição: correção fuzzy dos termos do
-//! dicionário (quando não foram enviados como prompt ao whisper), remoção de
-//! filler words com evidência de idioma e normalização. Opcional e fail-open:
-//! um pânico aqui nunca descarta um resultado bem-sucedido do motor.
+//! Pós-processamento do texto da transcrição: filtro de alucinação
+//! (FR-003-13), correção fuzzy dos termos do dicionário (quando não foram
+//! enviados como prompt ao whisper), remoção de filler words com evidência de
+//! idioma e normalização. Opcional e fail-open: um pânico aqui nunca descarta
+//! um resultado bem-sucedido do motor.
 
+use super::hallucination::filter_phantom_text;
 use super::panic_payload_message;
 use crate::audio_toolkit::{
     apply_custom_words, detect_output_language, normalize_transcription_output,
@@ -12,14 +14,26 @@ use crate::settings::AppSettings;
 use log::{debug, error};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+/// `audio_energy`: RMS do buffer transcrito, quando o chamador tem as amostras
+/// (batch); `None` no streaming. O filtro de alucinação o usa como o sinal
+/// "energia baixa" do FR-003-13.
 pub(super) fn post_process_transcription_text(
     raw: String,
     settings: &AppSettings,
     custom_words_already_prompted: bool,
     output_language: &OutputLanguageEvidence,
     supported_languages: &[String],
+    audio_energy: Option<f32>,
 ) -> String {
     fail_open_text_transform(raw, |raw| {
+        // Filtro de alucinação ANTES da correção fuzzy — o fuzzy poderia
+        // reescrever uma frase-fantasma com um termo do dicionário e o texto
+        // deixaria de bater com a lista de bloqueio.
+        let raw = filter_phantom_text(raw, audio_energy);
+        if raw.is_empty() {
+            return raw;
+        }
+
         let corrected = if !settings.custom_words.is_empty() && !custom_words_already_prompted {
             apply_custom_words(
                 &raw,
@@ -115,6 +129,7 @@ mod tests {
             false,
             &evidence,
             &supported,
+            None,
         );
 
         assert_eq!(
@@ -141,6 +156,7 @@ mod tests {
             false,
             &evidence,
             &languages(&["en", "pt"]),
+            None,
         );
 
         assert_eq!(evidence, OutputLanguageEvidence::Unknown);
@@ -161,6 +177,7 @@ mod tests {
             false,
             &OutputLanguageEvidence::Unknown,
             &languages(&["en", "pt", "es", "de"]),
+            None,
         );
 
         assert_eq!(
@@ -182,6 +199,7 @@ mod tests {
             false,
             &OutputLanguageEvidence::Unknown,
             &languages(&["en", "pt", "es", "de"]),
+            None,
         );
 
         assert_eq!(
@@ -209,7 +227,39 @@ mod tests {
             false,
             &evidence,
             &supported,
+            None,
         );
         assert_eq!(result, "eu vi um carro");
+    }
+
+    #[test]
+    fn phantom_output_is_dropped_before_cleanup() {
+        // AC-003-05: alucinação de boilerplate sobre áudio sem fala sai vazia
+        // do pós-processamento → nada é colado.
+        let settings = AppSettings {
+            selected_language: "auto".to_string(),
+            ..Default::default()
+        };
+
+        let result = post_process_transcription_text(
+            "Obrigado por assistir".to_string(),
+            &settings,
+            false,
+            &OutputLanguageEvidence::Unknown,
+            &languages(&["en", "pt"]),
+            Some(0.0), // RMS de silêncio
+        );
+        assert_eq!(result, "");
+
+        // A mesma frase com energia de fala é ditado possível — preservada.
+        let result = post_process_transcription_text(
+            "Obrigado por assistir".to_string(),
+            &settings,
+            false,
+            &OutputLanguageEvidence::Unknown,
+            &languages(&["en", "pt"]),
+            Some(0.2),
+        );
+        assert_eq!(result, "Obrigado por assistir");
     }
 }

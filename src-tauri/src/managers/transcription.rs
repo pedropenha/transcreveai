@@ -13,12 +13,16 @@
 //! * [`streaming`] — transcrição ao vivo por frames + `StreamRouter`;
 //! * [`inference`] — `transcribe_once`: uma tentativa batch no motor;
 //! * [`language`] — coerção de idioma e evidência do idioma de saída;
+//! * [`prompt`] — montagem do `initial_prompt` do whisper (FR-003-12);
+//! * [`hallucination`] — filtro de texto-fantasma do decoder (FR-003-13);
 //! * [`postprocess`] — correção fuzzy, filler words e normalização de texto.
 
 mod engine;
+mod hallucination;
 mod inference;
 mod language;
 mod postprocess;
+mod prompt;
 mod streaming;
 
 pub use engine::{

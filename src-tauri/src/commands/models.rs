@@ -50,7 +50,9 @@ pub async fn import_model(
     let mm = model_manager.inner().clone();
     tokio::task::spawn_blocking(move || mm.import_custom_model(std::path::Path::new(&path)))
         .await
-        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Model import task failed", e))?
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Model import task failed", e)
+        })?
         .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))
 }
 
