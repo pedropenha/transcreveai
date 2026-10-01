@@ -1149,3 +1149,41 @@ pub fn run(cli_args: CliArgs) {
         _ => {}
     });
 }
+
+#[cfg(test)]
+mod bindings_tests {
+    use super::*;
+
+    /// The checked-in `src/bindings.ts` must match what tauri-specta generates.
+    /// The export only runs on debug app startup, so hand-edited drift slips in
+    /// easily — this test is the bindings-export check `specta_builder()` was
+    /// extracted for.
+    #[test]
+    fn exported_typescript_bindings_match_checked_in_file() {
+        let dir = tempfile::tempdir().expect("temp dir for bindings export");
+        let out = dir.path().join("bindings.ts");
+        super::specta_builder()
+            .export(
+                Typescript::default().bigint(BigIntExportBehavior::Number),
+                &out,
+            )
+            .expect("typescript bindings export");
+        let generated = std::fs::read_to_string(&out).expect("generated bindings");
+        let checked_in =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/bindings.ts"))
+                .expect("checked-in src/bindings.ts");
+        if generated != checked_in {
+            // Keep the regenerated copy around for diffing.
+            let keep = std::env::temp_dir().join("transcreve-bindings.generated.ts");
+            let _ = std::fs::write(&keep, &generated);
+            eprintln!(
+                "stale bindings — regenerated copy left at {}",
+                keep.display()
+            );
+        }
+        assert_eq!(
+            generated, checked_in,
+            "src/bindings.ts is stale — regenerate it by launching a debug build (`bun run tauri dev` exports it on startup)"
+        );
+    }
+}

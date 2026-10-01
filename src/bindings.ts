@@ -240,6 +240,12 @@ async changePostProcessBaseUrlSetting(providerId: string, baseUrl: string) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Store a provider API key in the OS credential vault. An empty value means
+ * "remove the key" (the same thing clearing the field did when keys lived in
+ * `settings.json`). Returns an optional non-blocking format warning
+ * (FR-011-05); the key is saved regardless.
+ */
 async secretSet(providerId: string, secret: string) : Promise<Result<string | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("secret_set", { providerId, secret }) };
@@ -248,6 +254,10 @@ async secretSet(providerId: string, secret: string) : Promise<Result<string | nu
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Delete a provider's key — vault entry plus any plaintext leftover still
+ * pending migration (FR-011-04).
+ */
 async secretClear(providerId: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("secret_clear", { providerId }) };
@@ -256,6 +266,10 @@ async secretClear(providerId: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Masked presence hint (`••••` + a short trailing suffix) — never the key
+ * itself (FR-011-02).
+ */
 async secretHint(providerId: string) : Promise<Result<string | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("secret_hint", { providerId }) };
@@ -984,7 +998,13 @@ shortcut_activation?: ShortcutActivation;
  * Hold-or-toggle only: a press held at least this long is push-to-talk,
  * anything shorter is a tap that locks recording on.
  */
-hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; show_whats_new_on_update?: boolean; 
+hold_threshold_ms?: number; 
+/**
+ * Start/stop recording sounds. On by default per FR-001-13; users who
+ * already turned it off keep their stored `false` (migrations never
+ * overwrite an explicit preference).
+ */
+audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; show_whats_new_on_update?: boolean; 
 /**
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
@@ -996,7 +1016,7 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number;
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1048,8 +1068,7 @@ flowbar_follow?: FlowbarFollow;
  * (0–1, FR-001-08). Persisted per position; multi-monitor placement is
  * derived from `flowbar_follow`.
  */
-flowbar_position_edge?: FlowbarEdge; 
-flowbar_position_offset?: number; 
+flowbar_position_edge?: FlowbarEdge; flowbar_position_offset?: number; 
 /**
  * Hide the Flow Bar while the foreground window covers the whole monitor
  * (FR-001-11), except during an active recording.
@@ -1091,7 +1110,13 @@ export type EngineType =
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
+/**
+ * Screen edge the Flow Bar is docked to (FR-001-08).
+ */
 export type FlowbarEdge = "bottom" | "left" | "right"
+/**
+ * Which monitor hosts the Flow Bar (FR-001-09).
+ */
 export type FlowbarFollow = 
 /**
  * Monitor of the foreground window (data-model `foreground_monitor`).
@@ -1105,6 +1130,9 @@ export type FlowbarFollow =
  * Always the primary monitor.
  */
 "primary_monitor"
+/**
+ * When the Flow Bar is on screen (FR-001-10).
+ */
 export type FlowbarVisibility = "always" | "during_recording" | "never"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
@@ -1117,6 +1145,12 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+/**
+ * How a finished transcription reaches the target app (data-model
+ * `insertion_method`; FR-005). `Auto` is the v1 default (ADR-0002): the
+ * insertion layer picks per context. Schema only for now — the consumers are
+ * wired by T-031; until then the existing `paste_method` keeps driving paste.
+ */
 export type InsertionMethod = "auto" | "paste" | "paste_shift_insert" | "type" | "clipboard_only"
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
@@ -1162,6 +1196,12 @@ export type OverlayPosition = "top" | "bottom"
  * streaming mode (that is driven purely by model capability).
  */
 export type OverlayStyle = "none" | "minimal" | "live"
+/**
+ * IPC shape of a dictation row, kept stable for the frontend.
+ * Field names map onto the `dictations` table:
+ * `file_name`→`audio_path`, `timestamp`→`created_at`, `saved`→`flagged`,
+ * `transcription_text`→`raw_text`, `post_process_prompt`→`instruction`.
+ */
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
