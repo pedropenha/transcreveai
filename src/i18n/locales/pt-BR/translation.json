@@ -702,7 +702,8 @@
   },
   "overlay": {
     "transcribing": "Transcrevendo...",
-    "processing": "Processando..."
+    "processing": "Processando...",
+    "nothingHeard": "Nada ouvido"
   },
   "whatsNew": {
     "title": "Novidades no Transcreve.ai v{{version}}"

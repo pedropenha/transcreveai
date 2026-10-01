@@ -69,9 +69,13 @@ fn resampler_frame_size_follows_the_vad_backend() {
     let (ready_tx, _ready_rx) = mpsc::channel();
     processor.begin_recording(VadPolicy::Offline, ready_tx);
     processor.process_raw_chunk(&[0.0; 1024], ChunkDisposition::Capture);
-    let samples = processor.finish_recording();
+    let clip = processor.finish_recording();
 
-    assert_eq!(samples.len(), 1024);
+    assert_eq!(clip.samples.len(), 1024);
+    assert_eq!(clip.captured_samples, 1024);
+    // FixedFrameVad does not implement voiced_frames(): it reports 0, and the
+    // session ran the VAD so the field is Some rather than None.
+    assert_eq!(clip.voiced_samples, Some(0));
     assert_eq!(*frame_lengths.lock().unwrap(), vec![frame_samples; 4]);
 }
 
@@ -80,7 +84,10 @@ fn idle_chunks_are_discarded_without_reaching_the_recording() {
     let mut processor =
         CaptureProcessor::new(16_000, None, None, Vec::new(), Instant::now()).expect("processor");
     processor.process_raw_chunk(&[1.0; 480], ChunkDisposition::Discard);
-    assert!(processor.finish_recording().is_empty());
+    let clip = processor.finish_recording();
+    assert!(clip.samples.is_empty());
+    // Discarded idle audio never counts toward the session duration either.
+    assert_eq!(clip.captured_samples, 0);
 }
 
 #[test]
@@ -299,7 +306,8 @@ fn repeated_start_stop_cycles_resume_capture_without_leaking_samples() {
 
     let first_samples = reply_rx
         .recv_timeout(Duration::from_secs(1))
-        .expect("first stop reply");
+        .expect("first stop reply")
+        .samples;
     let first_expected = [0.25f32, -0.5, 1.0, 99.0];
     assert_eq!(&first_samples[..first_expected.len()], &first_expected);
     assert!(first_samples[first_expected.len()..]
@@ -332,7 +340,8 @@ fn repeated_start_stop_cycles_resume_capture_without_leaking_samples() {
 
     let second_samples = reply_rx
         .recv_timeout(Duration::from_secs(1))
-        .expect("second stop reply");
+        .expect("second stop reply")
+        .samples;
     let second_expected = [0.75f32, -0.25, 0.5, 199.0];
     assert_eq!(&second_samples[..second_expected.len()], &second_expected);
     assert!(second_samples[second_expected.len()..]
@@ -385,10 +394,10 @@ fn missing_callback_at_stop_marks_stream_for_rebuild_and_returns_samples() {
     let (reply_tx, reply_rx) = mpsc::channel();
     cmd_tx.send(Cmd::Stop(reply_tx)).expect("stop");
 
-    let samples = reply_rx
+    let clip = reply_rx
         .recv_timeout(Duration::from_secs(3))
         .expect("pause timeout still returns captured samples");
-    assert!(samples.is_empty());
+    assert!(clip.samples.is_empty());
     worker.join().expect("consumer exits after pause timeout");
     assert!(observed_error.load(Ordering::Acquire));
 }
@@ -475,11 +484,104 @@ fn raw_tap_sees_frames_the_vad_withholds() {
     let (ready_tx, _ready_rx) = mpsc::channel();
     processor.begin_recording(VadPolicy::Offline, ready_tx);
     processor.process_raw_chunk(&[0.5f32; 480], ChunkDisposition::Capture);
-    let samples = processor.finish_recording();
+    let clip = processor.finish_recording();
 
     assert_eq!(raw.lock().unwrap().as_slice(), &[0.5f32; 480]);
     assert!(processed.lock().unwrap().is_empty());
-    assert!(samples.is_empty());
+    assert!(clip.samples.is_empty());
+    // The VAD ran and heard nothing: voiced evidence is present and zero —
+    // exactly the FR-002-14 "nada ouvido" signal the session layer reads.
+    assert_eq!(clip.voiced_samples, Some(0));
+    assert_eq!(clip.captured_samples, 480);
+}
+
+/// Detector that calls frames with audible energy voiced, letting tests check
+/// the "nada ouvido" evidence (`RecordedClip::voiced_samples`) end to end.
+struct LoudnessVad {
+    voiced_frames: usize,
+}
+
+impl LoudnessVad {
+    fn new() -> Self {
+        Self { voiced_frames: 0 }
+    }
+}
+
+impl VoiceActivityDetector for LoudnessVad {
+    fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> anyhow::Result<VadFrame<'a>> {
+        if frame.iter().any(|sample| sample.abs() > 0.4) {
+            self.voiced_frames += 1;
+            Ok(VadFrame::Speech(frame))
+        } else {
+            Ok(VadFrame::Noise)
+        }
+    }
+
+    fn frame_samples(&self) -> usize {
+        480
+    }
+
+    fn voiced_frames(&self) -> usize {
+        self.voiced_frames
+    }
+}
+
+fn vad_config(detector: impl VoiceActivityDetector + 'static) -> VadConfig {
+    VadConfig {
+        detector: Arc::new(Mutex::new(Box::new(detector))),
+        frame_samples: 480,
+        offline_hangover_frames: 0,
+        streaming_hangover_frames: 0,
+    }
+}
+
+#[test]
+fn recorded_clip_reports_voiced_and_captured_samples() {
+    let mut processor = CaptureProcessor::new(
+        16_000,
+        Some(vad_config(LoudnessVad::new())),
+        None,
+        Vec::new(),
+        Instant::now(),
+    )
+    .expect("processor");
+
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Offline, ready_tx);
+    // One loud (voiced) frame and one silent frame: 60 ms captured, 30 ms voiced.
+    processor.process_raw_chunk(&[0.5f32; 480], ChunkDisposition::Capture);
+    processor.process_raw_chunk(&[0.0f32; 480], ChunkDisposition::Capture);
+    let clip = processor.finish_recording();
+
+    assert_eq!(clip.captured_samples, 960);
+    assert_eq!(clip.voiced_samples, Some(480));
+    assert_eq!(
+        clip.samples.len(),
+        480,
+        "only the voiced frame passed the gate"
+    );
+}
+
+#[test]
+fn disabled_policy_reports_no_voiced_measurement() {
+    let mut processor = CaptureProcessor::new(
+        16_000,
+        Some(vad_config(LoudnessVad::new())),
+        None,
+        Vec::new(),
+        Instant::now(),
+    )
+    .expect("processor");
+
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Disabled, ready_tx);
+    processor.process_raw_chunk(&[0.5f32; 480], ChunkDisposition::Capture);
+    let clip = processor.finish_recording();
+
+    // Disabled bypasses the VAD entirely: raw audio, no speech measurement.
+    assert_eq!(clip.samples.len(), 480);
+    assert_eq!(clip.captured_samples, 480);
+    assert_eq!(clip.voiced_samples, None);
 }
 
 #[test]
@@ -545,7 +647,8 @@ fn monitor_subscriber_receives_frames_while_idle_and_recording_stays_clean() {
     AudioRecorder::write_input_to_ring(&[0.9f32], 1, None, &mut producer, &transport);
     let samples = reply_rx
         .recv_timeout(Duration::from_secs(2))
-        .expect("stop reply");
+        .expect("stop reply")
+        .samples;
 
     assert!(
         !samples.contains(&0.5),

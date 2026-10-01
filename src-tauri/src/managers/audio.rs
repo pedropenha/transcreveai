@@ -2,10 +2,10 @@ use crate::audio_toolkit::{
     audio::FrameTap,
     list_input_devices,
     vad::{
-        frames_for_duration_ms, EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS,
-        VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS,
+        frames_for_duration_ms, EarshotVad, SmoothedVad, MIN_SPEECH_DURATION_MS,
+        VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS, VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS,
     },
-    AudioFrameCallback, AudioRecorder, SileroVad, VadPolicy, VoiceActivityDetector,
+    AudioFrameCallback, AudioRecorder, RecordedClip, SileroVad, VadPolicy, VoiceActivityDetector,
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
@@ -232,6 +232,50 @@ fn restore_mute(prev_muted: Option<bool>) {
 }
 
 const WHISPER_SAMPLE_RATE: usize = 16000;
+
+/// FR-002-14 speech floor in 16 kHz samples: a session with less than 300 ms
+/// of speech — or under 300 ms of captured audio when no VAD ran — is
+/// "nada ouvido" and is discarded without calling the provider (FR-003-11).
+const MIN_SPEECH_SAMPLES: usize = WHISPER_SAMPLE_RATE * MIN_SPEECH_DURATION_MS as usize / 1000;
+
+/// What a completed dictation recording yielded. `stop_recording` returns
+/// `None` for "no matching session / cancelled" and `Some` of this for a real
+/// stop, so the session layer can tell discard-with-feedback apart from
+/// cancel-silently.
+#[derive(Debug)]
+pub enum StopOutcome {
+    /// Below the speech floor: discard without calling the provider; the Flow
+    /// Bar flashes "Nada ouvido" (FR-002-14). Carries the evidence for logging.
+    NothingHeard {
+        /// Pre-VAD session duration in 16 kHz samples.
+        captured_samples: usize,
+        /// Voiced samples reported by the VAD; `None` when no VAD ran.
+        voiced_samples: Option<usize>,
+    },
+    /// Speech audio — VAD-gated when a policy ran — ready for the provider.
+    Ready(Vec<f32>),
+}
+
+/// FR-002-14 / FR-003-11: decide whether a finished recording reaches the
+/// provider. The speech measure is the VAD's pre-smoothing voiced count when a
+/// policy ran (its pre-roll/hangover padding must not inflate "fala"), and the
+/// captured duration when no VAD ran (`Disabled` keeps raw audio by contract).
+/// Pads short-but-real speech to the engine's minimum window, as before.
+fn classify_stopped_recording(clip: RecordedClip) -> StopOutcome {
+    let speech_samples = clip.voiced_samples.unwrap_or(clip.captured_samples);
+    if clip.samples.is_empty() || speech_samples < MIN_SPEECH_SAMPLES {
+        return StopOutcome::NothingHeard {
+            captured_samples: clip.captured_samples,
+            voiced_samples: clip.voiced_samples,
+        };
+    }
+
+    let mut samples = clip.samples;
+    if samples.len() < WHISPER_SAMPLE_RATE {
+        samples.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
+    }
+    StopOutcome::Ready(samples)
+}
 
 /* ──────────────────────────────────────────────────────────────── */
 
@@ -1068,7 +1112,11 @@ impl AudioRecordingManager {
         self.cancel_generation.load(Ordering::Acquire) != generation
     }
 
-    pub fn stop_recording(&self, binding_id: &str, cancel_generation: u64) -> Option<Vec<f32>> {
+    /// Stop the active recording. `None` means no matching session was running
+    /// or the stop was cancelled; `Some(StopOutcome::NothingHeard)` means the
+    /// session stayed under the FR-002-14 speech floor and must be discarded
+    /// without calling the provider.
+    pub fn stop_recording(&self, binding_id: &str, cancel_generation: u64) -> Option<StopOutcome> {
         self.invalidate_recording_readiness();
         let mut state = self.state.lock().unwrap();
 
@@ -1101,17 +1149,17 @@ impl AudioRecordingManager {
                     }
                 }
 
-                let samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                let clip = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                     match rec.stop() {
-                        Ok(buf) => buf,
+                        Ok(clip) => Some(clip),
                         Err(e) => {
                             error!("stop() failed: {e}");
-                            Vec::new()
+                            None
                         }
                     }
                 } else {
                     error!("Recorder not available");
-                    Vec::new()
+                    None
                 };
 
                 *self.is_recording.lock().unwrap() = false;
@@ -1131,16 +1179,10 @@ impl AudioRecordingManager {
                     return None;
                 }
 
-                // Pad if very short
-                let s_len = samples.len();
-                // debug!("Got {} samples", s_len);
-                if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
-                    let mut padded = samples;
-                    padded.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
-                    Some(padded)
-                } else {
-                    Some(samples)
-                }
+                // A recorder failure keeps the previous visible outcome: clean
+                // up quietly instead of flashing a misleading "nada ouvido".
+                let clip = clip?;
+                Some(classify_stopped_recording(clip))
             }
             _ => None,
         }
@@ -1190,7 +1232,93 @@ impl AudioRecordingManager {
 
 #[cfg(test)]
 mod tests {
-    use super::{plan_microphone_resolution, DesiredMicrophone};
+    use super::{
+        classify_stopped_recording, plan_microphone_resolution, DesiredMicrophone, StopOutcome,
+        MIN_SPEECH_SAMPLES, WHISPER_SAMPLE_RATE,
+    };
+    use crate::audio_toolkit::RecordedClip;
+
+    fn clip(samples: usize, captured: usize, voiced: Option<usize>) -> RecordedClip {
+        RecordedClip {
+            samples: vec![0.5; samples],
+            captured_samples: captured,
+            voiced_samples: voiced,
+        }
+    }
+
+    #[test]
+    fn nothing_heard_when_vad_detects_no_speech() {
+        // FR-002-14: a session with zero voiced frames is discarded even when
+        // real time was captured.
+        match classify_stopped_recording(clip(0, 16_000, Some(0))) {
+            StopOutcome::NothingHeard { voiced_samples, .. } => {
+                assert_eq!(voiced_samples, Some(0))
+            }
+            StopOutcome::Ready(_) => panic!("silence must not reach the provider"),
+        }
+    }
+
+    #[test]
+    fn nothing_heard_below_the_300ms_speech_floor() {
+        // 200 ms of voiced frames inside a 2 s session is still "nada ouvido".
+        match classify_stopped_recording(clip(3_200, 32_000, Some(3_200))) {
+            StopOutcome::NothingHeard {
+                captured_samples,
+                voiced_samples,
+            } => {
+                assert_eq!(captured_samples, 32_000);
+                assert_eq!(voiced_samples, Some(3_200));
+            }
+            StopOutcome::Ready(_) => panic!("under 300 ms of speech must be discarded"),
+        }
+    }
+
+    #[test]
+    fn nothing_heard_for_short_raw_capture_without_vad() {
+        // VAD disabled: no speech measure exists, so the <300 ms floor falls
+        // back to the captured duration (AC-002-02's 100 ms hold).
+        match classify_stopped_recording(clip(1_600, 1_600, None)) {
+            StopOutcome::NothingHeard { voiced_samples, .. } => {
+                assert_eq!(voiced_samples, None)
+            }
+            StopOutcome::Ready(_) => panic!("a 100 ms raw capture must be discarded"),
+        }
+    }
+
+    #[test]
+    fn ready_when_speech_reaches_the_floor() {
+        // Exactly 300 ms voiced: ready for the provider, padded to the engine
+        // window as before (samples < 1 s are extended to 1.25 s of audio).
+        match classify_stopped_recording(clip(
+            MIN_SPEECH_SAMPLES,
+            MIN_SPEECH_SAMPLES * 2,
+            Some(MIN_SPEECH_SAMPLES),
+        )) {
+            StopOutcome::Ready(samples) => {
+                assert_eq!(samples.len(), WHISPER_SAMPLE_RATE * 5 / 4)
+            }
+            StopOutcome::NothingHeard { .. } => panic!("300 ms of speech must be transcribed"),
+        }
+    }
+
+    #[test]
+    fn ready_keeps_longer_recordings_unpadded() {
+        let len = WHISPER_SAMPLE_RATE * 2;
+        match classify_stopped_recording(clip(len, len, Some(len))) {
+            StopOutcome::Ready(samples) => assert_eq!(samples.len(), len),
+            StopOutcome::NothingHeard { .. } => panic!("a real dictation must be transcribed"),
+        }
+    }
+
+    #[test]
+    fn nothing_heard_never_yields_empty_audio() {
+        // Defensive: an empty buffer can never be Ready even if a detector
+        // misreports voiced evidence.
+        match classify_stopped_recording(clip(0, 32_000, Some(32_000))) {
+            StopOutcome::NothingHeard { .. } => {}
+            StopOutcome::Ready(_) => panic!("empty audio must never be transcribed"),
+        }
+    }
 
     fn names(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()

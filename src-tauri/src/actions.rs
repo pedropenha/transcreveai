@@ -2,7 +2,7 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
-use crate::managers::audio::AudioRecordingManager;
+use crate::managers::audio::{AudioRecordingManager, StopOutcome};
 use crate::managers::history::{HistoryManager, SessionEntry};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
@@ -117,9 +117,9 @@ fn is_blank_transcription(transcription: &str) -> bool {
     transcription.trim().is_empty()
 }
 
-/// FR-002-14: captures shorter than this are discarded without calling the
-/// provider — the Flow Bar flashes "Nada ouvido" instead.
-const MIN_SESSION_DURATION: Duration = Duration::from_millis(300);
+// FR-002-14: captures with <300 ms of speech are classified NothingHeard by
+// managers::audio::classify_stopped_recording and discarded before the
+// provider — the Flow Bar flashes "Nada ouvido" instead.
 
 /// FR-002-17 / AC-002-10: a spoken "send" command as the last words of a
 /// dictation ("… enviar", "… send", "… press enter") is a session command,
@@ -806,11 +806,10 @@ impl ShortcutAction for TranscribeAction {
             );
 
             let stop_recording_time = Instant::now();
-            if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
+            if let Some(outcome) = rm.stop_recording(&binding_id, cancel_generation) {
                 debug!(
-                    "Recording stopped and samples retrieved in {:?}, sample count: {}",
-                    stop_recording_time.elapsed(),
-                    samples.len()
+                    "Recording stopped and clip retrieved in {:?}",
+                    stop_recording_time.elapsed()
                 );
 
                 if rm.was_cancelled_since(cancel_generation) {
@@ -822,22 +821,32 @@ impl ShortcutAction for TranscribeAction {
                     return;
                 }
 
-                // FR-002-14: a session shorter than 300 ms — or one the VAD
-                // left with no speech — is discarded without calling the
-                // provider; the coordinator shows "Nada ouvido" on the
-                // Flow Bar.
-                let too_short = session
-                    .as_ref()
-                    .is_some_and(|s| s.capture_started_at.elapsed() < MIN_SESSION_DURATION);
-                if samples.is_empty() || too_short {
-                    debug!("Recording produced nothing usable; discarding session");
-                    // Tear down any streaming worker so its channel doesn't leak
-                    // and block the next start_stream.
-                    tm.cancel_stream();
-                    utils::hide_recording_overlay(&ah);
-                    set_tray_state(&ah, TrayIconState::Idle);
-                    finish.report(PipelineOutcome::Empty);
-                } else {
+                // FR-002-14 / FR-003-11: "nada ouvido" — a clip under ~300 ms
+                // of captured audio, or one the VAD left with no speech, is
+                // discarded before any provider call, history entry, or paste;
+                // the Flow Bar flashes feedback instead (auto-hiding shortly).
+                let samples = match outcome {
+                    StopOutcome::NothingHeard {
+                        captured_samples,
+                        voiced_samples,
+                    } => {
+                        debug!(
+                            "Discarding 'nada ouvido' session: captured={}ms voiced={}ms",
+                            captured_samples / 16,
+                            voiced_samples.map(|v| v / 16).unwrap_or(0)
+                        );
+                        // Tear down any streaming worker so its channel doesn't
+                        // leak and block the next start_stream.
+                        tm.cancel_stream();
+                        utils::show_nothing_heard_overlay(&ah);
+                        set_tray_state(&ah, TrayIconState::Idle);
+                        finish.report(PipelineOutcome::Empty);
+                        return;
+                    }
+                    StopOutcome::Ready(samples) => samples,
+                };
+
+                {
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
                     let file_name = format!("transcreve-ai-{}.wav", chrono::Utc::now().timestamp());

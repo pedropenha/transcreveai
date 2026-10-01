@@ -24,7 +24,7 @@ enum Cmd {
     /// Begin capturing. Carries the send timestamp so the consumer can log how
     /// long the command sat in the channel, plus a one-shot first-sample acknowledgement.
     Start(VadPolicy, Instant, mpsc::Sender<()>),
-    Stop(mpsc::Sender<Vec<f32>>),
+    Stop(mpsc::Sender<RecordedClip>),
     /// Attach a frame consumer to the live stream (meeting capture subscribes
     /// without reopening the microphone).
     AddSubscriber(FrameSubscriber),
@@ -64,6 +64,25 @@ pub enum VadPolicy {
     Offline,
     /// VAD profile with a longer post-speech tail for streaming-capable models.
     Streaming,
+}
+
+/// One finished recording handed back by [`AudioRecorder::stop`]: the gated
+/// audio plus the evidence the session layer needs to tell transcribable
+/// speech from FR-002-14's "nada ouvido" (< 300 ms of speech or none detected).
+#[derive(Debug)]
+pub struct RecordedClip {
+    /// 16 kHz mono samples that passed the session's VAD policy — the head of
+    /// each utterance keeps the pre-roll context and the tail ends at the
+    /// hangover boundary, which is the FR-003-11 silence trim. When the policy
+    /// was `Disabled` this is the raw capture, untrimmed by contract.
+    pub samples: Vec<f32>,
+    /// Total 16 kHz samples resampled while the session was recording (pre-VAD
+    /// session duration, including what the VAD withheld).
+    pub captured_samples: usize,
+    /// Samples the VAD classified as voiced, before onset/hangover smoothing —
+    /// the detected-speech measure for "nada ouvido". `None` when no VAD ran
+    /// for this session (policy `Disabled`, or no detector attached).
+    pub voiced_samples: Option<usize>,
 }
 
 /// A single VAD engine plus the two hangover-tail lengths its smoothing wrapper
@@ -577,7 +596,7 @@ impl AudioRecorder {
         Ok(ready_rx)
     }
 
-    pub fn stop(&self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    pub fn stop(&self) -> Result<RecordedClip, Box<dyn std::error::Error>> {
         let tx = self
             .cmd_tx
             .as_ref()
@@ -911,6 +930,9 @@ struct CaptureProcessor {
     // ---- recording-scoped: reset by `begin_recording` ------------------- //
     vad_policy: VadPolicy,
     processed_samples: Vec<f32>,
+    /// Pre-VAD count of resampled 16 kHz samples for the active recording —
+    /// the session's real duration, whatever the VAD withheld.
+    captured_samples: usize,
     awaiting_first_captured_chunk: Option<Instant>,
     capture_ready_tx: Option<mpsc::Sender<()>>,
     total_dropped_samples: u64,
@@ -962,6 +984,7 @@ impl CaptureProcessor {
             first_chunk_logged: false,
             vad_policy: VadPolicy::Offline,
             processed_samples: Vec::new(),
+            captured_samples: 0,
             awaiting_first_captured_chunk: None,
             capture_ready_tx: None,
             total_dropped_samples: 0,
@@ -984,6 +1007,7 @@ impl CaptureProcessor {
         self.overrun_warning_logged = false;
         self.vad_policy = policy;
         self.processed_samples.clear();
+        self.captured_samples = 0;
         self.visualizer.reset();
         self.frame_resampler.reset();
         if policy != VadPolicy::Disabled {
@@ -1040,6 +1064,7 @@ impl CaptureProcessor {
         self.frame_resampler.push(raw, |frame: &[f32]| {
             match disposition {
                 ChunkDisposition::Capture => {
+                    self.captured_samples += frame.len();
                     // Raw taps run ahead of VAD so subscribers (e.g. meeting
                     // capture) receive every frame, including ones the active
                     // VAD policy withholds from dictation outputs.
@@ -1098,10 +1123,12 @@ impl CaptureProcessor {
         }
     }
 
-    /// Flush the resampler tail and hand back the finished recording.
-    fn finish_recording(&mut self) -> Vec<f32> {
+    /// Flush the resampler tail and hand back the finished recording with its
+    /// "nada ouvido" evidence (captured duration + voiced sample count).
+    fn finish_recording(&mut self) -> RecordedClip {
         let vad_policy = self.vad_policy;
         self.frame_resampler.finish(|frame: &[f32]| {
+            self.captured_samples += frame.len();
             // The finish tail drains real audio from the resampler's delay
             // line, so raw taps receive it exactly like a live frame.
             for subscriber in &self.subscribers {
@@ -1119,11 +1146,18 @@ impl CaptureProcessor {
         });
 
         // Diagnostic for VAD audio still withheld when capture stopped; it is
-        // not conclusive in either direction.
-        if vad_policy != VadPolicy::Disabled {
-            if let Some(cfg) = &self.vad {
-                let report = cfg.detector.lock().unwrap().tail_report();
-                if let Some(report) = report {
+        // not conclusive in either direction. Also collects the session's
+        // voiced evidence — the raw classifier's count, before smoothing —
+        // while the detector lock is already taken for the report.
+        let voiced_samples = if vad_policy == VadPolicy::Disabled {
+            // `Disabled` never ran the VAD: no detection happened, so there is
+            // no speech measure to report.
+            None
+        } else {
+            self.vad.as_ref().map(|cfg| {
+                let detector = cfg.detector.lock().unwrap();
+                let voiced_samples = detector.voiced_frames() * cfg.frame_samples;
+                if let Some(report) = detector.tail_report() {
                     log::debug!(
                         "VAD at stop: withheld tail {} frames (~{}ms, {} voiced), in_speech={}, onset_counter={}, hangover_counter={}",
                         report.withheld_frames,
@@ -1135,8 +1169,9 @@ impl CaptureProcessor {
                         report.hangover_counter
                     );
                 }
-            }
-        }
+                voiced_samples
+            })
+        };
 
         if self.total_dropped_samples > 0 {
             log::warn!(
@@ -1144,7 +1179,11 @@ impl CaptureProcessor {
                 self.total_dropped_samples
             );
         }
-        std::mem::take(&mut self.processed_samples)
+        RecordedClip {
+            samples: std::mem::take(&mut self.processed_samples),
+            captured_samples: self.captured_samples,
+            voiced_samples,
+        }
     }
 }
 
@@ -1235,14 +1274,14 @@ fn run_consumer(
                         // Include drops that raced with the pause request.
                         processor
                             .observe_overrun(transport.overrun_samples.swap(0, Ordering::AcqRel));
-                        let samples = processor.finish_recording();
+                        let clip = processor.finish_recording();
                         if !pause_timed_out {
                             // Resume before stop() returns so an immediate recording
                             // cannot lose its first callback to this pause request.
                             transport.pause_acknowledged.store(false, Ordering::Relaxed);
                             transport.pause_requested.store(false, Ordering::Release);
                         }
-                        let _ = reply_tx.send(samples);
+                        let _ = reply_tx.send(clip);
 
                         if pause_timed_out {
                             return;

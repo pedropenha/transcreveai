@@ -141,8 +141,9 @@ impl RecorderState {
             return Err("No recording in progress.".into());
         }
 
-        let samples = self.recorder.stop()?;
+        let clip = self.recorder.stop()?;
         self.is_recording = false;
+        let samples = clip.samples;
 
         match self.mode {
             RecorderMode::AlwaysOn => {
