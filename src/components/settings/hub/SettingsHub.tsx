@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { GeneralSettings } from "../general/GeneralSettings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -17,6 +18,7 @@ import { PasteDelay } from "../debug/PasteDelay";
 import { LogLevelSelector } from "../debug/LogLevelSelector";
 import { RecordingBuffer } from "../debug/RecordingBuffer";
 import { SessionLimits } from "../SessionLimits";
+import { AssistantProvider } from "../AssistantProvider";
 
 const TABS = ["general", "system", "privacy", "advanced"] as const;
 type SettingsTab = (typeof TABS)[number];
@@ -24,6 +26,24 @@ type SettingsTab = (typeof TABS)[number];
 export const SettingsHub: React.FC = () => {
   const { t } = useTranslation();
   const [tab, setTab] = useState<SettingsTab>("general");
+
+  // F012: deep-linkable tab — the assistant panel's "Abrir configurações"
+  // emits `hub://navigate` with `settingsTab` to land directly on the
+  // tab carrying the assistant controls (App.tsx handles `section`).
+  useEffect(() => {
+    const unlisten = listen<{ settingsTab?: string }>(
+      "hub://navigate",
+      (event) => {
+        const settingsTab = event.payload.settingsTab;
+        if (settingsTab && (TABS as readonly string[]).includes(settingsTab)) {
+          setTab(settingsTab as SettingsTab);
+        }
+      },
+    );
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   return (
     <main className="settings-hub">
@@ -102,6 +122,12 @@ const AdvancedHubSettings: React.FC = () => {
           labelKey="settings.debug.pasteDelayAfter.title"
           descriptionKey="settings.debug.pasteDelayAfter.description"
         />
+      </SettingsGroup>
+      {/* F012/T-091: the assistant overlay is a v1 feature — its provider
+          stays visible regardless of `post_process_enabled` (the
+          post-processing screen itself is still experimental). */}
+      <SettingsGroup title={t("settingsHub.groups.assistant")}>
+        <AssistantProvider descriptionMode="tooltip" grouped />
       </SettingsGroup>
       <SettingsGroup title={t("settingsHub.groups.performance")}>
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped />

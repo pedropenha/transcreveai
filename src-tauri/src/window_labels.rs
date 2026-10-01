@@ -19,6 +19,12 @@ pub const TOAST: &str = "toast";
 /// session keeps recording (FR-009-14).
 pub const MEETING: &str = "meeting";
 
+/// The voice-assistant overlay panel (F012, T-091) — a topmost floating
+/// panel that appears without stealing focus and becomes editable once the
+/// user clicks it. Closing it hides the window; the conversation session
+/// stays in memory only.
+pub const ASSISTANT: &str = "assistant";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,7 +48,8 @@ mod tests {
                 HUB.to_owned(),
                 FLOWBAR.to_owned(),
                 TOAST.to_owned(),
-                MEETING.to_owned()
+                MEETING.to_owned(),
+                ASSISTANT.to_owned()
             ]
         );
     }

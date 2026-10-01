@@ -467,6 +467,7 @@ export const HistorySettings: React.FC = () => {
                     "failed",
                     "cancelled",
                     "saved_note",
+                    "routed",
                   ].map((value) => (
                     <option key={value} value={value}>
                       {t(`settings.history.status.${value}`)}

@@ -188,6 +188,10 @@
           "transcribe_with_post_process": {
             "name": "Post-Processing Hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+          },
+          "assistant": {
+            "name": "Assistant Hotkey",
+            "description": "Opens the floating assistant. Press again with the panel open to send what you wrote or dictated."
           }
         },
         "errors": {
@@ -575,7 +579,8 @@
         "copied": "Copied",
         "failed": "Failed",
         "cancelled": "Cancelled",
-        "saved_note": "Saved note"
+        "saved_note": "Saved note",
+        "routed": "Assistant"
       },
       "periods": {
         "day": "Last 24 hours",
@@ -941,6 +946,7 @@
     "nothingHeard": "Nothing heard",
     "dictate": "Dictate",
     "notetaker": "Notetaker",
+    "assistant": "Assistant",
     "cancel": "Cancel",
     "stop": "Stop",
     "inserting": "Inserting...",
@@ -955,6 +961,33 @@
     "meetingRecording": "Recording meeting",
     "meetingPaused": "Meeting paused",
     "openMeeting": "Open meeting window"
+  },
+  "assistant": {
+    "title": "Assistant",
+    "provider": "Provider: {{label}}",
+    "inputPlaceholder": "Ask or dictate…",
+    "send": "Send",
+    "sendHint": "Enter to send · Shift+Enter for a new line",
+    "cancel": "Cancel",
+    "close": "Close",
+    "retry": "Try again",
+    "newConversation": "New conversation",
+    "thinking": "Thinking…",
+    "cancelled": "Cancelled",
+    "listening": "Listening…",
+    "empty": "Dictate or type a question to start.",
+    "privacyHint": "Audio is transcribed on this device — nothing is sent until you press send.",
+    "errorTitle": "The assistant could not answer.",
+    "noProvider": "The assistant needs an AI provider to answer.",
+    "hint": {
+      "noProvider": "Enable a local CLI agent (Codex, Claude Code…) or configure an API provider in Settings.",
+      "offline": "Offline mode is on — the assistant cannot reach any provider.",
+      "missingApiKey": "This provider needs an API key.",
+      "missingModel": "Choose a model for this provider in Settings.",
+      "cliAgentDisabled": "This CLI agent is disabled in Settings.",
+      "cliAgentNotDetected": "This CLI agent was not found on PATH."
+    },
+    "openSettings": "Open settings"
   },
   "toast": {
     "meetingDetected": "Meeting detected",
@@ -1013,7 +1046,15 @@
       "clipboard": "Clipboard",
       "insertion": "Text insertion",
       "performance": "Performance",
+      "assistant": "Assistant",
       "diagnostics": "Diagnostics and data"
+    },
+    "assistant": {
+      "provider": {
+        "title": "Provider",
+        "description": "Which AI provider answers the assistant overlay. Auto prefers the configured provider and falls back to a detected CLI agent.",
+        "auto": "Auto (recommended)"
+      }
     },
     "limits": {
       "duration": {

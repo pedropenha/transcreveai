@@ -59,6 +59,16 @@ pub fn flowbar_start_notetaker(app: AppHandle) -> CommandResult<()> {
     })
 }
 
+/// FR-012-10: the ✦ button — opens the assistant overlay. Clicking the Flow
+/// Bar is explicit intent, so the panel may take focus (FR-012-11).
+#[tauri::command]
+#[specta::specta]
+pub fn flowbar_open_assistant(app: AppHandle) -> CommandResult<()> {
+    crate::assistant::open_panel(&app);
+    crate::assistant::focus_panel(&app);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn flowbar_retry_last_failed(

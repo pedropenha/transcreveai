@@ -21,6 +21,8 @@ pub enum LlmPurpose {
     Summary,
     /// Suggested meeting/note titles.
     Title,
+    /// Voice-assistant overlay turns (F012, T-091).
+    Assistant,
 }
 
 impl LlmPurpose {
@@ -33,6 +35,7 @@ impl LlmPurpose {
             Self::Command => "command",
             Self::Summary => "summary",
             Self::Title => "title",
+            Self::Assistant => "assistant",
         }
     }
 }

@@ -590,6 +590,11 @@ pub struct AppSettings {
     /// to enabled with PATH detection.
     #[serde(default)]
     pub cli_agent_configs: HashMap<String, CliAgentConfig>,
+    /// The provider that answers the voice assistant overlay (F012, FR-012-04).
+    /// `None` = auto: the first provider that is configured/detected (a detected
+    /// `cli_agent/*` first, then the selected BYOK provider).
+    #[serde(default)]
+    pub assistant_provider_id: Option<String>,
     /// Optional stronger model for cost-aware escalation of long meeting
     /// summaries (`llm::router::select_model`, `cost-aware-llm-pipeline`):
     /// when set, `Summary` requests past `SUMMARY_ESCALATION_CHARS` route to
@@ -1346,6 +1351,25 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // FR-012-10: the assistant overlay hotkey. Pressed once it toggles the
+    // panel; pressed again with the panel open it submits the draft prompt
+    // (the panel forwards a `assistant://hotkey` event back to itself).
+    #[cfg(target_os = "macos")]
+    let default_assistant_shortcut = "option+shift+a";
+    #[cfg(not(target_os = "macos"))]
+    let default_assistant_shortcut = "ctrl+shift+a";
+
+    bindings.insert(
+        "assistant".to_string(),
+        ShortcutBinding {
+            id: "assistant".to_string(),
+            name: "Assistant".to_string(),
+            description: "Opens the floating voice assistant.".to_string(),
+            default_binding: default_assistant_shortcut.to_string(),
+            current_binding: default_assistant_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
         bindings,
@@ -1388,6 +1412,7 @@ pub fn get_default_settings() -> AppSettings {
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
         cli_agent_configs: HashMap::new(),
+        assistant_provider_id: None,
         llm_escalation_model: None,
         mute_while_recording: false,
         append_trailing_space: false,

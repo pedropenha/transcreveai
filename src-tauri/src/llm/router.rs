@@ -55,7 +55,9 @@ pub struct RouteDecision {
 fn escalation_threshold(purpose: LlmPurpose) -> usize {
     match purpose {
         LlmPurpose::Summary => SUMMARY_ESCALATION_CHARS,
-        LlmPurpose::Cleanup | LlmPurpose::Command | LlmPurpose::Title => usize::MAX,
+        LlmPurpose::Cleanup | LlmPurpose::Command | LlmPurpose::Title | LlmPurpose::Assistant => {
+            usize::MAX
+        }
     }
 }
 
@@ -145,6 +147,23 @@ pub fn resolve_route(
         .active_post_process_provider()
         .cloned()
         .ok_or_else(|| LlmError::Provider("no LLM provider configured".to_string()))?;
+    resolve_route_for_provider(settings, provider, api_key, purpose, input_chars)
+}
+
+/// `resolve_route` for callers that pick the provider themselves — the voice
+/// assistant resolves `assistant_provider_id` (FR-012-04) rather than the
+/// post-processing selection. The same gating applies: offline → provider →
+/// key → model.
+pub fn resolve_route_for_provider(
+    settings: &AppSettings,
+    provider: PostProcessProvider,
+    api_key: Option<String>,
+    purpose: LlmPurpose,
+    input_chars: usize,
+) -> Result<LlmRoute, LlmError> {
+    if settings.offline_mode {
+        return Err(LlmError::Offline);
+    }
     if provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
         return Err(LlmError::Unsupported);
     }

@@ -1310,9 +1310,126 @@ async flowbarStartNotetaker() : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * FR-012-10: the ✦ button — opens the assistant overlay. Clicking the Flow
+ * Bar is explicit intent, so the panel may take focus (FR-012-11).
+ */
+async flowbarOpenAssistant() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_open_assistant") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("flowbar_retry_last_failed") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Full snapshot for the panel — also consumes the `pending_hotkey` flag so
+ * a press that arrived while the webview was booting isn't lost.
+ */
+async assistantGetState() : Promise<Result<AssistantStateEvent, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_get_state") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-13: send the (edited) prompt. Explicit user action only — dictation
+ * alone never submits.
+ */
+async assistantSend(text: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_send", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Re-run the last failed call (the failed user message stays last).
+ */
+async assistantRetry() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_retry") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel the in-flight call (AC-012-05) — the provider future is aborted;
+ * for `cli_agent/*` the subprocess dies with it.
+ */
+async assistantCancel() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_cancel") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Esc from the panel: cancel while thinking, close otherwise.
+ */
+async assistantDismiss() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_dismiss") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * × button — hides the panel; the session is kept in memory.
+ */
+async assistantClose() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_close") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Nova conversa" (FR-012-15) — aborts any in-flight call and clears the
+ * in-memory history.
+ */
+async assistantNewConversation() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_new_conversation") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The panel was clicked — take keyboard focus on the OS side
+ * (FR-012-11: the panel only ever focuses on explicit intent).
+ */
+async assistantFocus() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_focus") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-04: persist the assistant provider choice (`None` resets to auto).
+ * Accepts any known `post_process_providers` id, including `cli_agent/*`.
+ */
+async setAssistantProvider(providerId: string | null) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_assistant_provider", { providerId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1803,6 +1920,12 @@ selected_channel?: number | null; clamshell_microphone?: string | null; selected
  */
 cli_agent_configs?: Partial<{ [key in string]: CliAgentConfig }>; 
 /**
+ * The provider that answers the voice assistant overlay (F012, FR-012-04).
+ * `None` = auto: the first provider that is configured/detected (a detected
+ * `cli_agent/*` first, then the selected BYOK provider).
+ */
+assistant_provider_id?: string | null; 
+/**
  * Optional stronger model for cost-aware escalation of long meeting
  * summaries (`llm::router::select_model`, `cost-aware-llm-pipeline`):
  * when set, `Summary` requests past `SUMMARY_ESCALATION_CHARS` route to
@@ -2025,6 +2148,73 @@ meeting_toast_sound?: boolean;
  * T-067's post-processing pass.
  */
 meeting_live_transcript_enabled?: boolean }
+/**
+ * One conversation turn as kept in memory and rendered by the panel.
+ */
+export type AssistantMessage = { 
+/**
+ * `"user"` | `"assistant"` — role strings, not the `LlmRole` enum, so the
+ * payload stays a plain string union in TypeScript.
+ */
+role: string; content: string }
+/**
+ * Panel lifecycle phase. `cancelled` is a resting state (the last in-flight
+ * call was aborted); the next send/dictation moves on.
+ */
+export type AssistantPhase = "idle" | "thinking" | "error" | "cancelled"
+/**
+ * Why `provider_ready` is false — stable snake_case tags the panel
+ * localizes on (AC-012-06).
+ */
+export type AssistantProviderHint = 
+/**
+ * No provider id could be resolved at all (no BYOK entry, no detected
+ * CLI agent).
+ */
+"no_provider" | 
+/**
+ * `settings.offline_mode` — no provider call is allowed.
+ */
+"offline" | 
+/**
+ * BYOK provider without a vaulted key.
+ */
+"missing_api_key" | 
+/**
+ * HTTP provider selected but no model configured.
+ */
+"missing_model" | 
+/**
+ * `cli_agent/*` provider with `enabled: false`.
+ */
+"cli_agent_disabled" | 
+/**
+ * `cli_agent/*` provider enabled but the binary is not on PATH.
+ */
+"cli_agent_not_detected"
+/**
+ * Snapshot pushed to the panel on every transition.
+ */
+export type AssistantStateEvent = { open: boolean; phase: AssistantPhase; 
+/**
+ * A dictation session is currently routed to the panel — the panel
+ * shows the live STT preview (from `StreamTextEvent`) in the input.
+ */
+dictating: boolean; 
+/**
+ * A hotkey press arrived while the webview wasn't listening yet —
+ * consumed by `assistant_get_state`.
+ */
+pendingHotkey: boolean; providerId: string | null; providerLabel: string | null; 
+/**
+ * The provider is usable right now — gates dictation claims *and* the
+ * send button (AC-012-06).
+ */
+providerReady: boolean; providerHint: AssistantProviderHint | null; 
+/**
+ * Last provider failure, classified for localization.
+ */
+errorKind: LlmErrorKind | null; errorDetail: string | null; messages: AssistantMessage[] }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }

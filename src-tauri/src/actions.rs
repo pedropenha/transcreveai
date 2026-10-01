@@ -638,6 +638,10 @@ impl ShortcutAction for TranscribeAction {
                     "Recording request accepted in {:?}; waiting for first microphone samples",
                     recording_start_time.elapsed()
                 );
+                // FR-012-12: with the assistant panel open this session's
+                // output is claimed for its input field — `stop` will skip
+                // `paste_for_session` and emit `assistant://dictated`.
+                crate::assistant::maybe_claim_dictation(app);
                 let generation = readiness.generation();
                 let app_clone = app.clone();
                 let rm_clone = Arc::clone(&rm);
@@ -766,6 +770,11 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
+        // FR-012-12: a dictation claimed by the assistant panel never gets
+        // the LLM cleanup pass and never reaches `paste_for_session` — the
+        // final text lands verbatim in the panel's editable input.
+        let routed_to_assistant = crate::assistant::take_dictation_route(app);
+        let post_process = post_process && !routed_to_assistant;
         let cancel_generation = rm.cancel_generation();
         // The session the pipeline is about to work: its id rides on
         // `session://result` and its capture start feeds `duration_ms` and
@@ -987,6 +996,38 @@ impl ShortcutAction for TranscribeAction {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 finish.report(PipelineOutcome::Empty);
+                            } else if routed_to_assistant {
+                                // FR-012-12: the dictation belongs to the
+                                // assistant panel — deliver the final text to
+                                // its input field; nothing is pasted into
+                                // another app and no submit key is sent.
+                                let final_text = processed.final_text;
+                                crate::assistant::deliver_dictated_text(&ah, &final_text);
+                                if let Some(id) = history_entry_id {
+                                    if let Err(err) = hm.update_session_status(id, "routed", None) {
+                                        error!("Failed to mark history entry routed: {}", err);
+                                    }
+                                }
+                                let _ = ah.emit(
+                                    SESSION_RESULT_EVENT,
+                                    SessionResultEvent {
+                                        session_id: session
+                                            .as_ref()
+                                            .map(|s| s.id.clone())
+                                            .unwrap_or_default(),
+                                        final_text,
+                                        inserted: false,
+                                        // Not an insertion — the text went
+                                        // to the assistant panel.
+                                        insertion_status: Some("routed".to_string()),
+                                        insertion_method: None,
+                                        insertion_fallback: None,
+                                        insert_ms: None,
+                                    },
+                                );
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                finish.report(PipelineOutcome::Done);
                             } else {
                                 let ah_clone = ah.clone();
                                 let hm_for_paste = Arc::clone(&hm);
@@ -1219,6 +1260,21 @@ impl ShortcutAction for PasteLastAction {
     }
 }
 
+// Assistant Action (FR-012-10): the global hotkey opens the overlay; a
+// second press while open is forwarded to the panel (`assistant://hotkey`),
+// which submits a non-empty draft or focuses the input.
+struct AssistantAction;
+
+impl ShortcutAction for AssistantAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::assistant::hotkey_pressed(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Edge-triggered only — nothing on release.
+    }
+}
+
 // Cancel Action
 struct CancelAction;
 
@@ -1275,6 +1331,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "paste_last".to_string(),
         Arc::new(PasteLastAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "assistant".to_string(),
+        Arc::new(AssistantAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),
