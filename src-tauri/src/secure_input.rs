@@ -18,6 +18,7 @@
 //! - exposes a count-only keyboard diagnostic for the debug window. Only
 //!   event *kinds* are counted — key identity is never logged or returned.
 
+use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use serde::Serialize;
 use specta::Type;
 #[cfg(target_os = "macos")]
@@ -62,15 +63,15 @@ pub struct KeyboardDiagnosticReport {
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_secure_input_status(app: AppHandle) -> SecureInputStatus {
-    imp::status(&app)
+pub fn get_secure_input_status(app: AppHandle) -> CommandResult<SecureInputStatus> {
+    Ok(imp::status(&app))
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn run_keyboard_diagnostic(
     duration_secs: Option<u32>,
-) -> Result<KeyboardDiagnosticReport, String> {
+) -> CommandResult<KeyboardDiagnosticReport> {
     imp::run_diagnostic(duration_secs.unwrap_or(10).clamp(3, 30)).await
 }
 
@@ -622,10 +623,15 @@ mod imp {
     /// keyboard listener and tallies event kinds; key identity is never
     /// inspected beyond the mouse/keyboard distinction, and nothing about
     /// individual events is logged or returned.
-    pub async fn run_diagnostic(duration_secs: u32) -> Result<KeyboardDiagnosticReport, String> {
+    pub async fn run_diagnostic(duration_secs: u32) -> CommandResult<KeyboardDiagnosticReport> {
         tauri::async_runtime::spawn_blocking(move || {
-            let listener = handy_keys::KeyboardListener::new()
-                .map_err(|e| format!("Failed to create keyboard listener: {e}"))?;
+            let listener = handy_keys::KeyboardListener::new().map_err(|e| {
+                CommandError::logged(
+                    CommandErrorCode::Internal,
+                    "Failed to create keyboard listener",
+                    e,
+                )
+            })?;
 
             let enabled_at_start = is_enabled();
             let start = Instant::now();
@@ -663,7 +669,7 @@ mod imp {
             })
         })
         .await
-        .map_err(|e| format!("Diagnostic task failed: {e}"))?
+        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Diagnostic task failed", e))?
     }
 }
 
@@ -710,7 +716,10 @@ mod imp {
 
     pub fn reconcile_fallback(_app: &AppHandle) {}
 
-    pub async fn run_diagnostic(_duration_secs: u32) -> Result<KeyboardDiagnosticReport, String> {
-        Err("The keyboard diagnostic is only supported on macOS".to_string())
+    pub async fn run_diagnostic(_duration_secs: u32) -> CommandResult<KeyboardDiagnosticReport> {
+        Err(CommandError::new(
+            CommandErrorCode::Unsupported,
+            "The keyboard diagnostic is only supported on macOS",
+        ))
     }
 }

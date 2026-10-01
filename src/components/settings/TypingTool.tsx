@@ -31,7 +31,9 @@ export const TypingToolSetting: React.FC<TypingToolProps> = React.memo(
       if (osType !== "linux") return;
       commands
         .getAvailableTypingTools()
-        .then(setAvailableTools)
+        .then((result) => {
+          setAvailableTools(result.status === "ok" ? result.data : ["auto"]);
+        })
         .catch(() => {
           setAvailableTools(["auto"]);
         });

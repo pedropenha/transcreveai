@@ -105,7 +105,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         setTimeout(async () => {
           try {
             const isRecording = await commands.isRecording();
-            if (!isRecording) {
+            if (isRecording.status === "ok" && !isRecording.data) {
               setPendingModelId(modelId);
               setModelError(null);
               setShowModelDropdown(false);

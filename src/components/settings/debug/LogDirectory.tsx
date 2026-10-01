@@ -25,7 +25,7 @@ export const LogDirectory: React.FC<LogDirectoryProps> = ({
         if (result.status === "ok") {
           setLogDir(result.data);
         } else {
-          setError(result.error);
+          setError(result.error.message);
         }
       } catch (err) {
         const errorMessage =

@@ -25,7 +25,7 @@ export const AppDataDirectory: React.FC<AppDataDirectoryProps> = ({
         if (result.status === "ok") {
           setAppDirPath(result.data);
         } else {
-          setError(result.error);
+          setError(result.error.message);
         }
       } catch (err) {
         setError(

@@ -256,8 +256,9 @@ function App() {
             const microphoneStatus =
               await commands.getWindowsMicrophonePermissionStatus();
             if (
-              microphoneStatus.supported &&
-              microphoneStatus.overall_access === "denied"
+              microphoneStatus.status === "ok" &&
+              microphoneStatus.data.supported &&
+              microphoneStatus.data.overall_access === "denied"
             ) {
               await revealMainWindowForPermissions();
               setOnboardingStep("accessibility");

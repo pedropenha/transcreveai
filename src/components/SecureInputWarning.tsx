@@ -25,7 +25,10 @@ const SecureInputWarning: React.FC = () => {
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await commands.getSecureInputStatus());
+      const result = await commands.getSecureInputStatus();
+      if (result.status === "ok") {
+        setStatus(result.data);
+      }
     } catch (e) {
       console.warn("Failed to fetch secure input status:", e);
     }

@@ -1,8 +1,11 @@
 pub mod audio;
+pub mod error;
 pub mod history;
 pub mod models;
 pub mod secrets;
 pub mod transcription;
+
+pub use error::{CommandError, CommandErrorCode, CommandResult};
 
 use crate::settings::{
     get_settings, update_checks_forced_disabled, write_settings, AppSettings, LogLevel,
@@ -13,55 +16,62 @@ use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_operation(app: AppHandle) {
+pub fn cancel_operation(app: AppHandle) -> CommandResult<()> {
     cancel_current_operation(&app);
+    Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn is_portable() -> bool {
-    crate::portable::is_portable()
+pub fn is_portable() -> CommandResult<bool> {
+    Ok(crate::portable::is_portable())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn is_update_checks_locked() -> bool {
-    update_checks_forced_disabled()
+pub fn is_update_checks_locked() -> CommandResult<bool> {
+    Ok(update_checks_forced_disabled())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_app_dir_path(app: AppHandle) -> Result<String, String> {
-    let app_data_dir = crate::portable::app_data_dir(&app)
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+pub fn get_app_dir_path(app: AppHandle) -> CommandResult<String> {
+    let app_data_dir = crate::portable::app_data_dir(&app).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to get app data directory",
+            e,
+        )
+    })?;
 
     Ok(app_data_dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
+pub fn get_app_settings(app: AppHandle) -> CommandResult<AppSettings> {
     Ok(get_settings(&app))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_default_settings() -> Result<AppSettings, String> {
+pub fn get_default_settings() -> CommandResult<AppSettings> {
     Ok(crate::settings::get_default_settings())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_log_dir_path(app: AppHandle) -> Result<String, String> {
-    let log_dir = crate::portable::app_log_dir(&app)
-        .map_err(|e| format!("Failed to get log directory: {}", e))?;
+pub fn get_log_dir_path(app: AppHandle) -> CommandResult<String> {
+    let log_dir = crate::portable::app_log_dir(&app).map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to get log directory", e)
+    })?;
 
     Ok(log_dir.to_string_lossy().to_string())
 }
 
 #[specta::specta]
 #[tauri::command]
-pub fn set_log_level(app: AppHandle, level: LogLevel) -> Result<(), String> {
+pub fn set_log_level(app: AppHandle, level: LogLevel) -> CommandResult<()> {
     let tauri_log_level: tauri_plugin_log::LogLevel = level.into();
     let log_level: log::Level = tauri_log_level.into();
     // Update the file log level atomic so the filter picks up the new level
@@ -79,44 +89,67 @@ pub fn set_log_level(app: AppHandle, level: LogLevel) -> Result<(), String> {
 
 #[specta::specta]
 #[tauri::command]
-pub fn open_recordings_folder(app: AppHandle) -> Result<(), String> {
-    let app_data_dir = crate::portable::app_data_dir(&app)
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+pub fn open_recordings_folder(app: AppHandle) -> CommandResult<()> {
+    let app_data_dir = crate::portable::app_data_dir(&app).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to get app data directory",
+            e,
+        )
+    })?;
 
     let recordings_dir = app_data_dir.join("recordings");
 
     let path = recordings_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open recordings folder: {}", e))?;
+    app.opener().open_path(path, None::<String>).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to open recordings folder",
+            e,
+        )
+    })?;
 
     Ok(())
 }
 
 #[specta::specta]
 #[tauri::command]
-pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
-    let log_dir = crate::portable::app_log_dir(&app)
-        .map_err(|e| format!("Failed to get log directory: {}", e))?;
+pub fn open_log_dir(app: AppHandle) -> CommandResult<()> {
+    let log_dir = crate::portable::app_log_dir(&app).map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to get log directory", e)
+    })?;
 
     let path = log_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open log directory: {}", e))?;
+    app.opener().open_path(path, None::<String>).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to open log directory",
+            e,
+        )
+    })?;
 
     Ok(())
 }
 
 #[specta::specta]
 #[tauri::command]
-pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
-    let app_data_dir = crate::portable::app_data_dir(&app)
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+pub fn open_app_data_dir(app: AppHandle) -> CommandResult<()> {
+    let app_data_dir = crate::portable::app_data_dir(&app).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to get app data directory",
+            e,
+        )
+    })?;
 
     let path = app_data_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open app data directory: {}", e))?;
+    app.opener().open_path(path, None::<String>).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to open app data directory",
+            e,
+        )
+    })?;
 
     Ok(())
 }
@@ -125,14 +158,14 @@ pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
 /// Called by the frontend when the user selects Apple Intelligence provider.
 #[specta::specta]
 #[tauri::command]
-pub fn check_apple_intelligence_available() -> bool {
+pub fn check_apple_intelligence_available() -> CommandResult<bool> {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
-        crate::apple_intelligence::check_apple_intelligence_availability()
+        Ok(crate::apple_intelligence::check_apple_intelligence_availability())
     }
     #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     {
-        false
+        Ok(false)
     }
 }
 
@@ -140,7 +173,7 @@ pub fn check_apple_intelligence_available() -> bool {
 /// On macOS, this will return an error if accessibility permissions are not granted.
 #[specta::specta]
 #[tauri::command]
-pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
+pub fn initialize_enigo(app: AppHandle) -> CommandResult<()> {
     use crate::input::EnigoState;
 
     // Check if already initialized
@@ -165,7 +198,10 @@ pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
             } else {
                 log::warn!("Failed to initialize Enigo: {}", e);
             }
-            Err(format!("Failed to initialize input system: {}", e))
+            Err(CommandError::new(
+                CommandErrorCode::PermissionDenied,
+                "Failed to initialize input system",
+            ))
         }
     }
 }
@@ -178,7 +214,7 @@ pub struct ShortcutsInitialized;
 /// This is idempotent - calling it multiple times is safe.
 #[specta::specta]
 #[tauri::command]
-pub fn initialize_shortcuts(app: AppHandle) -> Result<(), String> {
+pub fn initialize_shortcuts(app: AppHandle) -> CommandResult<()> {
     // Check if already initialized
     if app.try_state::<ShortcutsInitialized>().is_some() {
         log::debug!("Shortcuts already initialized");

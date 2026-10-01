@@ -61,7 +61,9 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
   const [ortOptions, setOrtOptions] = useState<DropdownOption[]>([]);
 
   useEffect(() => {
-    commands.getAvailableAccelerators().then((available) => {
+    commands.getAvailableAccelerators().then((result) => {
+      if (result.status !== "ok") return;
+      const available = result.data;
       // Build combined transcribe.cpp options: Auto, [GPU devices...], CPU
       const opts: DropdownOption[] = [];
       if (available.transcribe.includes("auto")) {

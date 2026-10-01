@@ -1,3 +1,4 @@
+use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::managers::model::{ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
 use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
@@ -9,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[specta::specta]
 pub async fn get_available_models(
     model_manager: State<'_, Arc<ModelManager>>,
-) -> Result<Vec<ModelInfo>, String> {
+) -> CommandResult<Vec<ModelInfo>> {
     Ok(model_manager.get_available_models())
 }
 
@@ -18,7 +19,7 @@ pub async fn get_available_models(
 pub async fn get_model_info(
     model_manager: State<'_, Arc<ModelManager>>,
     model_id: String,
-) -> Result<Option<ModelInfo>, String> {
+) -> CommandResult<Option<ModelInfo>> {
     Ok(model_manager.get_model_info(&model_id))
 }
 
@@ -26,14 +27,14 @@ pub async fn get_model_info(
 /// since launch
 #[tauri::command]
 #[specta::specta]
-pub async fn rescan_local_models(
-    model_manager: State<'_, Arc<ModelManager>>,
-) -> Result<(), String> {
+pub async fn rescan_local_models(model_manager: State<'_, Arc<ModelManager>>) -> CommandResult<()> {
     let mm = model_manager.inner().clone();
     tokio::task::spawn_blocking(move || mm.rescan_local_models())
         .await
-        .map_err(|e| format!("rescan task panicked: {e}"))?
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Model rescan task failed", e)
+        })?
+        .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))
 }
 
 #[tauri::command]
@@ -42,11 +43,11 @@ pub async fn download_model(
     app_handle: AppHandle,
     model_manager: State<'_, Arc<ModelManager>>,
     model_id: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let result = model_manager
         .download_model(&model_id)
         .await
-        .map_err(|e| e.to_string());
+        .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()));
 
     if let Err(ref error) = result {
         // Log as well as emit: the toast is transient, and failed downloads have
@@ -54,7 +55,7 @@ pub async fn download_model(
         error!("Model download failed for {}: {}", model_id, error);
         let _ = app_handle.emit(
             "model-download-failed",
-            serde_json::json!({ "model_id": &model_id, "error": error }),
+            serde_json::json!({ "model_id": &model_id, "error": &error.message }),
         );
     }
 
@@ -68,13 +69,13 @@ pub async fn delete_model(
     model_manager: State<'_, Arc<ModelManager>>,
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
     model_id: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     // If deleting the active model, unload it and clear the setting
     let settings = get_settings(&app_handle);
     if settings.selected_model == model_id {
         transcription_manager
             .unload_model()
-            .map_err(|e| format!("Failed to unload model: {}", e))?;
+            .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))?;
 
         let mut settings = get_settings(&app_handle);
         settings.selected_model = String::new();
@@ -83,7 +84,7 @@ pub async fn delete_model(
 
     model_manager
         .delete_model(&model_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))
 }
 
 /// Shared logic for switching the active model, used by both the Tauri command
@@ -92,24 +93,30 @@ pub async fn delete_model(
 /// Validates the model, updates the persisted setting, and loads the model
 /// unless the unload timeout is set to "Immediately" (in which case the model
 /// will be loaded on-demand during the next transcription).
-pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String> {
+pub fn switch_active_model(app: &AppHandle, model_id: &str) -> CommandResult<()> {
     let model_manager = app.state::<Arc<ModelManager>>();
     let transcription_manager = app.state::<Arc<TranscriptionManager>>();
 
     // Atomically claim the loading slot — prevents concurrent model loads
     // from tray double-clicks or overlapping commands. The guard resets the
     // flag on drop (including early returns, errors, and panics).
-    let _loading_guard = transcription_manager
-        .try_start_loading()
-        .ok_or_else(|| "Model load already in progress".to_string())?;
+    let _loading_guard = transcription_manager.try_start_loading().ok_or_else(|| {
+        CommandError::new(CommandErrorCode::Busy, "Model load already in progress")
+    })?;
 
     // Check if model exists and is available
-    let model_info = model_manager
-        .get_model_info(model_id)
-        .ok_or_else(|| format!("Model not found: {}", model_id))?;
+    let model_info = model_manager.get_model_info(model_id).ok_or_else(|| {
+        CommandError::new(
+            CommandErrorCode::NotFound,
+            format!("Model not found: {model_id}"),
+        )
+    })?;
 
     if !model_info.is_downloaded {
-        return Err(format!("Model not downloaded: {}", model_id));
+        return Err(CommandError::new(
+            CommandErrorCode::Model,
+            format!("Model not downloaded: {model_id}"),
+        ));
     }
 
     let settings = get_settings(app);
@@ -152,7 +159,7 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String
         settings.selected_model = old_model;
         settings.onboarding_completed = old_onboarding_completed;
         write_settings(app, settings);
-        return Err(e.to_string());
+        return Err(CommandError::new(CommandErrorCode::Model, e.to_string()));
     }
 
     Ok(())
@@ -165,13 +172,13 @@ pub async fn set_active_model(
     _model_manager: State<'_, Arc<ModelManager>>,
     _transcription_manager: State<'_, Arc<TranscriptionManager>>,
     model_id: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     switch_active_model(&app_handle, &model_id)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_current_model(app_handle: AppHandle) -> Result<String, String> {
+pub async fn get_current_model(app_handle: AppHandle) -> CommandResult<String> {
     let settings = get_settings(&app_handle);
     Ok(settings.selected_model)
 }
@@ -180,7 +187,7 @@ pub async fn get_current_model(app_handle: AppHandle) -> Result<String, String> 
 #[specta::specta]
 pub async fn get_transcription_model_status(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
-) -> Result<Option<String>, String> {
+) -> CommandResult<Option<String>> {
     Ok(transcription_manager.get_current_model())
 }
 
@@ -188,7 +195,7 @@ pub async fn get_transcription_model_status(
 #[specta::specta]
 pub async fn is_model_loading(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
-) -> Result<bool, String> {
+) -> CommandResult<bool> {
     // Check if transcription manager has a loaded model
     let current_model = transcription_manager.get_current_model();
     Ok(current_model.is_none())
@@ -199,8 +206,8 @@ pub async fn is_model_loading(
 pub async fn cancel_download(
     model_manager: State<'_, Arc<ModelManager>>,
     model_id: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     model_manager
         .cancel_download(&model_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))
 }

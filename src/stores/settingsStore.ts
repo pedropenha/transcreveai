@@ -118,7 +118,7 @@ const settingUpdaters: {
       (value as number | null | undefined) ?? null,
     );
     if (result.status === "error") {
-      throw new Error(result.error);
+      throw new Error(result.error.message);
     }
   },
   clamshell_microphone: (value) =>
@@ -181,8 +181,8 @@ const settingUpdaters: {
     if (result.status === "error") {
       // Rejected switches (e.g. mid-recording) roll the dropdown back via the
       // throw below; the toast tells the user why.
-      toast.error(result.error);
-      throw new Error(result.error);
+      toast.error(result.error.message);
+      throw new Error(result.error.message);
     }
   },
   filler_word_removal_enabled: (value) =>
@@ -309,7 +309,9 @@ export const useSettingsStore = create<SettingsStore>()(
     checkCustomSounds: async () => {
       try {
         const sounds = await commands.checkCustomSounds();
-        get().setCustomSounds(sounds);
+        if (sounds.status === "ok") {
+          get().setCustomSounds(sounds.data);
+        }
       } catch (error) {
         console.error("Failed to check custom sounds:", error);
       }
@@ -387,7 +389,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
         // Check if the command executed successfully
         if (result.status === "error") {
-          throw new Error(result.error);
+          throw new Error(result.error.message);
         }
 
         // Check if the binding change was successful
@@ -604,8 +606,8 @@ export const useSettingsStore = create<SettingsStore>()(
         // Writes go to the OS vault; an empty value clears the key.
         const result = await commands.secretSet(providerId, apiKey);
         if (result.status === "error") {
-          console.error("Failed to save API key:", result.error);
-          toast.error(result.error);
+          console.error("Failed to save API key:", result.error.message);
+          toast.error(result.error.message);
         } else if (result.data) {
           // Non-blocking format warning from the backend (FR-011-05).
           toast.warning(result.data);
@@ -675,7 +677,7 @@ export const useSettingsStore = create<SettingsStore>()(
     loadUpdateChecksLocked: async () => {
       try {
         const locked = await commands.isUpdateChecksLocked();
-        set({ updateChecksLocked: locked });
+        set({ updateChecksLocked: locked.status === "ok" && locked.data });
       } catch (error) {
         console.error("Failed to check update checks lock state:", error);
         // Fail open: an unknown lock state means "not locked", otherwise the

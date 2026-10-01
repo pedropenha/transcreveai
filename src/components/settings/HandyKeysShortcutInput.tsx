@@ -221,7 +221,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     try {
       const result = await commands.startHandyKeysRecording(shortcutId);
       if (result.status === "error") {
-        if (String(result.error).includes("secure-input-active")) {
+        if (result.error.code === "secure_input_active") {
           toast.error(t("secureInput.recorderBlocked"), {
             action: {
               label: t("secureInput.learnMore"),
@@ -231,7 +231,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         } else {
           toast.error(
             t("settings.general.shortcut.errors.set", {
-              error: String(result.error),
+              error: result.error.message,
             }),
           );
         }

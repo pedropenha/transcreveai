@@ -58,6 +58,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::settings::{self, get_settings, ShortcutBinding};
 
 use super::handler::handle_shortcut_event;
@@ -809,31 +810,39 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
 /// Start key recording mode
 #[tauri::command]
 #[specta::specta]
-pub fn start_handy_keys_recording(app: AppHandle, binding_id: String) -> Result<(), String> {
+pub fn start_handy_keys_recording(app: AppHandle, binding_id: String) -> CommandResult<()> {
     let settings = get_settings(&app);
     if settings.keyboard_implementation != settings::KeyboardImplementation::HandyKeys {
-        return Err("handy-keys is not the active keyboard implementation".into());
+        return Err(CommandError::new(
+            CommandErrorCode::Unsupported,
+            "handy-keys is not the active keyboard implementation",
+        ));
     }
 
     // While Secure Input is active the tap receives no KeyDown/KeyUp, so the
     // recorder would silently capture just the modifier and overwrite the
     // binding with it (issue #1578). Refuse instead; the frontend maps this
-    // marker to a localized explanation, and the noted impact makes the
+    // code to a localized explanation, and the noted impact makes the
     // warning banner appear with the full story.
     if crate::secure_input::is_enabled_now() {
         crate::secure_input::note_recorder_blocked(&app);
-        return Err("secure-input-active".into());
+        return Err(CommandError::new(
+            CommandErrorCode::SecureInputActive,
+            "Secure input is active",
+        ));
     }
 
-    let state = app
-        .try_state::<HandyKeysState>()
-        .ok_or("HandyKeysState not initialized")?;
+    let state = app.try_state::<HandyKeysState>().ok_or_else(|| {
+        CommandError::new(CommandErrorCode::Internal, "Input system not initialized")
+    })?;
 
     // Suspend every registered shortcut so a combo that overlaps an existing
     // binding can't fire it (or have its keys swallowed) mid-capture.
     super::suspend_all_shortcuts(&app);
 
-    let result = state.start_recording(&app, binding_id);
+    let result = state
+        .start_recording(&app, binding_id)
+        .map_err(CommandError::from);
     if result.is_err() {
         super::resume_all_shortcuts(&app);
     }
@@ -843,20 +852,23 @@ pub fn start_handy_keys_recording(app: AppHandle, binding_id: String) -> Result<
 /// Stop key recording mode
 #[tauri::command]
 #[specta::specta]
-pub fn stop_handy_keys_recording(app: AppHandle) -> Result<(), String> {
+pub fn stop_handy_keys_recording(app: AppHandle) -> CommandResult<()> {
     let settings = get_settings(&app);
     if settings.keyboard_implementation != settings::KeyboardImplementation::HandyKeys {
-        return Err("handy-keys is not the active keyboard implementation".into());
+        return Err(CommandError::new(
+            CommandErrorCode::Unsupported,
+            "handy-keys is not the active keyboard implementation",
+        ));
     }
 
-    let state = app
-        .try_state::<HandyKeysState>()
-        .ok_or("HandyKeysState not initialized")?;
+    let state = app.try_state::<HandyKeysState>().ok_or_else(|| {
+        CommandError::new(CommandErrorCode::Internal, "Input system not initialized")
+    })?;
 
     // Restore shortcuts from settings regardless of how recording ended.
     // A commit has already registered the new binding via change_binding;
     // re-registering it here fails cleanly and is ignored.
-    let result = state.stop_recording();
+    let result = state.stop_recording().map_err(CommandError::from);
     super::resume_all_shortcuts(&app);
     result
 }
