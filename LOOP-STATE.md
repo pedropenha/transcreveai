@@ -32,11 +32,16 @@
 
 ## Em andamento (lanes)
 
-- (nenhuma — todas as lanes mergeadas)
+- **T-021** `feat/t-021-matcher` @ `ecc-t021` (54045a53)
+- **T-011** `feat/t-011-vad` @ `ecc-t011` (dfd4b643)
+- **T-013** `feat/t-013-whisper-provider` @ `ecc-t013` (6becb513)
+- **T-022** `feat/t-022-coordinator` @ `ecc-t022` (8ef225a5)
+- **T-060** `feat/t-060-mic-monitor` @ `ecc-t060` (07ab58ff)
+- **T-063** `feat/t-063-loopback` @ `ecc-t063` (c049a38c)
 
 ## Próximas na DAG (prontas para lanes)
 
-- **T-060** monitor de mic · **T-063** loopback · **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade · **T-011** VAD · **T-021** matcher (dep. T-020 ✔) · **T-013** whisper provider (dep. T-012 ✔, T-015 ✔) · **T-050** LLM BYOK (dep. T-016 ✔) · **T-022** coordinator · **T-030/T-031** inserção · **T-035** pipeline · **T-045** onboarding · **T-041/T-042** Flow Bar pt2/Hub · **T-061..T-069** reuniões
+- **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade · **T-050** LLM BYOK (dep. T-016 ✔) · **T-030/T-031** inserção · **T-035** pipeline (dep. T-009 ✔) · **T-045** onboarding · **T-041/T-042** Flow Bar pt2/Hub · **T-061..T-069** reuniões (dep. T-060/T-063 em andamento)
 
 ## Merges pendentes
 
