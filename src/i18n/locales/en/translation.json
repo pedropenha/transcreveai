@@ -1069,6 +1069,7 @@
       "insertion": "Text insertion",
       "performance": "Performance",
       "assistant": "Assistant",
+      "summary": "Meeting summary (LLM)",
       "diagnostics": "Diagnostics and data"
     },
     "assistant": {

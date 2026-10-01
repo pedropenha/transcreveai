@@ -129,8 +129,11 @@ export interface NoticeAction extends NoticeActionButton {
   /** The command takes `{ meetingId }` from `notice.meeting_id`. */
   needsMeetingId?: boolean;
   /** Hub sidebar section to open after `command` runs (`hub://navigate`
-   *  payload) — `open_summary_settings` lands on post-processing. */
+   *  payload) — `open_summary_settings` lands on the Settings hub. */
   navigateSection?: string;
+  /** Settings hub tab to land on when `navigateSection` is "settings"
+   *  (see `pendingSettingsTab`). */
+  navigateSettingsTab?: string;
   /** The command resolves to text to put on the clipboard — the FR-009-02
    *  reminder's "Copiar aviso" (`meeting_consent_copy` → writeText). */
   copiesTextToClipboard?: boolean;
@@ -169,12 +172,13 @@ const NOTICE_ACTIONS: Readonly<Record<string, NoticeAction>> = {
     labelKey: "retryProcessing",
     needsMeetingId: true,
   },
-  // `summary_status = disabled` notice: opens the Hub on the
-  // post-processing section where the summary provider/key is set.
+  // `summary_status = disabled` notice: opens the Hub on the Settings →
+  // General tab, where the summary provider/key is configured.
   open_summary_settings: {
     command: "show_main_window_command",
     labelKey: "openSettings",
-    navigateSection: "postprocessing",
+    navigateSection: "settings",
+    navigateSettingsTab: "general",
   },
   // FR-009-02: the every-start consent reminder carries the notice text —
   // "Copiar aviso" puts it on the clipboard to paste in the meeting chat.

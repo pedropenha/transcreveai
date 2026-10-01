@@ -15,6 +15,7 @@ import { LanguageSelector } from "../LanguageSelector";
 import { AppLanguageSelector } from "../AppLanguageSelector";
 import { ThemeSelector } from "../ThemeSelector";
 import { AssistantProvider } from "../AssistantProvider";
+import { PostProcessingSettingsApi } from "../PostProcessingSettingsApi";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -35,6 +36,12 @@ export const GeneralSettings: React.FC = () => {
           detected on PATH, no key needed (FR-012-02/04). */}
       <SettingsGroup title={t("settingsHub.groups.assistant")}>
         <AssistantProvider descriptionMode="tooltip" grouped />
+      </SettingsGroup>
+      {/* FR-009: meeting-summary provider — the same
+          `post_process_provider_id` the summary pipeline uses. Mounted
+          here because there is no post-processing sidebar section. */}
+      <SettingsGroup title={t("settingsHub.groups.summary")}>
+        <PostProcessingSettingsApi />
       </SettingsGroup>
       <SettingsGroup title={t("settings.general.language.title")}>
         <LanguageSelector descriptionMode="tooltip" grouped />

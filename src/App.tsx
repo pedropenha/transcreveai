@@ -205,8 +205,8 @@ function App() {
   }, [t]);
 
   // Toast actions can deep-link a sidebar section ("open_summary_settings"
-  // → post-processing). Only navigate to sections the current settings
-  // expose — e.g. postprocessing is hidden until post_process_enabled.
+  // → Settings). Only navigate to sections the sidebar actually exposes;
+  // a `settingsTab` in the payload is routed by `pendingSettingsTab`.
   useEffect(() => {
     const unlisten = listen<{ section?: string }>("hub://navigate", (event) => {
       const section = event.payload.section;

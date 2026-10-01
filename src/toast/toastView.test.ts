@@ -164,10 +164,11 @@ assert.equal(
   "notice",
 );
 
-// open_summary_settings shows the Hub and deep-links post-processing.
+// open_summary_settings shows the Hub and deep-links Settings → General.
 const summaryNotice = noticeActionFor("open_summary_settings");
 assert.equal(summaryNotice?.command, "show_main_window_command");
-assert.equal(summaryNotice?.navigateSection, "postprocessing");
+assert.equal(summaryNotice?.navigateSection, "settings");
+assert.equal(summaryNotice?.navigateSettingsTab, "general");
 
 // Actions the toast cannot answer inline keep the compact notice face.
 assert.equal(

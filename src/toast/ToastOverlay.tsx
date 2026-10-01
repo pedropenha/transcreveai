@@ -207,7 +207,10 @@ const ToastOverlay: React.FC = () => {
       }
       if (!ok) return;
       if (action.navigateSection) {
-        void emit("hub://navigate", { section: action.navigateSection });
+        void emit("hub://navigate", {
+          section: action.navigateSection,
+          settingsTab: action.navigateSettingsTab,
+        });
       }
       dismissToast();
     },
