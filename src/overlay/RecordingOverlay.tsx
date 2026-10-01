@@ -86,6 +86,7 @@ const RecordingOverlay: React.FC = () => {
   // Terminal statuses collapse to "idle" — post-processing is T-067's UI.
   const [meetingStatus, setMeetingStatus] = useState<MeetingStatus>("idle");
   const [meetingElapsed, setMeetingElapsed] = useState(0);
+  const [meetingId, setMeetingId] = useState<string | null>(null);
 
   // --- Hover / click-through (FR-001-02, NFR-001-02) ---
   const [hovered, setHovered] = useState(false);
@@ -272,9 +273,12 @@ const RecordingOverlay: React.FC = () => {
         (event) => {
           const status = event.payload.status;
           setMeetingElapsed(Math.floor(event.payload.elapsed_ms / 1000));
-          setMeetingStatus(
-            status === "recording" || status === "paused" ? status : "idle",
-          );
+          const live = status === "recording" || status === "paused";
+          setMeetingStatus(live ? status : "idle");
+          // FR-009-14: the pill's timer reopens the meeting window at the
+          // live meeting; a terminal status clears the id so a stale pill
+          // can't reopen a finished session's window.
+          setMeetingId(live ? event.payload.meeting_id : null);
         },
       );
 
@@ -419,6 +423,11 @@ const RecordingOverlay: React.FC = () => {
   };
   const meetingStop = () => {
     void commands.meetingStop();
+  };
+  // FR-009-14: the pill's timer is the Flow Bar reopen surface for the
+  // (hide-on-close) meeting window.
+  const meetingOpen = () => {
+    void commands.meetingWindowOpen(meetingId);
   };
   const cancel = () => {
     void commands.cancelOperation();
@@ -661,7 +670,15 @@ const RecordingOverlay: React.FC = () => {
                   <Pause size={10} aria-hidden="true" />
                 )}
               </button>
-              <span className="stimer">{fmtTime(meetingElapsed)}</span>
+              <button
+                type="button"
+                className="sx fside stimer"
+                aria-label={t("overlay.openMeeting")}
+                title={t("overlay.openMeeting")}
+                onClick={meetingOpen}
+              >
+                {fmtTime(meetingElapsed)}
+              </button>
               <button
                 type="button"
                 className="sx fside fstop"

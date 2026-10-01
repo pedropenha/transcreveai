@@ -135,6 +135,31 @@ fn native_windows_machine() -> Option<u16> {
     }
 }
 
+/// Disable WebView2 browser accelerators (F5, F6, Ctrl+F, F12, ...) on an app
+/// window. A settings/notes window has no use for them, and pressing F6 while
+/// recording a shortcut was reported to turn the whole window white
+/// (cjpais/Handy#1940), likely by triggering WebView2 focus cycling. DevTools
+/// stays enabled; only the F12 accelerator is lost. Shared by the Hub and the
+/// meeting window (T-066) so the WebView2 FFI lives in exactly one place.
+#[cfg(target_os = "windows")]
+pub fn disable_webview2_accelerators(window: &tauri::WebviewWindow) {
+    let _ = window.with_webview(|webview| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+        use windows::core::Interface;
+
+        let result = webview
+            .controller()
+            .CoreWebView2()
+            .and_then(|core| core.Settings())
+            .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
+            .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
+
+        if let Err(error) = result {
+            log::warn!("Failed to disable WebView2 browser accelerators: {error}");
+        }
+    });
+}
+
 /// Centralized cancellation function that can be called from anywhere in the app.
 /// Handles cancelling both recording and transcription operations and updates UI state.
 pub fn cancel_current_operation(app: &AppHandle) {

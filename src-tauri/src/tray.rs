@@ -570,6 +570,19 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     }
 
     items.push(&toggle_meeting_i);
+    // FR-009-14: while a meeting is recording, the tray is one of the reopen
+    // surfaces for the (hide-on-close) meeting window.
+    let open_meeting_i;
+    if inputs.meeting_active {
+        open_meeting_i = MenuItem::with_id(
+            app,
+            "open_meeting",
+            &strings.open_meeting,
+            true,
+            None::<&str>,
+        )?;
+        items.push(&open_meeting_i);
+    }
     items.push(&sep2);
     items.push(&toggle_flowbar_i);
     items.push(&pause_detection_i);

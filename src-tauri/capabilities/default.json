@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capabilities for the app",
-  "windows": ["hub", "flowbar", "toast"],
+  "windows": ["hub", "flowbar", "toast", "meeting"],
   "permissions": [
     "core:default",
     "opener:default",

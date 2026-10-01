@@ -14,6 +14,11 @@ pub const FLOWBAR: &str = "flowbar";
 /// Non-activatable meeting-detection toast (F008, T-062).
 pub const TOAST: &str = "toast";
 
+/// The meeting window (F009, T-066) — a normal decorated window hosting
+/// "Minhas notas" / Transcrição / Resumo. Closing it hides the window; the
+/// session keeps recording (FR-009-14).
+pub const MEETING: &str = "meeting";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -33,7 +38,12 @@ mod tests {
         let windows = capability_windows(include_str!("../capabilities/default.json"));
         assert_eq!(
             windows,
-            vec![HUB.to_owned(), FLOWBAR.to_owned(), TOAST.to_owned()]
+            vec![
+                HUB.to_owned(),
+                FLOWBAR.to_owned(),
+                TOAST.to_owned(),
+                MEETING.to_owned()
+            ]
         );
     }
 

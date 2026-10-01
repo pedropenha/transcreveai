@@ -10,6 +10,8 @@
 //! the on-disk blocks consistent — and only ever removes an audio directory
 //! inside `audio/meetings/`.
 
+use serde::Serialize;
+use specta::Type;
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
@@ -21,6 +23,7 @@ use crate::db::summary_templates::{
     SqliteSummaryTemplateRepository, SummaryTemplate, SummaryTemplateRepository,
 };
 use crate::meeting::postprocess::{Job, MeetingPostProcessor};
+use crate::db::notes::{Note, NoteRepository, SqliteNoteRepository};
 use crate::meeting::session::{
     meeting_recording_active, open_session_db, remove_meeting_audio_dir, MeetingSessionManager,
     MeetingStateEvent, StartRequest,
@@ -103,14 +106,173 @@ pub fn meeting_current(app: AppHandle) -> CommandResult<Option<MeetingStateEvent
     Ok(manager(&app)?.current())
 }
 
-/// One meeting row (hub detail / meeting window).
+/// Upper bound for a user-edited meeting title (FR-009-12 inline rename).
+const MEETING_TITLE_MAX_CHARS: usize = 160;
+
+/// Hydration payload for the meeting window (T-066): the row plus everything
+/// its three tabs render — transcript segments and the "Minhas notas" body.
+/// `meeting://segment` events append live on top of this snapshot.
+#[derive(Clone, Debug, Serialize, Type)]
+pub struct MeetingDetail {
+    pub meeting: Meeting,
+    /// Ordered by `start_ms`.
+    pub segments: Vec<MeetingSegment>,
+    /// The meeting note row's markdown body ("" when the row is missing —
+    /// e.g. a meeting that predates the notes-row creation).
+    pub notes_md: String,
+}
+
+/// One meeting with its segments and notes body (meeting window hydration).
 #[tauri::command]
 #[specta::specta]
-pub fn meeting_get(app: AppHandle, id: String) -> CommandResult<Option<Meeting>> {
+pub fn meeting_get(app: AppHandle, id: String) -> CommandResult<Option<MeetingDetail>> {
     let conn = open_session_db(&app)?;
-    SqliteMeetingRepository::new(&conn).get(&id).map_err(|e| {
+    let Some(meeting) = SqliteMeetingRepository::new(&conn).get(&id).map_err(|e| {
         CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
-    })
+    })?
+    else {
+        return Ok(None);
+    };
+    let segments = SqliteMeetingSegmentRepository::new(&conn)
+        .list_by_meeting(&id)
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to load the meeting transcript",
+                e,
+            )
+        })?;
+    let notes_md = SqliteNoteRepository::new(&conn)
+        .list_by_meeting(&id)
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to load meeting notes",
+                e,
+            )
+        })?
+        .into_iter()
+        .find(|n| n.source == "meeting")
+        .map(|n| n.body_md)
+        .unwrap_or_default();
+    Ok(Some(MeetingDetail {
+        meeting,
+        segments,
+        notes_md,
+    }))
+}
+
+/// FR-009-12: inline title edit. Rejects blank/oversized input at the
+/// boundary and retitles the native window when it is showing this meeting.
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_rename(app: AppHandle, id: String, title: String) -> CommandResult<Meeting> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "The meeting title cannot be empty",
+        ));
+    }
+    if title.chars().count() > MEETING_TITLE_MAX_CHARS {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "The meeting title is too long",
+        ));
+    }
+    let conn = open_session_db(&app)?;
+    let repo = SqliteMeetingRepository::new(&conn);
+    let mut meeting = repo
+        .get(&id)
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
+        })?
+        .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "Meeting not found"))?;
+    meeting.title = title.to_string();
+    repo.update(&meeting).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to rename the meeting",
+            e,
+        )
+    })?;
+    crate::meeting_window::retitle_if_shown(&app, &id, &meeting.title);
+    Ok(meeting)
+}
+
+/// FR-009-13 "Minhas notas" debounced autosave. Writes ONLY the note row's
+/// `body_md` — FR-009-19: this text is user-owned and never touched by the
+/// summary pipeline. The row is created at meeting start (T-064); it is
+/// recreated defensively when absent (e.g. meetings that predate it).
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_notes_update(app: AppHandle, id: String, body_md: String) -> CommandResult<()> {
+    let conn = open_session_db(&app)?;
+    // FK integrity: a note can't reference a meeting that does not exist.
+    let meeting = SqliteMeetingRepository::new(&conn)
+        .get(&id)
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
+        })?
+        .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "Meeting not found"))?;
+    let notes = SqliteNoteRepository::new(&conn);
+    match notes
+        .list_by_meeting(&id)
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to load meeting notes",
+                e,
+            )
+        })?
+        .into_iter()
+        .find(|n| n.source == "meeting")
+    {
+        Some(mut note) => {
+            note.body_md = body_md;
+            notes.update(&note).map_err(|e| {
+                CommandError::logged(CommandErrorCode::Internal, "Failed to save notes", e)
+            })?;
+        }
+        None => {
+            let mut note = Note::new("meeting");
+            note.meeting_id = Some(id);
+            note.title = meeting.title;
+            note.body_md = body_md;
+            notes.create(&note).map_err(|e| {
+                CommandError::logged(CommandErrorCode::Internal, "Failed to save notes", e)
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// FR-009-13: "Resumo" is user-editable after generation — writes only
+/// `summary_md`, never the notes row (FR-009-19).
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_summary_update(app: AppHandle, id: String, summary_md: String) -> CommandResult<()> {
+    let conn = open_session_db(&app)?;
+    let repo = SqliteMeetingRepository::new(&conn);
+    let mut meeting = repo
+        .get(&id)
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
+        })?
+        .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "Meeting not found"))?;
+    meeting.summary_md = Some(summary_md);
+    repo.update(&meeting).map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to save the summary", e)
+    })?;
+    Ok(())
+}
+
+/// FR-009-14: open (or focus) the meeting window. `meeting_id` omitted → the
+/// active session, else the most recent meeting.
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_window_open(app: AppHandle, meeting_id: Option<String>) -> CommandResult<()> {
+    crate::meeting_window::open(&app, meeting_id)
 }
 
 /// Every meeting, newest first (FR-009-13 "Minhas notas" list).

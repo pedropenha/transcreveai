@@ -13,6 +13,7 @@ import {
   PostProcessingSettings,
   ModelsSettings,
 } from "./settings";
+import NewMeetingButton from "./NewMeetingButton";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
@@ -95,6 +96,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="flex flex-col w-40 h-full border-e border-mid-gray/20 items-center px-2">
       <TranscreveTextLogo width={120} className="m-4" />
+      {/* FR-009-01: Hub "Nova reunião" — the manual start that also opens
+          the meeting window (detection starts never auto-open it). */}
+      <NewMeetingButton />
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
         {availableSections.map((section) => {
           const Icon = section.icon;

@@ -19,6 +19,7 @@ mod managers;
 /// stays reachable from the crate boundary until the session layer (T-064)
 /// consumes it.
 pub mod meeting;
+mod meeting_window;
 mod memory;
 mod overlay;
 mod paste_tx;
@@ -343,6 +344,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 // Bar ◉ and detector toast — the session gate serializes
                 // concurrent start requests.
                 toggle_meeting_from_surface(app);
+            }
+            "open_meeting" => {
+                // FR-009-14: the tray reopens the meeting window (the close
+                // button only hides it). `None` resolves to the active
+                // session, then the most recent meeting.
+                if let Err(e) = meeting_window::open(app, None) {
+                    log::warn!("Tray 'open meeting' refused ({:?}): {}", e.code, e.message);
+                }
             }
             "toggle_flowbar" => {
                 // "Ocultar até reiniciar o app" (FR-001-07): runtime-only,
@@ -989,6 +998,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_checkin_respond,
             commands::meeting::meeting_current,
             commands::meeting::meeting_get,
+            commands::meeting::meeting_rename,
+            commands::meeting::meeting_notes_update,
+            commands::meeting::meeting_summary_update,
+            commands::meeting::meeting_window_open,
             commands::meeting::meeting_list,
             commands::meeting::meeting_segments,
             commands::meeting::meeting_delete,
@@ -1263,23 +1276,7 @@ pub fn run(cli_args: CliArgs) {
             // (cjpais/Handy#1940), likely by triggering WebView2 focus cycling.
             // DevTools stays enabled; only the F12 accelerator is lost.
             #[cfg(target_os = "windows")]
-            {
-                let _ = main_window.with_webview(|webview| unsafe {
-                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-                    use windows::core::Interface;
-
-                    let result = webview
-                        .controller()
-                        .CoreWebView2()
-                        .and_then(|core| core.Settings())
-                        .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
-                        .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
-
-                    if let Err(error) = result {
-                        log::warn!("Failed to disable WebView2 browser accelerators: {error}");
-                    }
-                });
-            }
+            utils::disable_webview2_accelerators(&main_window);
 
             let mut settings = get_settings(app.handle());
 
