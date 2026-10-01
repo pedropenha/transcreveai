@@ -301,4 +301,29 @@ pub(crate) static MIGRATIONS: &[M] = &[
             ('builtin-webex-host',   'CiscoCollabHost.exe', NULL, 'Webex',          'ask', 1),
             ('builtin-webex-mta',    'webexmta.exe',        NULL, 'Webex',          'ask', 1);",
     ),
+    // --- Live transcription bookkeeping (11, T-065) ---------------------------
+    // `meeting_segments.excluded` flags mic speech inside a dictation interval
+    // (FR-009-10/AC-009-03: excluded from the transcript, represented by the
+    // `dictation_marker` covering the same span).
+    //
+    // `meeting_blocks` is the persisted pending queue: the session worker
+    // inserts one row per sealed block (`transcribed = 0`) and the live
+    // transcriber flips `transcribed` once the block is fully processed.
+    // Rows left at 0 after the meeting ends are exactly the work T-067's
+    // post-processing still owes — the WAV path is derived from
+    // `meetings.audio_dir` + the block naming convention
+    // (`<track>-<index:04>.wav`), so it is not stored here.
+    M::up(
+        "ALTER TABLE meeting_segments ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE meeting_blocks (
+            meeting_id    TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+            track         TEXT NOT NULL CHECK (track IN ('mic','system')),
+            block_index   INTEGER NOT NULL,
+            start_ms      INTEGER NOT NULL,
+            end_ms        INTEGER NOT NULL,
+            transcribed   INTEGER NOT NULL DEFAULT 0,
+            attempts      INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (meeting_id, track, block_index)
+        );",
+    ),
 ];

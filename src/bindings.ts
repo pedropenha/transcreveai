@@ -1349,6 +1349,21 @@ async meetingList() : Promise<Result<Meeting[], CommandError>> {
 }
 },
 /**
+ * Segments of a meeting in meeting-clock order (T-065/T-066): `speech`,
+ * `dictation_marker` and `gap_marker` rows. Excluded mic speech
+ * (FR-009-10) is returned — the UI hides `excluded` rows and shows the
+ * covering marker. Also the hydration path for listeners that missed
+ * `meeting://segment` events.
+ */
+async meetingSegments(meetingId: string) : Promise<Result<MeetingSegment[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_segments", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Delete a meeting row (segments/notes cascade) plus its audio blocks —
  * the dir is only removed when it sits inside `audio/meetings/`.
  */
@@ -1778,7 +1793,14 @@ meeting_toast_position?: ToastPosition;
  * Optional notification sound when the meeting toast first appears
  * (FR-008-11). Off by default; independent of `audio_feedback`.
  */
-meeting_toast_sound?: boolean }
+meeting_toast_sound?: boolean; 
+/**
+ * FR-009-15: transcribe `mic`/`system` blocks live while the meeting
+ * records (data-model `meetings.live_transcript`). On by default; off
+ * still records the blocks — they stay pending in `meeting_blocks` for
+ * T-067's post-processing pass.
+ */
+meeting_live_transcript_enabled?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -2080,6 +2102,38 @@ action: string;
  * Shipped with the app; not user-deletable.
  */
 builtin: boolean }
+export type MeetingSegment = { 
+/**
+ * uuid
+ */
+id: string; meeting_id: string; 
+/**
+ * 'mic' | 'system'
+ */
+track: string; 
+/**
+ * "Você", "Outros", "Falante 1"…
+ */
+speaker: string | null; 
+/**
+ * Milliseconds relative to the meeting's `started_at`.
+ */
+start_ms: number; end_ms: number; text: string; 
+/**
+ * 'speech' | 'dictation_marker' | 'gap_marker'
+ */
+kind: string; 
+/**
+ * false while the segment is still a partial transcript.
+ */
+is_final: boolean; 
+/**
+ * FR-009-10/AC-009-03 (T-065): mic speech overlapping a dictation
+ * interval is excluded from the transcript — the meeting UI hides these
+ * rows and shows the covering `dictation_marker` instead. Never set on
+ * `system` rows or on markers themselves.
+ */
+excluded: boolean }
 /**
  * `meeting://state` payload (contracts.md §5).
  */

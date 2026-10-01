@@ -206,8 +206,13 @@ fn open_rules_conn(app: &tauri::AppHandle) -> Option<rusqlite::Connection> {
 // `audio/meetings/<id>/` com fsync por bloco (FR-009-05); [`capture`] liga o
 // mic compartilhado (`FrameTap::Raw` + `when_idle`) e o loopback WASAPI;
 // [`recovery`] marca reuniões órfãs como `recovered` no startup.
+// Transcrição ao vivo (T-065): [`live`] enfileira blocos selados num worker
+// único com filas limitadas por trilha, segmenta por VAD em enunciados ≤30 s
+// e persiste `meeting_segments` + `meeting://segment` (FR-009-15);
+// `dictation` ali dentro é a coexistência com o ditado (FR-009-10).
 
 pub mod blocks;
 pub mod capture;
+pub mod live;
 pub mod recovery;
 pub mod session;
