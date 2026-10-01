@@ -777,6 +777,12 @@ pub struct AppSettings {
     /// (FR-008-11). Off by default; independent of `audio_feedback`.
     #[serde(default)]
     pub meeting_toast_sound: bool,
+    /// FR-009-15: transcribe `mic`/`system` blocks live while the meeting
+    /// records (data-model `meetings.live_transcript`). On by default; off
+    /// still records the blocks — they stay pending in `meeting_blocks` for
+    /// T-067's post-processing pass.
+    #[serde(default = "default_meeting_live_transcript_enabled")]
+    pub meeting_live_transcript_enabled: bool,
 }
 
 fn default_model() -> String {
@@ -800,6 +806,11 @@ fn default_meeting_detection_enabled() -> bool {
 
 /// FR-008-14: auto-stop ships on.
 fn default_meeting_auto_stop() -> bool {
+    true
+}
+
+/// FR-009-15: live transcription ships on (data-model `live_transcript`).
+fn default_meeting_live_transcript_enabled() -> bool {
     true
 }
 
@@ -1382,6 +1393,7 @@ pub fn get_default_settings() -> AppSettings {
         meeting_auto_stop: default_meeting_auto_stop(),
         meeting_toast_position: ToastPosition::default(),
         meeting_toast_sound: false,
+        meeting_live_transcript_enabled: default_meeting_live_transcript_enabled(),
     }
 }
 

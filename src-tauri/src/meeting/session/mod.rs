@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use serde::Serialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Listener};
 
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::db::meetings::Meeting;
@@ -141,6 +141,13 @@ pub(crate) enum Command {
         keep_recording: bool,
         reply: Sender<CommandResult<()>>,
     },
+    /// FR-009-10 (T-065): a `session://state` transition — `capturing` is
+    /// `true` while the dictation session owns the mic (`arming`/`recording`).
+    /// Routed through the command channel so the worker's meeting clock stays
+    /// the single source of timestamp truth.
+    Dictation {
+        capturing: bool,
+    },
 }
 
 /// Handle to the session worker. Cheap to clone (channel + shared snapshot);
@@ -167,6 +174,28 @@ impl MeetingSessionManager {
         let (tx, rx) = mpsc::channel();
         let snapshot = Arc::new(Mutex::new(None));
         let worker_snapshot = Arc::clone(&snapshot);
+
+        // FR-009-10 (T-065): dictation sessions exclude mic speech and drop a
+        // `dictation_marker` (AC-009-03). The capturing signal is the
+        // `session://state` payload's `state` field forwarded as a command —
+        // dictation owns no meeting state, the worker owns the clock.
+        let dictation_tx = tx.clone();
+        app.listen(
+            crate::transcription_coordinator::SESSION_STATE_EVENT,
+            move |event| {
+                #[derive(serde::Deserialize)]
+                struct SessionStateProbe {
+                    state: String,
+                }
+                let Ok(probe) = serde_json::from_str::<SessionStateProbe>(event.payload()) else {
+                    return;
+                };
+                let _ = dictation_tx.send(Command::Dictation {
+                    capturing: crate::meeting::live::dictation_capturing(&probe.state),
+                });
+            },
+        );
+
         let spawned = std::thread::Builder::new()
             .name("meeting-session".to_string())
             .spawn(move || {

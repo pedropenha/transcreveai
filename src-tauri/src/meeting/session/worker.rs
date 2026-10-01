@@ -22,15 +22,22 @@ use super::{
 };
 use crate::audio_toolkit::audio::loopback::SystemAudioEvent;
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
+use crate::db::meeting_blocks::{
+    MeetingBlock, MeetingBlockRepository, SqliteMeetingBlockRepository,
+};
 use crate::db::meetings::{
     Meeting, MeetingRepository, MeetingSegment, MeetingSegmentRepository, SqliteMeetingRepository,
     SqliteMeetingSegmentRepository,
 };
 use crate::db::notes::{Note, NoteRepository, SqliteNoteRepository};
 use crate::managers::audio::AudioRecordingManager;
-use crate::meeting::blocks::{meeting_audio_dir, Track};
+use crate::meeting::blocks::{meeting_audio_dir, SealedBlock, Track};
 use crate::meeting::capture::{
     CaptureConfig, MeetingCapture, MeetingCaptureEvent, MicTap, SystemSource,
+};
+use crate::meeting::live::{
+    dictation_marker_text, DictationTracker, LiveTranscriber, SharedDictationTracker,
+    MEETING_SEGMENT_EVENT,
 };
 use crate::settings::{get_settings, AppSettings};
 use crate::TranscriptionCoordinator;
@@ -50,6 +57,13 @@ pub(super) struct Worker {
     /// the meeting clock across pause/resume.
     meeting_t0: Instant,
     audio_dir: Option<PathBuf>,
+    /// FR-009-15: live transcription queue — `None` when the setting is off
+    /// or the STT managers are unreachable; `meeting_blocks` rows stay
+    /// pending for T-067 either way.
+    transcriber: Option<LiveTranscriber>,
+    /// FR-009-10: open/closed dictation intervals on the meeting clock —
+    /// shared with the transcriber so mic utterances are flagged at insert.
+    dictation: Option<SharedDictationTracker>,
 }
 
 impl Worker {
@@ -69,6 +83,8 @@ impl Worker {
             meeting: None,
             meeting_t0: Instant::now(),
             audio_dir: None,
+            transcriber: None,
+            dictation: None,
         }
     }
 
@@ -101,6 +117,10 @@ impl Worker {
         if let Some(capture) = self.capture.take() {
             capture.stop();
         }
+        // stop() seals the in-flight tails — their events must still reach
+        // the pending bookkeeping and the live queue.
+        self.drain_capture_events();
+        self.close_open_dictation();
         MEETING_ACTIVE.store(false, Ordering::SeqCst);
         log::debug!("Meeting session worker exited");
     }
@@ -147,6 +167,9 @@ impl Worker {
                 };
                 let _ = reply.send(result);
                 self.flush();
+            }
+            Command::Dictation { capturing } => {
+                self.handle_dictation(capturing);
             }
         }
     }
@@ -234,6 +257,20 @@ impl Worker {
             true,          // mic live unless TrackUnavailable says otherwise
             !req.mic_only, // system track only in call mode
         ));
+
+        // FR-009-10: dictation intervals live on the meeting clock. A
+        // dictation already capturing when the meeting starts counts from t0.
+        let tracker: SharedDictationTracker = Arc::new(Mutex::new(DictationTracker::default()));
+        if self.audio.as_ref().is_some_and(|a| a.is_recording()) {
+            tracker.lock().unwrap_or_else(|e| e.into_inner()).begin(0);
+        }
+        // FR-009-15: live transcription (setting-gated). Sealed blocks land
+        // in `meeting_blocks` pending whether or not this runs — off only
+        // means T-067's post-pass does the work later.
+        if settings.meeting_live_transcript_enabled {
+            self.transcriber = LiveTranscriber::spawn(&self.app, &meeting.id, Arc::clone(&tracker));
+        }
+        self.dictation = Some(tracker);
 
         // FR-009-02: discreet consent reminder on every start (opt-out).
         if settings.meeting_consent_reminder {
@@ -345,14 +382,29 @@ impl Worker {
 
     fn handle_capture_event(&mut self, event: MeetingCaptureEvent) {
         let now = Instant::now();
+        if let MeetingCaptureEvent::BlockSealed(block) = event {
+            // Bookkeeping first — the pending row and the live queue matter
+            // even when the machine is already gone (stop-time tails still
+            // owe T-067 their work).
+            self.record_pending_block(&block);
+            if let Some(transcriber) = &self.transcriber {
+                transcriber.enqueue(block.clone());
+            }
+            if let Some(machine) = self.machine.as_mut() {
+                // Speech bookkeeping feeds the silence check-in only while
+                // the meeting records — paused/done machines ignore it.
+                if machine.status() == "recording" {
+                    let has_speech = self.speech.has_speech(&block);
+                    machine.block_sealed(block.track, has_speech, now);
+                }
+            }
+            return;
+        }
         let Some(machine) = self.machine.as_mut() else {
             return;
         };
         match event {
-            MeetingCaptureEvent::BlockSealed(block) => {
-                let has_speech = self.speech.has_speech(&block);
-                machine.block_sealed(block.track, has_speech, now);
-            }
+            MeetingCaptureEvent::BlockSealed(_) => {}
             MeetingCaptureEvent::TrackUnavailable { track, message } => {
                 log::warn!("Meeting {:?} track unavailable: {message}", track);
                 machine.track_unavailable(track);
@@ -394,6 +446,14 @@ impl Worker {
             }
             // A finished machine is dropped after its final effects ran.
             if self.machine.as_ref().is_some_and(|m| !m.is_active()) {
+                // FR-009-10: a dictation still open at stop closes at the
+                // stop point so its marker exists for T-067's exclusion pass.
+                self.close_open_dictation();
+                // Dropping the sender ends the transcriber thread after it
+                // drains its queues; anything left stays pending in
+                // `meeting_blocks` for T-067.
+                self.transcriber = None;
+                self.dictation = None;
                 self.machine = None;
                 self.meeting = None;
                 self.audio_dir = None;
@@ -436,7 +496,6 @@ impl Worker {
                 }
             }
             Effect::StopCapture => {
-                self.capture_rx = None;
                 if let Some(capture) = self.capture.take() {
                     let summary = capture.stop();
                     log::debug!(
@@ -444,7 +503,12 @@ impl Worker {
                         summary.mic.len(),
                         summary.system.len()
                     );
+                    // stop() seals the in-flight tails — their `BlockSealed`
+                    // events must still reach the pending bookkeeping and
+                    // the live queue before the receiver is dropped.
+                    self.drain_capture_events();
                 }
+                self.capture_rx = None;
             }
             Effect::WriteGapMarker {
                 track,
@@ -468,6 +532,111 @@ impl Worker {
                 }
             }
             Effect::Indicator(active) => self.update_indicator(active),
+        }
+    }
+
+    /// FR-009-10/AC-009-03: a `session://state` transition opened or closed
+    /// dictation capture on the meeting clock. Closing persists one
+    /// `dictation_marker` spanning the whole interval (a dictation crossing
+    /// block boundaries is still a single marker) and flags overlapping mic
+    /// speech already stored.
+    fn handle_dictation(&mut self, capturing: bool) {
+        let Some(machine) = self.machine.as_ref() else {
+            return;
+        };
+        let Some(tracker) = self.dictation.clone() else {
+            return;
+        };
+        let at_ms = machine.ms(Instant::now());
+        if capturing {
+            tracker
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .begin(at_ms);
+            return;
+        }
+        let closed = tracker.lock().unwrap_or_else(|e| e.into_inner()).end(at_ms);
+        if let Some((start_ms, end_ms)) = closed {
+            self.mark_dictation_range(start_ms, end_ms);
+        }
+    }
+
+    /// At stop/shutdown an open dictation interval closes at the stop point
+    /// so its marker exists (T-067's exclusion pass also uses it).
+    fn close_open_dictation(&mut self) {
+        let Some(machine) = self.machine.as_ref() else {
+            return;
+        };
+        let Some(tracker) = self.dictation.clone() else {
+            return;
+        };
+        let end_ms = machine.ms(Instant::now());
+        let closed = tracker
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .end(end_ms);
+        if let Some((start_ms, end_ms)) = closed {
+            self.mark_dictation_range(start_ms, end_ms);
+        }
+    }
+
+    /// Persist the `dictation_marker` for a closed interval and flag the mic
+    /// speech already stored inside it (AC-009-03: "Ditado" in the
+    /// transcript, dictated text out of it — excluded rows still carry the
+    /// transcribed text for debugging but the UI hides them).
+    fn mark_dictation_range(&mut self, start_ms: i64, end_ms: i64) {
+        let Some(meeting_id) = self.meeting.as_ref().map(|m| m.id.clone()) else {
+            return;
+        };
+        let Some(conn) = self.conn.as_ref() else {
+            return;
+        };
+        let repo = SqliteMeetingSegmentRepository::new(conn);
+        if let Err(e) = repo.mark_speech_excluded(&meeting_id, Track::Mic.label(), start_ms, end_ms)
+        {
+            log::warn!("Failed to exclude dictated meeting segments: {e}");
+        }
+        let lang = get_settings(&self.app).app_language;
+        let mut marker = MeetingSegment::new(
+            &meeting_id,
+            Track::Mic.label(),
+            start_ms,
+            end_ms,
+            dictation_marker_text(&lang),
+        );
+        marker.kind = "dictation_marker".to_string();
+        if let Err(e) = repo.create(&marker) {
+            log::warn!("Failed to persist meeting dictation marker: {e}");
+            return;
+        }
+        // Same `meeting://segment` channel as live speech rows.
+        if let Err(e) = self.app.emit(MEETING_SEGMENT_EVENT, &marker) {
+            log::warn!("Failed to emit {MEETING_SEGMENT_EVENT}: {e}");
+        }
+    }
+
+    /// T-065 pending design: every sealed block lands in `meeting_blocks`
+    /// with `transcribed = 0` so T-067's queue survives crashes and a
+    /// disabled live pass alike. `INSERT OR IGNORE` keeps a re-push or
+    /// pause/resume replay from resetting an existing row's progress.
+    fn record_pending_block(&mut self, block: &SealedBlock) {
+        let Some(meeting_id) = self.meeting.as_ref().map(|m| m.id.clone()) else {
+            return;
+        };
+        let Ok(conn) = self.conn() else {
+            return;
+        };
+        let row = MeetingBlock {
+            meeting_id,
+            track: block.track.label().to_string(),
+            block_index: block.index as i64,
+            start_ms: block.start_offset_ms as i64,
+            end_ms: (block.start_offset_ms + block.duration_ms) as i64,
+            transcribed: false,
+            attempts: 0,
+        };
+        if let Err(e) = SqliteMeetingBlockRepository::new(conn).record_pending(&row) {
+            log::warn!("Failed to record pending meeting block: {e}");
         }
     }
 

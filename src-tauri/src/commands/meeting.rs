@@ -12,7 +12,10 @@
 
 use tauri::{AppHandle, Manager};
 
-use crate::db::meetings::{Meeting, MeetingRepository, SqliteMeetingRepository};
+use crate::db::meetings::{
+    Meeting, MeetingRepository, MeetingSegment, MeetingSegmentRepository, SqliteMeetingRepository,
+    SqliteMeetingSegmentRepository,
+};
 use crate::meeting::session::{
     meeting_recording_active, open_session_db, remove_meeting_audio_dir, MeetingSessionManager,
     MeetingStateEvent, StartRequest,
@@ -113,6 +116,26 @@ pub fn meeting_list(app: AppHandle) -> CommandResult<Vec<Meeting>> {
     SqliteMeetingRepository::new(&conn)
         .list()
         .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Failed to list meetings", e))
+}
+
+/// Segments of a meeting in meeting-clock order (T-065/T-066): `speech`,
+/// `dictation_marker` and `gap_marker` rows. Excluded mic speech
+/// (FR-009-10) is returned — the UI hides `excluded` rows and shows the
+/// covering marker. Also the hydration path for listeners that missed
+/// `meeting://segment` events.
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_segments(app: AppHandle, meeting_id: String) -> CommandResult<Vec<MeetingSegment>> {
+    let conn = open_session_db(&app)?;
+    SqliteMeetingSegmentRepository::new(&conn)
+        .list_by_meeting(&meeting_id)
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to load the meeting segments",
+                e,
+            )
+        })
 }
 
 /// Delete a meeting row (segments/notes cascade) plus its audio blocks —

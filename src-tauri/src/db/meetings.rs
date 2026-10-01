@@ -227,6 +227,11 @@ pub struct MeetingSegment {
     pub kind: String,
     /// false while the segment is still a partial transcript.
     pub is_final: bool,
+    /// FR-009-10/AC-009-03 (T-065): mic speech overlapping a dictation
+    /// interval is excluded from the transcript — the meeting UI hides these
+    /// rows and shows the covering `dictation_marker` instead. Never set on
+    /// `system` rows or on markers themselves.
+    pub excluded: bool,
 }
 
 impl MeetingSegment {
@@ -242,6 +247,7 @@ impl MeetingSegment {
             text: text.to_string(),
             kind: "speech".to_string(),
             is_final: true,
+            excluded: false,
         }
     }
 
@@ -256,6 +262,7 @@ impl MeetingSegment {
             text: row.get("text")?,
             kind: row.get("kind")?,
             is_final: row.get("is_final")?,
+            excluded: row.get("excluded")?,
         })
     }
 }
@@ -264,6 +271,18 @@ pub trait MeetingSegmentRepository {
     fn create(&self, segment: &MeetingSegment) -> Result<()>;
     /// Segments of a meeting ordered by `start_ms`.
     fn list_by_meeting(&self, meeting_id: &str) -> Result<Vec<MeetingSegment>>;
+    /// FR-009-10: flag `kind = 'speech'` rows on `track` overlapping the
+    /// `[start_ms, end_ms)` dictation interval. Runs when the interval
+    /// closes so segments already persisted are excluded too (the live
+    /// transcriber also flags at insert — this is the catch-up half).
+    /// Returns how many rows were marked.
+    fn mark_speech_excluded(
+        &self,
+        meeting_id: &str,
+        track: &str,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<usize>;
     fn delete(&self, id: &str) -> Result<()>;
 }
 
@@ -281,8 +300,9 @@ impl MeetingSegmentRepository for SqliteMeetingSegmentRepository<'_> {
     fn create(&self, segment: &MeetingSegment) -> Result<()> {
         self.conn.execute(
             "INSERT INTO meeting_segments (
-                id, meeting_id, track, speaker, start_ms, end_ms, text, kind, is_final
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                id, meeting_id, track, speaker, start_ms, end_ms, text, kind,
+                is_final, excluded
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![
                 segment.id,
                 segment.meeting_id,
@@ -293,6 +313,7 @@ impl MeetingSegmentRepository for SqliteMeetingSegmentRepository<'_> {
                 segment.text,
                 segment.kind,
                 segment.is_final,
+                segment.excluded,
             ],
         )?;
         Ok(())
@@ -306,12 +327,31 @@ impl MeetingSegmentRepository for SqliteMeetingSegmentRepository<'_> {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    fn mark_speech_excluded(
+        &self,
+        meeting_id: &str,
+        track: &str,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<usize> {
+        let marked = self.conn.execute(
+            "UPDATE meeting_segments SET excluded = 1
+             WHERE meeting_id = ?1 AND track = ?2 AND kind = 'speech'
+               AND start_ms < ?3 AND end_ms > ?4",
+            params![meeting_id, track, end_ms, start_ms],
+        )?;
+        Ok(marked)
+    }
+
     fn delete(&self, id: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM meeting_segments WHERE id = ?1", params![id])?;
         Ok(())
     }
 }
+
+// `meeting_blocks` (T-065 live-transcription bookkeeping) lives in
+// `db/meeting_blocks.rs` — its own table, its own file.
 
 // ---------------------------------------------------------------------------
 // meeting_app_rules
@@ -586,5 +626,40 @@ mod tests {
         assert!(!re.is_match("YouTube - Google Chrome"));
         assert!(by_exe("CiscoCollabHost.exe").is_some());
         assert!(by_exe("webexmta.exe").is_some());
+    }
+
+    #[test]
+    fn mark_speech_excluded_flags_only_overlapping_mic_speech() {
+        // FR-009-10 / AC-009-03 (T-065): when a dictation interval closes,
+        // mic speech overlapping it is excluded — system rows, markers and
+        // non-overlapping segments are untouched.
+        let conn = setup();
+        let meetings = SqliteMeetingRepository::new(&conn);
+        let segments = SqliteMeetingSegmentRepository::new(&conn);
+        let m = Meeting::new("Standup", "manual");
+        meetings.create(&m).expect("create meeting");
+
+        let inside = MeetingSegment::new(&m.id, "mic", 1000, 2000, "ditado");
+        let touching = MeetingSegment::new(&m.id, "mic", 900, 1500, "borda");
+        let before = MeetingSegment::new(&m.id, "mic", 0, 900, "antes");
+        let sys = MeetingSegment::new(&m.id, "system", 1000, 2000, "outros");
+        let mut marker = MeetingSegment::new(&m.id, "mic", 1000, 2000, "Ditado");
+        marker.kind = "dictation_marker".to_string();
+        for seg in [&inside, &touching, &before, &sys, &marker] {
+            segments.create(seg).expect("insert");
+        }
+
+        let marked = segments
+            .mark_speech_excluded(&m.id, "mic", 1000, 2000)
+            .expect("mark excluded");
+        assert_eq!(marked, 2, "inside + touching overlap the interval");
+
+        let segs = segments.list_by_meeting(&m.id).expect("list");
+        let by_text = |text: &str| segs.iter().find(|s| s.text == text).expect("row");
+        assert!(by_text("ditado").excluded);
+        assert!(by_text("borda").excluded);
+        assert!(!by_text("antes").excluded, "end_ms == start → no overlap");
+        assert!(!by_text("outros").excluded, "system never excluded");
+        assert!(!by_text("Ditado").excluded, "markers are not speech");
     }
 }
