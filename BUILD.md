@@ -72,7 +72,8 @@ bun run tauri dev
 
 The script sets `VULKAN_SDK` (newest `C:\VulkanSDK\<version>` when the
 installer's value has not reached the terminal yet), a short
-`CARGO_TARGET_DIR` (`C:\t`) and, with `-BypassJunction`, keeps
+`CARGO_TARGET_DIR` (`D:\t` — the build cache lives on D: to keep C: free)
+and, with `-BypassJunction`, keeps
 `transcribe-cpp-sys` from building through its junction — see
 [MSBuild fails with MSB1009](#windows-build-fails-with-msb1009-project-file-does-not-exist).
 Nothing is persisted; a new terminal starts clean.

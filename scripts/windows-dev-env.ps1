@@ -3,8 +3,9 @@
 #
 # - VULKAN_SDK: picked from the newest C:\VulkanSDK\<version> when the installer's
 #   value has not reached this terminal yet.
-# - CARGO_TARGET_DIR: a short root (default C:\t) so the native Vulkan build of
-#   transcribe-cpp-sys stays under MAX_PATH without its junction.
+# - CARGO_TARGET_DIR: a short root (default D:\t — the build cache lives on D:,
+#   keeping C: free) so the native Vulkan build of transcribe-cpp-sys stays
+#   under MAX_PATH without its junction.
 # - -BypassJunction: transcribe-cpp-sys builds through a junction under
 #   %LOCALAPPDATA%\tcs. On machines where MSBuild refuses to open projects through
 #   junctions (error MSB1009 "project file does not exist"), point LOCALAPPDATA at
@@ -15,7 +16,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$TargetDir = "C:\t",
+    [string]$TargetDir = "D:\t",
     [switch]$BypassJunction
 )
 
