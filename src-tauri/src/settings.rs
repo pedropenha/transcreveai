@@ -4,6 +4,7 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
 use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard};
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
@@ -943,6 +944,20 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
 
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
+/// Serializes every read-modify-write of the `settings` blob. `get_settings`
+/// (migration + persisted fixups), `write_settings` (reattach + write) and
+/// `secrets::remove_pending_api_key` each read the blob, change it, and write
+/// it back; without mutual exclusion a background heal could drop a pending
+/// API key or resurrect plaintext another writer just removed.
+///
+/// Lock ordering: never call `get_settings`/`write_settings` while holding
+/// this guard — no code path nests the lock.
+static SETTINGS_BLOB_LOCK: Mutex<()> = Mutex::new(());
+
+pub(crate) fn lock_settings_blob() -> MutexGuard<'static, ()> {
+    SETTINGS_BLOB_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 pub fn get_default_settings() -> AppSettings {
     #[cfg(target_os = "windows")]
     let default_shortcut = "ctrl+space";
@@ -1115,18 +1130,31 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
 
+    // Serialize the whole read-migrate-rewrite cycle against concurrent
+    // settings writes and pending-key removals (see `lock_settings_blob`).
+    let _blob_guard = lock_settings_blob();
+
     // Settings reads also persist one-time migrations. Migration helpers are
     // idempotent, so this converges after the first read of an older store.
     let mut settings = if let Some(mut settings_value) = store.get("settings") {
         // T-016 / FR-011-01: move plaintext `post_process_api_keys` into the OS
         // credential vault before anything else touches the stored JSON. Keys
         // whose vault write fails stay in `settings_value` (they must never be
-        // lost) and are re-attached to every settings write below.
-        if crate::secrets::migrate_plaintext_api_keys(
-            &mut settings_value,
-            crate::secrets::secret_store().as_ref(),
-        ) {
-            store.set("settings", settings_value.clone());
+        // lost) and are re-attached to every settings write below. Retries are
+        // throttled by an exponential backoff so a down vault doesn't make
+        // every settings read synchronously hit the credential store.
+        if crate::secrets::vault_write_retry_allowed() {
+            if crate::secrets::migrate_plaintext_api_keys(
+                &mut settings_value,
+                crate::secrets::secret_store().as_ref(),
+            ) {
+                store.set("settings", settings_value.clone());
+            }
+            let still_pending = settings_value
+                .get(crate::secrets::LEGACY_API_KEYS_FIELD)
+                .and_then(serde_json::Value::as_object)
+                .is_some_and(|map| !map.is_empty());
+            crate::secrets::vault_write_retry_record(!still_pending);
         }
         let pending_api_keys = settings_value
             .get(crate::secrets::LEGACY_API_KEYS_FIELD)
@@ -1363,6 +1391,10 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
 
+    // The pending-key reattach reads the current blob before overwriting it —
+    // hold the same lock as the migration path so neither can lose the other's
+    // update.
+    let _blob_guard = lock_settings_blob();
     let mut value = serde_json::to_value(&settings).unwrap();
     crate::secrets::reattach_pending_api_keys(
         &mut value,
