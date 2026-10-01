@@ -567,6 +567,16 @@ pub struct AppSettings {
     /// session is still processing (FR-002-16). Default 5.
     #[serde(default = "default_session_queue_size")]
     pub session_queue_size: usize,
+    /// Double tap on the push-to-talk shortcut starts hands-free dictation
+    /// (FR-002-07).
+    #[serde(default = "default_double_tap_enabled")]
+    pub double_tap_enabled: bool,
+    /// Trailing voice "send" phrases per language (FR-002-17): a dictation
+    /// ending in one of these is inserted followed by `auto_submit_key`.
+    /// The `"default"` list always applies; a language key ("pt", "en") adds
+    /// phrases for that language (the `pt` list also covers `pt-BR`).
+    #[serde(default = "default_voice_submit_phrases")]
+    pub voice_submit_phrases: HashMap<String, Vec<String>>,
     /// Flow Bar visibility policy: always / only while recording / never
     /// (FR-001-10). `Never` still leaves hotkeys and tray feedback working.
     #[serde(default)]
@@ -770,6 +780,25 @@ fn default_max_dictation_minutes() -> u64 {
 
 fn default_session_queue_size() -> usize {
     5
+}
+
+fn default_double_tap_enabled() -> bool {
+    true
+}
+
+/// Built-in voice "send" phrases (FR-002-17): the `default` list applies to
+/// every language; `pt`/`en` add language-specific forms. Configurable per
+/// language via the `voice_submit_phrases` map.
+fn default_voice_submit_phrases() -> HashMap<String, Vec<String>> {
+    let strs = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    HashMap::from([
+        (
+            "default".to_string(),
+            strs(&["send", "press enter", "enviar"]),
+        ),
+        ("pt".to_string(), strs(&["enviar"])),
+        ("en".to_string(), strs(&["send", "press enter", "send it"])),
+    ])
 }
 
 fn default_flowbar_position_offset() -> f64 {
@@ -1047,6 +1076,23 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // FR-002-19: re-insert the final_text of the most recent session.
+    #[cfg(target_os = "macos")]
+    let default_paste_last_shortcut = "ctrl+cmd+v";
+    #[cfg(not(target_os = "macos"))]
+    let default_paste_last_shortcut = "alt+shift+v";
+
+    bindings.insert(
+        "paste_last".to_string(),
+        ShortcutBinding {
+            id: "paste_last".to_string(),
+            name: "Paste Last Transcription".to_string(),
+            description: "Re-inserts the most recent transcription.".to_string(),
+            default_binding: default_paste_last_shortcut.to_string(),
+            current_binding: default_paste_last_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
         bindings,
@@ -1112,6 +1158,8 @@ pub fn get_default_settings() -> AppSettings {
         insertion_method: InsertionMethod::default(),
         max_dictation_minutes: default_max_dictation_minutes(),
         session_queue_size: default_session_queue_size(),
+        double_tap_enabled: default_double_tap_enabled(),
+        voice_submit_phrases: default_voice_submit_phrases(),
         flowbar_visibility: FlowbarVisibility::default(),
         flowbar_follow: FlowbarFollow::default(),
         flowbar_position_edge: FlowbarEdge::default(),

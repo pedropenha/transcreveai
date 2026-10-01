@@ -114,13 +114,16 @@ pub trait DictationRepository {
     fn insert(&self, entry: &NewDictation) -> Result<Dictation>;
     fn get(&self, id: i64) -> Result<Option<Dictation>>;
     /// Replace the transcription results (retry path). `final_text` becomes
-    /// `post_processed_text` when present, else `raw_text`.
+    /// `post_processed_text` when present, else `raw_text`. `status` is the
+    /// resolved outcome (`inserted`/`copied`) and clears `error_code` — a
+    /// retried `failed` row becomes a normal delivered entry (AC-002-09).
     fn update_text(
         &self,
         id: i64,
         raw_text: &str,
         post_processed_text: Option<&str>,
         instruction: Option<&str>,
+        status: &str,
     ) -> Result<()>;
     fn set_flagged(&self, id: i64, flagged: bool) -> Result<()>;
     fn delete(&self, id: i64) -> Result<()>;
@@ -236,6 +239,7 @@ impl DictationRepository for SqliteDictationRepository<'_> {
         raw_text: &str,
         post_processed_text: Option<&str>,
         instruction: Option<&str>,
+        status: &str,
     ) -> Result<()> {
         let final_text = post_processed_text.unwrap_or(raw_text);
         let updated = self.conn.execute(
@@ -244,14 +248,17 @@ impl DictationRepository for SqliteDictationRepository<'_> {
                  post_processed_text = ?2,
                  instruction = ?3,
                  final_text = ?4,
-                 word_count = ?5
-             WHERE id = ?6",
+                 word_count = ?5,
+                 status = ?6,
+                 error_code = NULL
+             WHERE id = ?7",
             params![
                 raw_text,
                 post_processed_text,
                 instruction,
                 final_text,
                 Self::word_count(final_text),
+                status,
                 id
             ],
         )?;
@@ -370,21 +377,47 @@ mod tests {
             .insert(&NewDictation::new("um dois".to_string(), None))
             .expect("insert");
 
-        repo.update_text(d.id, "um dois tres", Some("Um, dois, três."), None)
-            .expect("update_text");
+        repo.update_text(
+            d.id,
+            "um dois tres",
+            Some("Um, dois, três."),
+            None,
+            "inserted",
+        )
+        .expect("update_text");
         let d = repo.get(d.id).expect("get").expect("exists");
         assert_eq!(d.raw_text, "um dois tres");
         assert_eq!(d.final_text, "Um, dois, três.");
         assert_eq!(d.word_count, 3);
 
         // Without post-processing, final_text falls back to raw.
-        repo.update_text(d.id, "novo", None, None)
+        repo.update_text(d.id, "novo", None, None, "inserted")
             .expect("update_text");
         let d = repo.get(d.id).expect("get").expect("exists");
         assert_eq!(d.final_text, "novo");
         assert!(d.post_processed_text.is_none());
 
-        assert!(repo.update_text(999, "x", None, None).is_err());
+        assert!(repo.update_text(999, "x", None, None, "inserted").is_err());
+    }
+
+    #[test]
+    fn update_text_recovers_a_failed_row() {
+        let conn = setup();
+        let repo = repo(&conn);
+
+        let mut n = NewDictation::new(String::new(), Some("lost.wav".to_string()));
+        n.status = "failed".to_string();
+        n.error_code = Some("stt unavailable".to_string());
+        let d = repo.insert(&n).expect("insert");
+        assert_eq!(d.status, "failed");
+        assert_eq!(d.error_code.as_deref(), Some("stt unavailable"));
+
+        repo.update_text(d.id, "cheguei", None, None, "inserted")
+            .expect("update_text");
+        let d = repo.get(d.id).expect("get").expect("exists");
+        assert_eq!(d.status, "inserted");
+        assert_eq!(d.error_code, None);
+        assert_eq!(d.final_text, "cheguei");
     }
 
     #[test]
