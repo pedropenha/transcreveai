@@ -57,7 +57,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [x] **T-006** [P] **Adaptar** IPC: `tauri-specta` já gera `src/bindings.ts`; alinhar comandos e erros ao envelope `ok/error` do contrato. — Refs: [contracts §5](architecture/contracts.md#5-ipc-tauri)
 - [x] **T-007** **Adaptar** instância única, autostart e bandeja (já existem no Handy): verificar contra os AC e ajustar o menu à FR-010-14. — Refs: FR-010-13..15, FR-010-18
 - [x] **T-008** [P] **Direção de design** (`rules/web/design-quality.md`): estilo, paleta, tipografia e tokens a partir dos prints do Wispr, com as skills `frontend-design-direction` / `design-system`. Saída: `DESIGN.md` + tokens. Antes de T-040/T-042. — Refs: F001, NFR-010-05
-- [ ] **T-009** [P] **Base de testes E2E**: Playwright nas webviews (`e2e-testing`) + `windows-desktop-e2e` (pywinauto/UI Automation) para fluxos nativos, com fonte de áudio WAV em builds de teste. Inclui fixtures WAV pt-BR (fala curta/longu com muletas) usados também pela T-035. — Refs: `rules/common/testing.md`, F002 notas técnicas
+- [x] **T-009** [P] **Base de testes E2E**: Playwright nas webviews (`e2e-testing`) + `windows-desktop-e2e` (pywinauto/UI Automation) para fluxos nativos, com fonte de áudio WAV em builds de teste. Inclui fixtures WAV pt-BR (fala curta/longu com muletas) usados também pela T-035. — Refs: `rules/common/testing.md`, F002 notas técnicas
 
 ## Fase 1 — Ditado (v1)
 
@@ -68,7 +68,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [x] **T-012** **Estender** (refatorar) `managers/transcription.rs` (2.529 linhas, centrado no motor local) para o trait `SttProvider` + orquestrador com retry/fallback, dividindo o arquivo por domínio. — Refs: [contracts §2](architecture/contracts.md#2-sttprovider), FR-003-16
 - [ ] **T-013** [P] **Adaptar** provedor local whisper (`transcribe-cpp`): ciclo de vida do modelo e descarregar por ociosidade (existem), dicas de vocabulário (`custom_words`); verificar ou construir o filtro de alucinação. — Refs: FR-003-09, FR-003-12, FR-003-13, AC-003-05
 - [ ] **T-014** [P] **(v1.1+)** Provedores `openai`, `groq`, `openai_compat` (multipart, divisão > 20 MB, timeouts). O Handy não tem STT em nuvem. Adiada: na v1 só existe STT local (ADR-0002). — Refs: FR-003-14..16, AC-003-07
-- [ ] **T-015** [P] **Adaptar** gerenciador de modelos (`managers/model.rs`, `catalog/`: download retomável + SHA-256 já existem): verificar detecção de hardware, importar/excluir e espaço em disco. — Refs: FR-003-05..08, AC-003-01, AC-003-08, FR-011-24
+- [x] **T-015** [P] **Adaptar** gerenciador de modelos (`managers/model.rs`, `catalog/`: download retomável + SHA-256 já existem): verificar detecção de hardware, importar/excluir e espaço em disco. — Refs: FR-003-05..08, AC-003-01, AC-003-08, FR-011-24
 - [x] **T-016** [P] **Migrar** segredos: hoje o Handy guarda `post_process_api_keys` em texto puro no `settings.json`. Mover para o cofre do SO (`keyring`), com `secret_set`/`secret_clear`, e remover as chaves do JSON na migração. Na v1 cobre a chave do LLM BYOK (T-050, resumo de reunião). Passa por `ecc:security-reviewer`. Pré-requisito da v1. — Refs: FR-011-01..05, AC-011-01
 - [ ] **T-017** **(v1.1+)** Baseline de WER/latência com a skill `benchmark` sobre os fixtures WAV da T-009. — Refs: NFR-003-02
 
