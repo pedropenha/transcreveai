@@ -1412,7 +1412,6 @@ async meetingList() : Promise<Result<Meeting[], CommandError>> {
 }
 },
 /**
-<<<<<<< HEAD
  * Segments of a meeting in meeting-clock order (T-065/T-066): `speech`,
  * `dictation_marker` and `gap_marker` rows. Excluded mic speech
  * (FR-009-10) is returned — the UI hides `excluded` rows and shows the
@@ -1422,7 +1421,12 @@ async meetingList() : Promise<Result<Meeting[], CommandError>> {
 async meetingSegments(meetingId: string) : Promise<Result<MeetingSegment[], CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("meeting_segments", { meetingId }) };
-=======
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * FR-009-25 (T-068): full-text search over title, summary, "Minhas notas"
  * and transcript. `query` is raw user input — `fts_match_query` strips
  * everything FTS5 would choke on; an empty/unindexable query lists all
@@ -1446,7 +1450,6 @@ async meetingSearch(query: string) : Promise<Result<Meeting[], CommandError>> {
 async meetingExportMarkdown(id: string) : Promise<Result<string, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("meeting_export_markdown", { id }) };
->>>>>>> feat/t-068-markdown-list
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2249,38 +2252,6 @@ action: string;
  * Shipped with the app; not user-deletable.
  */
 builtin: boolean }
-export type MeetingSegment = { 
-/**
- * uuid
- */
-id: string; meeting_id: string; 
-/**
- * 'mic' | 'system'
- */
-track: string; 
-/**
- * "Você", "Outros", "Falante 1"…
- */
-speaker: string | null; 
-/**
- * Milliseconds relative to the meeting's `started_at`.
- */
-start_ms: number; end_ms: number; text: string; 
-/**
- * 'speech' | 'dictation_marker' | 'gap_marker'
- */
-kind: string; 
-/**
- * false while the segment is still a partial transcript.
- */
-is_final: boolean; 
-/**
- * FR-009-10/AC-009-03 (T-065): mic speech overlapping a dictation
- * interval is excluded from the transcript — the meeting UI hides these
- * rows and shows the covering `dictation_marker` instead. Never set on
- * `system` rows or on markers themselves.
- */
-excluded: boolean }
 /**
  * Hydration payload for the meeting window (T-066): the row plus everything
  * its three tabs render — transcript segments and the "Minhas notas" body.
@@ -2320,7 +2291,14 @@ kind: string;
 /**
  * false while the segment is still a partial transcript.
  */
-is_final: boolean }
+is_final: boolean;
+/**
+ * FR-009-10/AC-009-03 (T-065): mic speech overlapping a dictation
+ * interval is excluded from the transcript — the meeting UI hides these
+ * rows and shows the covering `dictation_marker` instead. Never set on
+ * `system` rows or on markers themselves.
+ */
+excluded: boolean }
 /**
  * `meeting://state` payload (contracts.md §5).
  */

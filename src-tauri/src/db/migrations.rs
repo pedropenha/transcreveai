@@ -360,6 +360,7 @@ pub(crate) static MIGRATIONS: &[M] = &[
 Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todos; trate Minhas notas do usuário como contexto prioritário; escreva no idioma predominante da reunião; cite horários (mm:ss) quando relevante.',
             1,
             1);",
+    ),
 
     // --- FTS over meeting title + summary (12, T-068) -------------------------
     // FR-009-25 searches title, notes, summary and transcript. Migration 9

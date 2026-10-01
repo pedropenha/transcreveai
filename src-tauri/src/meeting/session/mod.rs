@@ -153,6 +153,7 @@ pub(crate) enum Command {
     /// the single source of timestamp truth.
     Dictation {
         capturing: bool,
+    },
     /// `detector://meeting` reported `meeting_ended` for this id — the
     /// machine decides whether it owns the link (FR-008-14, T-069).
     DetectionEnded {

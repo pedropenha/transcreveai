@@ -19,12 +19,12 @@ use crate::db::meetings::{
     Meeting, MeetingRepository, MeetingSegment, MeetingSegmentRepository, SqliteMeetingRepository,
     SqliteMeetingSegmentRepository,
 };
+use crate::db::notes::{Note, NoteRepository, SqliteNoteRepository};
 use crate::db::summary_templates::{
     SqliteSummaryTemplateRepository, SummaryTemplate, SummaryTemplateRepository,
 };
-use crate::meeting::postprocess::{Job, MeetingPostProcessor};
-use crate::db::notes::{Note, NoteRepository, SqliteNoteRepository};
 use crate::meeting::markdown::{markdown_labels, render_meeting_markdown};
+use crate::meeting::postprocess::{Job, MeetingPostProcessor};
 use crate::meeting::session::{
     meeting_recording_active, open_session_db, remove_meeting_audio_dir, MeetingSessionManager,
     MeetingStateEvent, StartRequest,
@@ -313,6 +313,8 @@ pub fn meeting_segments(app: AppHandle, meeting_id: String) -> CommandResult<Vec
                 e,
             )
         })
+}
+
 /// FR-009-25 (T-068): full-text search over title, summary, "Minhas notas"
 /// and transcript. `query` is raw user input — `fts_match_query` strips
 /// everything FTS5 would choke on; an empty/unindexable query lists all

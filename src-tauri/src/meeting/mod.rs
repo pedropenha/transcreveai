@@ -257,7 +257,7 @@ pub mod live;
 
 // [postprocess] (T-067) escuta meeting://process-requested e roda
 // transcrição de blocos pendentes → resumo → título sugerido (FR-009-16..22).
-pub mod postprocess;
 pub mod markdown;
+pub mod postprocess;
 pub mod recovery;
 pub mod session;

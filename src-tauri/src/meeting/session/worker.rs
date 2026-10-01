@@ -170,6 +170,8 @@ impl Worker {
             }
             Command::Dictation { capturing } => {
                 self.handle_dictation(capturing);
+                self.flush();
+            }
             Command::DetectionEnded { detection_id } => {
                 // FR-008-14 (T-069): the machine ignores ids it is not linked
                 // to and every id when auto-stop is off — this forward is

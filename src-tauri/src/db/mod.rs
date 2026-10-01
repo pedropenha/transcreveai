@@ -14,6 +14,7 @@ pub mod app_profiles;
 pub mod dictations;
 pub mod dictionary;
 pub mod local_models;
+pub mod meeting_app_rules;
 pub mod meeting_blocks;
 pub mod meetings;
 mod migrations;
