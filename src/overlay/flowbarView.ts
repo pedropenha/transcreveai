@@ -34,6 +34,7 @@ export type OverlayHint =
   | "transcribing"
   | "processing"
   | "inserting"
+  | "meeting"
   | "nothing-heard";
 
 /** The Flow Bar's visual classes (F001 table + existing live stream). */
@@ -49,9 +50,53 @@ export type FlowbarView =
   | "error" // ⚠ pill; hover shows cause + retry (AC-001-08)
   | "nothing-heard"; // "Nada ouvido" flash (FR-002-14)
 
-/** `meeting://state.status` reduced to what the bar needs (T-064).
- * `processing`/`error`/absent all collapse into "idle". */
-export type MeetingStatus = "idle" | "recording" | "paused";
+/** `meeting://state.status` reduced to what the bar needs (T-064/T-069).
+ * Live statuses claim the meeting pill; post-processing statuses claim the
+ * terminal faces ("processing" → working, "ready"/"recovered" → done,
+ * "error" → error). Anything else collapses into "idle". */
+export type MeetingStatus =
+  | "idle"
+  | "recording"
+  | "paused"
+  | "processing"
+  | "ready"
+  | "error"
+  | "recovered";
+
+const MEETING_TERMINAL_STATUSES = new Set(["ready", "error", "recovered"]);
+const MEETING_POSTPROCESS_STATUSES = new Set([
+  "processing",
+  "ready",
+  "error",
+  "recovered",
+]);
+
+/** Whether an event may claim the Flow Bar's single meeting face. Lifecycle
+ * events are still broadcast to the Hub; this only protects the pill from an
+ * older meeting's post-processing while another meeting is active. */
+export function meetingStateClaimsFlowbar(
+  currentStatus: MeetingStatus,
+  currentMeetingId: string | null,
+  incomingStatus: string,
+  incomingMeetingId: string,
+): boolean {
+  if (currentMeetingId === incomingMeetingId) {
+    if (MEETING_POSTPROCESS_STATUSES.has(incomingStatus)) return true;
+    // A stale capture tick must not regress processing/terminal back to live.
+    return !(
+      currentStatus === "processing" ||
+      MEETING_TERMINAL_STATUSES.has(currentStatus)
+    );
+  }
+  if (currentMeetingId === null) return true;
+  if (incomingStatus === "recording" || incomingStatus === "paused") {
+    return true;
+  }
+  return (
+    MEETING_TERMINAL_STATUSES.has(currentStatus) &&
+    MEETING_POSTPROCESS_STATUSES.has(incomingStatus)
+  );
+}
 
 export interface FlowbarViewInput {
   /** `flowbar_visibility === "always"` && overlay enabled — the slit lives
@@ -61,8 +106,9 @@ export interface FlowbarViewInput {
   windowActive: boolean;
   /** Latest coordinator `session://state`. */
   phase: SessionPhase;
-  /** Latest `meeting://state` status (T-064), "idle" when no meeting runs. */
-  meeting: MeetingStatus;
+  /** Latest `meeting://state` status (T-064), "idle" when no meeting runs.
+   * Accepts unknown future statuses — they collapse to the idle face. */
+  meeting: MeetingStatus | (string & {});
   /** Latest `session://state.notice` (e.g. "nothing_heard"). */
   notice: string | null;
   /** Latest `show-overlay` hint, `null` after `hide-overlay`. */
@@ -105,13 +151,6 @@ export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
     return hint === "streaming" ? "streaming" : "recording";
   }
 
-  // FR-009-07: a recording/paused meeting claims the pill while the
-  // dictation session is idle — its ■ stops the *meeting*, so it must not
-  // impersonate the dictation pill (whose ■ ends-and-inserts). Any dictation
-  // face wins during the overlap; the red tray icon still marks the meeting.
-  if (meeting !== "idle" && phase === "idle") {
-    return "meeting-recording";
-  }
   if (
     phase === "transcribing" ||
     phase === "processing" ||
@@ -122,11 +161,29 @@ export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
 
   // phase === "idle": fall back to whatever the window was last told to show.
   // Covers the race where `show-overlay` arrives before the coordinator's
-  // first state event for a fresh session.
-  if (windowActive && hint && hint !== "idle") {
+  // first state event. This must outrank the meeting pill: that pill's ■
+  // stops the meeting and would otherwise hijack a dictation stop gesture.
+  if (windowActive && hint && hint !== "idle" && hint !== "meeting") {
     if (hint === "streaming") return "streaming";
     if (hint === "recording") return "recording";
     return "working"; // transcribing/processing/inserting hints
+  }
+
+  // FR-009-07: a recording/paused meeting claims the pill while the
+  // dictation session is idle — its ■ stops the *meeting*, so it must not
+  // impersonate the dictation pill (whose ■ ends-and-inserts). Any dictation
+  // face wins during the overlap; the red tray icon still marks the meeting.
+  // Post-processing statuses keep a terminal face up instead of collapsing
+  // to idle while the transcript/summary is still being built (T-069); an
+  // unknown status falls through to the resting faces rather than pinning a
+  // stale face on screen.
+  if (meeting !== "idle" && phase === "idle") {
+    if (meeting === "processing") return "working";
+    if (meeting === "ready" || meeting === "recovered") return "done";
+    if (meeting === "error") return "error";
+    if (meeting === "recording" || meeting === "paused") {
+      return "meeting-recording";
+    }
   }
 
   // Resting: the slit only lives on screen when the bar is always-on or a

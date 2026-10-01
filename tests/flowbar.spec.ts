@@ -52,6 +52,15 @@ async function openFlowbar(
 ): Promise<TauriMock> {
   const mock = await installTauriMock(page, { get_app_settings: settings });
   await page.goto(OVERLAY_URL);
+  await expect
+    .poll(() =>
+      mock.calls.some(
+        (call) =>
+          call.cmd === "plugin:event|listen" &&
+          call.args.event === "meeting://state",
+      ),
+    )
+    .toBe(true);
   return mock;
 }
 
@@ -112,6 +121,9 @@ test.describe("Flow Bar — idle slit & hover actions", () => {
       flowbar_visibility: "during_recording",
     });
     await expect(page.locator(".f-idle")).toHaveCount(0);
+    // The live region stays mounted while the visual card is hidden, so the
+    // first state change is announced instead of mounting already populated.
+    await expect(page.locator(".fbar-sr[aria-live='polite']")).toHaveCount(1);
 
     await emitTauriEvent(page, "show-overlay", "recording");
     await emitTauriEvent(page, "session://state", sessionEvent("recording"));
@@ -134,13 +146,22 @@ test.describe("Flow Bar — session states", () => {
     // The waveform only reacts once the backend reports real samples flowing.
     await emitTauriEvent(page, "recording-ready", null);
 
-    // Muted/no-input audio → flat bars.
+    // Muted/no-input audio and quiet room tone → flat bars.
     const heightOf = (i: number) =>
       page
         .locator(".swave i")
         .nth(i)
         .evaluate((el) => el.clientHeight);
     const flat = await heightOf(3);
+    for (let i = 0; i < 12; i += 1) {
+      await emitTauriEvent(page, "audio://level", {
+        rms: Array(16).fill(0.05),
+      });
+    }
+    // Let the smoothed React state settle before reading the rendered height.
+    await page.waitForTimeout(100);
+    expect(await heightOf(3)).toBe(flat);
+
     await emitTauriEvent(page, "audio://level", {
       rms: Array(16).fill(0.95),
     });
@@ -149,6 +170,182 @@ test.describe("Flow Bar — session states", () => {
     // The ■ button toggles the session off through the same binding edge.
     await page.getByRole("button", { name: /Stop/i }).click();
     expect(mock.calls.map((c) => c.cmd)).toContain("flowbar_toggle_dictation");
+  });
+
+  test("live streaming text updates while the session is recording", async ({
+    page,
+  }) => {
+    const mock = await openFlowbar(page);
+    await emitTauriEvent(page, "show-overlay", "streaming");
+    await emitTauriEvent(page, "session://state", sessionEvent("recording"));
+
+    const reportedRect = () =>
+      mock.calls
+        .filter((call) => call.cmd === "flowbar_set_hover")
+        .map((call) => call.args.rect)
+        .filter(
+          (
+            rect,
+          ): rect is { x: number; y: number; width: number; height: number } =>
+            rect !== null,
+        )
+        .at(-1);
+    await expect.poll(() => reportedRect()?.width).toBeGreaterThan(0);
+    const collapsedWidth = reportedRect()?.width ?? 0;
+
+    await emitTauriEvent(page, "stream-text-event", {
+      committed: "hello",
+      tentative: " world",
+    });
+    // The live panel grows as text arrives; the native hit-test bounds must
+    // grow with it or the transcript area becomes click-through mid-session.
+    await expect
+      .poll(() => reportedRect()?.width ?? 0)
+      .toBeGreaterThan(collapsedWidth);
+    await expect(page.locator(".stext .committed")).toContainText("hello");
+    await expect(page.locator(".stext .tentative")).toContainText("world");
+
+    await emitTauriEvent(page, "stream-phase-event", {
+      phase: "working",
+      kind: "transcribing",
+    });
+    await expect(page.locator(".sspinner")).toBeVisible();
+    await expect(page.locator(".stext .committed")).toContainText("hello");
+  });
+
+  test("meeting recording shows live audio bars alongside its controls", async ({
+    page,
+  }) => {
+    await openFlowbar(page);
+    await emitTauriEvent(page, "meeting://state", {
+      meeting_id: "meeting-1",
+      status: "recording",
+      elapsed_ms: 4_000,
+    });
+
+    const meeting = page.locator(".f-meeting");
+    await expect(meeting).toBeVisible();
+    await expect(page.getByRole("button", { name: /Pause/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Stop meeting/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /elapsed time 0:04/i }),
+    ).toBeVisible();
+    await expect(meeting.locator(".swave i")).toHaveCount(7);
+
+    const heightOf = (i: number) =>
+      meeting
+        .locator(".swave i")
+        .nth(i)
+        .evaluate((element) => element.clientHeight);
+    const flat = await heightOf(3);
+    await emitTauriEvent(page, "audio://level", { rms: Array(16).fill(0.95) });
+    await expect.poll(() => heightOf(3)).toBeGreaterThan(flat);
+
+    await emitTauriEvent(page, "meeting://state", {
+      meeting_id: "meeting-1",
+      status: "paused",
+      elapsed_ms: 5_000,
+    });
+    await expect(page.getByRole("button", { name: /Resume/i })).toBeVisible();
+    await expect.poll(() => heightOf(3)).toBe(3);
+  });
+
+  test("paused meeting is restored from the backend snapshot on mount", async ({
+    page,
+  }) => {
+    await installTauriMock(page, {
+      get_app_settings: ALWAYS_ON_SETTINGS,
+      meeting_current: {
+        meeting_id: "meeting-paused",
+        status: "paused",
+        elapsed_ms: 42_000,
+      },
+    });
+    await page.goto(OVERLAY_URL);
+
+    await expect(page.locator(".f-meeting")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Resume/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /elapsed time 0:42/i }),
+    ).toBeVisible();
+  });
+
+  test("meeting processing and terminal states stay visible and reopen the transcript", async ({
+    page,
+  }) => {
+    const mock = await openFlowbar(page);
+    await emitTauriEvent(page, "meeting://state", {
+      meeting_id: "meeting-1",
+      status: "recording",
+      elapsed_ms: 4_000,
+    });
+    await expect(page.locator(".f-meeting")).toBeVisible();
+
+    // A delayed terminal event from an older meeting cannot steal the live
+    // stop control; only the active meeting owns this pill.
+    await emitTauriEvent(page, "meeting://state", {
+      meeting_id: "meeting-old",
+      status: "ready",
+      elapsed_ms: 4_000,
+    });
+    await expect(page.locator(".f-meeting")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Pause/i })).toBeVisible();
+
+    await emitTauriEvent(page, "meeting://state", {
+      meeting_id: "meeting-1",
+      status: "processing",
+      elapsed_ms: 4_000,
+    });
+    const working = page.getByRole("button", {
+      name: /transcribing meeting/i,
+    });
+    await expect(working).toBeVisible();
+    await working.click();
+    expect(
+      mock.calls.find(
+        (call) =>
+          call.cmd === "meeting_window_open" &&
+          call.args.meetingId === "meeting-1",
+      ),
+    ).toBeTruthy();
+
+    await emitTauriEvent(page, "meeting://state", {
+      meeting_id: "meeting-1",
+      status: "ready",
+      elapsed_ms: 4_000,
+    });
+    const ready = page.getByRole("button", {
+      name: /open meeting transcript/i,
+    });
+    await expect(ready).toBeVisible();
+    await ready.click();
+    expect(
+      mock.calls.find(
+        (call) =>
+          call.cmd === "meeting_window_open" &&
+          call.args.meetingId === "meeting-1",
+      ),
+    ).toBeTruthy();
+
+    await emitTauriEvent(page, "meeting://state", {
+      meeting_id: "meeting-2",
+      status: "error",
+      elapsed_ms: 8_000,
+    });
+    const failed = page.getByRole("button", {
+      name: /meeting processing failed/i,
+    });
+    await expect(failed).toBeVisible();
+    await failed.click();
+    expect(
+      mock.calls.find(
+        (call) =>
+          call.cmd === "meeting_window_open" &&
+          call.args.meetingId === "meeting-2",
+      ),
+    ).toBeTruthy();
   });
 
   test("done and error faces come from session://state; error hover offers retry (AC-001-08)", async ({
@@ -188,9 +385,9 @@ test.describe("Flow Bar — session states", () => {
     );
     await expect(page.locator(".f-heard")).toContainText("Nothing heard");
 
-    await emitTauriEvent(page, "session://state", sessionEvent("idle"));
     await emitTauriEvent(page, "hide-overlay", null);
-    // Always-on: the bar returns to the slit instead of unmapping.
+    // The hide event ends the one-shot notice; production does not emit a
+    // second session state just to clear it.
     await expect(page.locator(".f-idle")).toBeVisible();
   });
 });

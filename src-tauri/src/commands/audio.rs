@@ -168,15 +168,12 @@ pub fn open_microphone_privacy_settings() -> CommandResult<()> {
 #[tauri::command]
 #[specta::specta]
 pub async fn update_microphone_mode(app: AppHandle, always_on: bool) -> CommandResult<()> {
-    // Update settings (fast, stays inline)
-    let mut settings = get_settings(&app);
-    settings.always_on_microphone = always_on;
-    write_settings(&app, settings);
-
-    // Update the audio manager mode. update_mode can stop/start the cpal stream
-    // (blocking CoreAudio) and takes the manager std mutexes — run it on a
-    // blocking thread, NOT inline on the webview/main run loop (a slow device
-    // open/close would freeze the UI).
+    // Apply the runtime change first — update_mode can stop/start the cpal
+    // stream (blocking CoreAudio) and takes the manager std mutexes, so it
+    // runs on a blocking thread, NOT inline on the webview/main run loop.
+    // The setting is only persisted once the runtime accepted it; a rejected
+    // change (for example while a meeting owns the shared mic stream) must
+    // not survive as a stored preference.
     let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
     let new_mode = if always_on {
         MicrophoneMode::AlwaysOn
@@ -184,16 +181,20 @@ pub async fn update_microphone_mode(app: AppHandle, always_on: bool) -> CommandR
         MicrophoneMode::OnDemand
     };
 
-    tokio::task::spawn_blocking(move || rm.update_mode(new_mode))
+    let result = tokio::task::spawn_blocking(move || rm.update_mode(new_mode))
         .await
-        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Audio task failed", e))?
-        .map_err(|e| {
-            CommandError::logged(
-                CommandErrorCode::AudioDevice,
-                "Failed to update microphone mode",
-                e,
-            )
-        })
+        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Audio task failed", e))?;
+    if let Err(error) = result {
+        return Err(CommandError::logged(
+            CommandErrorCode::AudioDevice,
+            "Failed to update microphone mode",
+            error,
+        ));
+    }
+    let mut settings = get_settings(&app);
+    settings.always_on_microphone = always_on;
+    write_settings(&app, settings);
+    Ok(())
 }
 
 #[tauri::command]
@@ -238,6 +239,7 @@ pub async fn get_available_microphones() -> CommandResult<Vec<AudioDevice>> {
 #[specta::specta]
 pub async fn set_selected_microphone(app: AppHandle, device_name: String) -> CommandResult<()> {
     let mut settings = get_settings(&app);
+    let previous_device = settings.selected_microphone.clone();
     settings.selected_microphone = if device_name == "default" {
         None
     } else {
@@ -249,16 +251,22 @@ pub async fn set_selected_microphone(app: AppHandle, device_name: String) -> Com
     // can restart the cpal stream (blocking CoreAudio) — run it on a blocking
     // thread, not inline on the webview/main run loop.
     let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
-    tokio::task::spawn_blocking(move || rm.update_selected_device())
+    let result = tokio::task::spawn_blocking(move || rm.update_selected_device())
         .await
-        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Audio task failed", e))?
-        .map_err(|e| {
-            CommandError::logged(
-                CommandErrorCode::AudioDevice,
-                "Failed to update selected device",
-                e,
-            )
-        })
+        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Audio task failed", e))?;
+    if let Err(error) = result {
+        // The persisted selection drives the reopen inside the manager; restore
+        // it too so a rejected in-meeting change does not apply on next launch.
+        let mut rollback = get_settings(&app);
+        rollback.selected_microphone = previous_device;
+        write_settings(&app, rollback);
+        return Err(CommandError::logged(
+            CommandErrorCode::AudioDevice,
+            "Failed to update selected device",
+            error,
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]

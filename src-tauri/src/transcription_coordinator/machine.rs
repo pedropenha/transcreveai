@@ -202,6 +202,10 @@ struct PendingPress {
     /// within the tap boundary (a tap). An unlocked pending press is a key we
     /// believe is still held.
     locked: bool,
+    /// For hold-or-toggle taps completed while busy: the instant that classified
+    /// the press as a tap. Preserving it lets the drained session ignore the
+    /// second half of the same quick double-tap instead of stopping at <300 ms.
+    tap_locked_at: Option<Instant>,
     /// Policy snapshot at press time (duration limit / double-tap behaviour).
     policy: SessionPolicy,
 }
@@ -247,6 +251,10 @@ pub(crate) struct Session {
     /// window: the session keeps capturing until `released + DOUBLE_TAP_WINDOW`
     /// waiting for the second tap that locks hands-free (FR-002-07).
     awaiting_second_tap_since: Option<Instant>,
+    /// Hold-or-toggle locks on the first tap. Track that release so an
+    /// immediate second tap is a harmless confirmation instead of stopping a
+    /// session that can only produce "nothing heard".
+    tap_locked_at: Option<Instant>,
     /// Whether the T-60s duration warning was already emitted.
     duration_warned: bool,
 }
@@ -632,6 +640,7 @@ impl CoordinatorState {
             max_duration: input.policy.max_duration,
             double_tap: input.policy.double_tap,
             awaiting_second_tap_since: None,
+            tap_locked_at: None,
             duration_warned: false,
         };
         let effect = Effect::Start {
@@ -656,6 +665,7 @@ impl CoordinatorState {
             max_duration: pending.policy.max_duration,
             double_tap: pending.policy.double_tap,
             awaiting_second_tap_since: None,
+            tap_locked_at: pending.tap_locked_at,
             duration_warned: false,
         };
         let effect = Effect::Start {
@@ -804,6 +814,18 @@ impl CoordinatorState {
                     // every press ends it, even if the recording began under a
                     // hold mode (the setting changed mid-recording) — otherwise
                     // nothing but Escape could stop it.
+                    if input.mode == ShortcutActivation::HoldOrToggle
+                        && !input.external
+                        && session.tap_locked_at.is_some_and(|locked_at| {
+                            now.duration_since(locked_at) < DOUBLE_TAP_WINDOW
+                        })
+                    {
+                        debug!(
+                            "Ignoring immediate second tap for '{}': session already locked",
+                            input.binding_id
+                        );
+                        return None;
+                    }
                     if session.locked || input.mode == ShortcutActivation::Toggle {
                         return self.finish_capture();
                     }
@@ -896,6 +918,9 @@ impl CoordinatorState {
                 );
                 if let Some(p) = self.pending.get_mut(pos) {
                     p.locked = true;
+                    if release.mode == ShortcutActivation::HoldOrToggle {
+                        p.tap_locked_at = Some(release.released_at);
+                    }
                 }
             }
         }
@@ -957,6 +982,9 @@ impl CoordinatorState {
                         s.binding_id
                     );
                     s.locked = true;
+                    if release.mode == ShortcutActivation::HoldOrToggle {
+                        s.tap_locked_at = Some(release.released_at);
+                    }
                 }
                 self.commit_recording();
                 None
@@ -994,6 +1022,7 @@ impl CoordinatorState {
                 self.pending.push_back(PendingPress {
                     // Toggle never ends on a release: locked from the start.
                     locked: input.mode == ShortcutActivation::Toggle,
+                    tap_locked_at: None,
                     binding_id: input.binding_id,
                     hotkey_string: input.hotkey_string,
                     pressed_at: now,

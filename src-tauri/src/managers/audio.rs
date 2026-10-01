@@ -845,6 +845,10 @@ impl AudioRecordingManager {
     }
 
     pub fn stop_microphone_stream(&self) {
+        if crate::meeting::session::meeting_recording_active() {
+            debug!("Keeping shared microphone stream open for the active meeting");
+            return;
+        }
         let mut open_flag = self.is_open.lock().unwrap();
         if !*open_flag {
             return;
@@ -871,9 +875,30 @@ impl AudioRecordingManager {
         debug!("Microphone stream stopped");
     }
 
+    /// Called by consumers that borrow the shared stream (meeting capture) when
+    /// they finish. In on-demand mode this applies the same lazy-close policy
+    /// as dictation; in always-on mode the stream stays open by design.
+    pub fn release_microphone_stream_if_idle(&self) {
+        if !matches!(*self.state.lock().unwrap(), RecordingState::Idle) {
+            return;
+        }
+        if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+            if get_settings(&self.app_handle).lazy_stream_close {
+                self.schedule_lazy_close();
+            } else {
+                self.stop_microphone_stream();
+            }
+        }
+    }
+
     /* ---------- mode switching --------------------------------------------- */
 
     pub fn update_mode(&self, new_mode: MicrophoneMode) -> Result<(), anyhow::Error> {
+        if crate::meeting::session::meeting_recording_active() {
+            return Err(anyhow::anyhow!(
+                "Cannot change the microphone mode while a meeting is recording"
+            ));
+        }
         let cur_mode = self.mode.lock().unwrap().clone();
 
         match (cur_mode, &new_mode) {
@@ -964,6 +989,11 @@ impl AudioRecordingManager {
     /// detector before reporting success. A failed reopen restores the previous
     /// recorder so the persisted setting can remain unchanged.
     pub fn update_vad_backend(&self, backend: VadBackend) -> Result<(), anyhow::Error> {
+        if crate::meeting::session::meeting_recording_active() {
+            return Err(anyhow::anyhow!(
+                "Cannot change the VAD backend while a meeting is recording"
+            ));
+        }
         let state = self.state.lock().unwrap();
         if !matches!(*state, RecordingState::Idle) {
             return Err(anyhow::anyhow!(
@@ -1014,6 +1044,11 @@ impl AudioRecordingManager {
     }
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {
+        if crate::meeting::session::meeting_recording_active() {
+            return Err(anyhow::anyhow!(
+                "Cannot change the input device while a meeting is recording"
+            ));
+        }
         // Device settings changed; re-enumerate the device and restart capture.
         self.invalidate_device_cache();
         let was_open = *self.is_open.lock().unwrap();
@@ -1029,6 +1064,11 @@ impl AudioRecordingManager {
         &self,
         selected_channel: Option<u16>,
     ) -> Result<(), anyhow::Error> {
+        if crate::meeting::session::meeting_recording_active() {
+            return Err(anyhow::anyhow!(
+                "Cannot change the input channel while a meeting is recording"
+            ));
+        }
         // Serialize against recording start/stop. Restarting an active capture
         // would discard its samples and leave the manager's recording state out
         // of sync with the new recorder.
@@ -1074,16 +1114,14 @@ impl AudioRecordingManager {
         self.cancel_generation.load(Ordering::Acquire)
     }
 
-    /// Consumed by the meeting session (T-064); not yet wired to a caller.
-    #[allow(dead_code)]
     /// Meeting notetaker (F009/T-063): attach a consumer to the shared mic
     /// stream at `FrameTap::Raw` with `when_idle`, so the meeting's mic track
     /// keeps receiving every frame — including between dictation sessions and
     /// audio the dictation VAD would withhold — without opening the mic twice.
     ///
     /// Fails when the stream is not open: call `start_microphone_stream`
-    /// first. Runtime subscribers do not survive a stream rebuild — the caller
-    /// must re-subscribe after `needs_reopen` recovery.
+    /// first. Runtime subscribers are restored by the recorder across stream
+    /// rebuilds until `unsubscribe_frame_consumer` removes them.
     pub fn subscribe_frame_consumer(
         &self,
         callback: AudioFrameCallback,

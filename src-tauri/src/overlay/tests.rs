@@ -3,11 +3,45 @@
 //! click-through hit-test predicate, and presence/dwell bookkeeping.
 
 use super::geometry::{docked_position, effective_edge, BarEdge};
-use super::positioning::is_mouse_within_monitor;
+use super::positioning::{
+    is_mouse_within_monitor, monitor_index_for_rect, preferred_monitor_point,
+};
 #[cfg(target_os = "windows")]
 use super::win32::windows_overlay_bounds_from_area;
 use super::*;
 use tauri::{PhysicalPosition, PhysicalSize};
+
+#[test]
+fn follow_mode_prefers_foreground_over_cursor() {
+    use crate::settings::FlowbarFollow;
+
+    assert_eq!(
+        preferred_monitor_point(FlowbarFollow::ForegroundMonitor, Some((960, 540))),
+        Some((960, 540))
+    );
+    assert_eq!(
+        preferred_monitor_point(FlowbarFollow::Cursor, Some((960, 540))),
+        None
+    );
+    assert_eq!(
+        preferred_monitor_point(FlowbarFollow::PrimaryMonitor, Some((960, 540))),
+        None
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn toast_anchor_selects_the_monitor_containing_the_flowbar() {
+    let monitors = [(0, 0, 2560, 1400), (2560, 0, 1024, 728)];
+    assert_eq!(
+        monitor_index_for_rect((1080.0, 1264.0, 400.0, 120.0), &monitors),
+        Some(0)
+    );
+    assert_eq!(
+        monitor_index_for_rect((2800.0, 600.0, 400.0, 120.0), &monitors),
+        Some(1)
+    );
+}
 
 #[test]
 fn monitor_hit_test_uses_half_open_physical_bounds() {
@@ -315,6 +349,26 @@ fn snooze_suppresses_until_deadline() {
     settings.flowbar_snoozed_until_ms = Some(crate::tray::now_unix_ms() + 60_000);
     assert!(flowbar_snoozed(&settings));
     assert!(flowbar_suppressed(&settings));
+}
+
+#[test]
+fn session_hide_stays_mapped_for_always_on_or_an_active_meeting() {
+    assert!(!session_hide_can_unmap(true, false));
+    assert!(!session_hide_can_unmap(false, true));
+    assert!(!session_hide_can_unmap(true, true));
+    assert!(session_hide_can_unmap(false, false));
+}
+
+#[test]
+fn meeting_status_claims_overlay_until_terminal_dwell_expires() {
+    let now = now_unix_ms_u64();
+    assert!(meeting_status_claims_overlay("recording", 0, now));
+    assert!(meeting_status_claims_overlay("paused", 0, now));
+    assert!(meeting_status_claims_overlay("processing", 0, now));
+    assert!(meeting_status_claims_overlay("ready", now + 1_000, now));
+    assert!(meeting_status_claims_overlay("error", now + 1_000, now));
+    assert!(!meeting_status_claims_overlay("ready", now, now));
+    assert!(!meeting_status_claims_overlay("idle", now + 1_000, now));
 }
 
 #[test]

@@ -101,6 +101,34 @@ fn ptt_tap_discards_immediately_when_double_tap_disabled() {
     assert!(matches!(state.stage, Stage::Idle));
 }
 
+/// Hold-or-toggle already locks on the first tap. Treating an immediate
+/// second tap as "stop" makes the common double-tap gesture produce a
+/// sub-300 ms session and a misleading "Nada ouvido".
+#[test]
+fn hold_or_toggle_double_tap_confirmation_does_not_stop_locked_session() {
+    let mut state = CoordinatorState::new();
+    let t0 = Instant::now();
+    let mode = ShortcutActivation::HoldOrToggle;
+
+    state.on_input(input(mode, true), t0);
+    state.on_input(input(mode, false), t0 + ms(80));
+    assert!(state.on_grace_expired().is_none());
+    assert!(matches!(state.stage, Stage::Recording(_)));
+    assert!(state.is_locked());
+
+    // The second half of the double tap confirms the locked session instead
+    // of stopping it before the 300 ms "nothing heard" floor.
+    assert!(state.on_input(input(mode, true), t0 + ms(150)).is_none());
+    assert!(state.on_input(input(mode, false), t0 + ms(220)).is_none());
+    assert!(matches!(state.stage, Stage::Recording(_)));
+
+    assert!(matches!(
+        state.on_input(input(mode, true), t0 + ms(1_000)),
+        Some(Effect::Stop { .. })
+    ));
+    assert!(matches!(state.stage, Stage::Transcribing(_)));
+}
+
 /// During the second-tap window the session still captures — a stray release
 /// for the same binding must not resolve as a hold.
 #[test]
@@ -615,6 +643,40 @@ fn hold_or_toggle_drain_inside_busy_release_grace_still_classifies_tap() {
 
     assert!(state.on_grace_expired().is_none());
     assert!(state.is_locked(), "the deferred 100ms release is a tap");
+}
+
+/// A tap that was classified while the pipeline was busy must carry its tap
+/// timestamp into the drained session. Otherwise the second half of a quick
+/// double-tap lands inside the new session's first 300ms and is misread as a
+/// stop, producing "Nada ouvido" for the exact gesture that locked it.
+#[test]
+fn busy_tap_keeps_double_tap_grace_after_drain() {
+    let mode = ShortcutActivation::HoldOrToggle;
+    let mut state = CoordinatorState::new();
+    let t0 = Instant::now();
+    drive_into_busy(&mut state, t0);
+
+    state.on_input(input(mode, true), t0 + ms(1000));
+    state.on_input(input(mode, false), t0 + ms(1100));
+    assert!(state.on_grace_expired().is_none());
+    assert!(matches!(
+        state.on_pipeline_finished(PipelineOutcome::Done, t0 + ms(1110)),
+        Some(Effect::Start { .. })
+    ));
+
+    // The second tap is still inside the original tap's double-tap window.
+    assert!(state.on_input(input(mode, true), t0 + ms(1200)).is_none());
+    assert!(state.on_input(input(mode, false), t0 + ms(1260)).is_none());
+    assert!(
+        state.stage.is_capturing(),
+        "the confirming tap must not finish the drained session"
+    );
+
+    assert!(matches!(
+        state.on_input(input(mode, true), t0 + ms(3000)),
+        Some(Effect::Stop { .. })
+    ));
+    assert!(matches!(state.stage, Stage::Transcribing(_)));
 }
 
 /// X11 auto-repeat while busy, key still held at the drain: recording

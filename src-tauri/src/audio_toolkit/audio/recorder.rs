@@ -203,11 +203,11 @@ pub struct AudioRecorder {
     worker_handle: Option<std::thread::JoinHandle<()>>,
     vad: Option<VadConfig>,
     level_cb: Option<LevelCallback>,
-    /// Consumers of the shared capture pipeline. Construction-time subscribers
-    /// live here until `open()` hands them to the worker; `subscribe()` adds
-    /// more at runtime through `Cmd::AddSubscriber`. Runtime subscribers are
-    /// lost when the stream is rebuilt — re-subscribe after reopening.
-    subscribers: Vec<FrameSubscriber>,
+    /// Registry of every live consumer of the shared capture pipeline. A
+    /// snapshot seeds each `open()` and runtime subscribers are added/removed
+    /// here as well, so meeting capture survives a stream rebuild instead of
+    /// silently losing its mic tap.
+    subscribers: Arc<Mutex<Vec<FrameSubscriber>>>,
     next_subscriber_id: AtomicU64,
     /// Which input channel to use. None = average all (original behavior).
     selected_channel: Option<usize>,
@@ -230,7 +230,7 @@ impl AudioRecorder {
             worker_handle: None,
             vad: None,
             level_cb: None,
-            subscribers: Vec::new(),
+            subscribers: Arc::new(Mutex::new(Vec::new())),
             next_subscriber_id: AtomicU64::new(1),
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
@@ -280,17 +280,20 @@ impl AudioRecorder {
 
     /// Attach a frame consumer before the stream opens. For a live stream use
     /// [`AudioRecorder::subscribe`], which does not require a rebuild.
-    pub fn with_frame_subscriber<F>(mut self, tap: FrameTap, when_idle: bool, cb: F) -> Self
+    pub fn with_frame_subscriber<F>(self, tap: FrameTap, when_idle: bool, cb: F) -> Self
     where
         F: Fn(&[f32]) + Send + Sync + 'static,
     {
         let id = self.next_subscriber_id.fetch_add(1, Ordering::Relaxed);
-        self.subscribers.push(FrameSubscriber {
-            id,
-            tap,
-            when_idle,
-            callback: Arc::new(cb),
-        });
+        self.subscribers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(FrameSubscriber {
+                id,
+                tap,
+                when_idle,
+                callback: Arc::new(cb),
+            });
         self
     }
 
@@ -300,8 +303,9 @@ impl AudioRecorder {
     /// dictation sessions. Returns the subscriber id for `unsubscribe`.
     ///
     /// Fails if the stream is not open; ensure `start_microphone_stream` ran
-    /// first. Subscribers added here do not survive a stream rebuild — the
-    /// owner must re-subscribe after `open`/`needs_reopen` recovers the stream.
+    /// first. Subscribers are retained across close/open rebuilds; calling
+    /// `unsubscribe` after the stream has closed still removes the registry
+    /// entry so the tap does not resurrect.
     pub fn subscribe(
         &self,
         tap: FrameTap,
@@ -312,23 +316,38 @@ impl AudioRecorder {
             .cmd_tx
             .as_ref()
             .ok_or_else(|| Error::other("Recorder is not open"))?;
-        let id = self.next_subscriber_id.fetch_add(1, Ordering::Relaxed);
-        tx.send(Cmd::AddSubscriber(FrameSubscriber {
-            id,
+        let subscriber = FrameSubscriber {
+            id: self.next_subscriber_id.fetch_add(1, Ordering::Relaxed),
             tap,
             when_idle,
             callback,
-        }))?;
+        };
+        let id = subscriber.id;
+        self.subscribers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(subscriber.clone());
+        if let Err(e) = tx.send(Cmd::AddSubscriber(subscriber)) {
+            self.subscribers
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .retain(|s| s.id != id);
+            return Err(e.into());
+        }
         Ok(id)
     }
 
     /// Detach a runtime subscriber previously returned by [`Self::subscribe`].
+    /// Removing the registry entry even when the worker is already closed is
+    /// what prevents a later reopen from resurrecting a stopped meeting tap.
     pub fn unsubscribe(&self, id: u64) -> Result<(), Box<dyn std::error::Error>> {
-        let tx = self
-            .cmd_tx
-            .as_ref()
-            .ok_or_else(|| Error::other("Recorder is not open"))?;
-        tx.send(Cmd::RemoveSubscriber(id))?;
+        self.subscribers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|s| s.id != id);
+        if let Some(tx) = self.cmd_tx.as_ref() {
+            tx.send(Cmd::RemoveSubscriber(id))?;
+        }
         Ok(())
     }
 
@@ -379,9 +398,14 @@ impl AudioRecorder {
         let vad = self.vad.clone();
         // Move the optional level callback into the worker thread
         let level_cb = self.level_cb.clone();
-        // Move the frame subscribers registered at construction into the worker
-        // thread (runtime subscribers arrive later via Cmd::AddSubscriber)
-        let subscribers = self.subscribers.clone();
+        // Snapshot every live subscriber for this stream generation. Runtime
+        // subscribers are also kept in the registry so a close/reopen rebuild
+        // restores the meeting mic tap without a second subscribe call.
+        let subscribers = self
+            .subscribers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
         let stream_error = Arc::clone(&self.stream_error);
@@ -407,7 +431,7 @@ impl AudioRecorder {
                     let device_name = thread_device.name().unwrap_or_default();
                     let cached_config = config_cache
                         .lock()
-                        .unwrap()
+                        .unwrap_or_else(|e| e.into_inner())
                         .as_ref()
                         .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
                         .map(|(_, cfg)| cfg.clone());
@@ -508,7 +532,8 @@ impl AudioRecorder {
                     // The device accepted this config; remember it so the next
                     // open skips the HAL property queries entirely.
                     if !config_was_cached && !device_name.is_empty() {
-                        *config_cache.lock().unwrap() = Some((device_name, config));
+                        *config_cache.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some((device_name, config));
                     }
 
                     // Timestamp for the play()-returned -> first-samples gap the
@@ -547,7 +572,7 @@ impl AudioRecorder {
                     // A failed open may mean the cached config went stale
                     // (device re-plugged, rate/format changed in the OS).
                     // Drop it so the next attempt re-queries the device.
-                    *config_cache.lock().unwrap() = None;
+                    *config_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
                     log::error!("{error_message}");
                     let _ = init_tx.send(Err(error_message));
                 }
@@ -859,7 +884,7 @@ fn handle_frame(
     }
 
     if let Some(cfg) = vad {
-        let mut detector = cfg.detector.lock().unwrap();
+        let mut detector = cfg.detector.lock().unwrap_or_else(|e| e.into_inner());
         match detector
             .push_frame(samples)
             .unwrap_or(VadFrame::Speech(samples))
@@ -904,8 +929,8 @@ enum ChunkDisposition {
     /// Process as active recording audio, including during the final stop drain.
     Capture,
     /// No dictation session is recording, but at least one subscriber asked for
-    /// idle frames (meeting capture): resample and deliver, without metering,
-    /// VAD, or filling the recording buffer.
+    /// idle frames (meeting capture): resample, meter and deliver, without
+    /// VAD or filling the recording buffer.
     Monitor,
     /// Consume idle audio without processing it.
     Discard,
@@ -1009,10 +1034,15 @@ impl CaptureProcessor {
         self.processed_samples.clear();
         self.captured_samples = 0;
         self.visualizer.reset();
-        self.frame_resampler.reset();
+        // A meeting monitor keeps the shared resampler alive between
+        // dictations. Resetting it at `Cmd::Start` would silently drop up to
+        // one 30 ms frame from the meeting track.
+        if !self.monitors_while_idle() {
+            self.frame_resampler.reset();
+        }
         if policy != VadPolicy::Disabled {
             if let Some(cfg) = &self.vad {
-                let mut detector = cfg.detector.lock().unwrap();
+                let mut detector = cfg.detector.lock().unwrap_or_else(|e| e.into_inner());
                 detector.set_hangover_frames(cfg.hangover_for(policy));
                 detector.reset();
             }
@@ -1050,9 +1080,13 @@ impl CaptureProcessor {
             return;
         }
 
-        // The level meter is dictation-scoped (FR-001-05): monitoring between
-        // sessions feeds subscribers but never the overlay.
-        if disposition == ChunkDisposition::Capture {
+        // Capture and meeting-monitor chunks both feed the level meter. The
+        // event remains audio-driven: no chunk still means no bars, and a
+        // silent stream emits the visualizer's flat levels.
+        if matches!(
+            disposition,
+            ChunkDisposition::Capture | ChunkDisposition::Monitor
+        ) {
             if let Some(buckets) = self.visualizer.feed(raw) {
                 if let Some(callback) = &self.level_cb {
                     callback(buckets);
@@ -1155,7 +1189,7 @@ impl CaptureProcessor {
             None
         } else {
             self.vad.as_ref().map(|cfg| {
-                let detector = cfg.detector.lock().unwrap();
+                let detector = cfg.detector.lock().unwrap_or_else(|e| e.into_inner());
                 let voiced_samples = detector.voiced_frames() * cfg.frame_samples;
                 if let Some(report) = detector.tail_report() {
                     log::debug!(

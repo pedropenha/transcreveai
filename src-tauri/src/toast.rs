@@ -235,8 +235,24 @@ pub(crate) fn meeting_toast_suppressed(source: &dyn NotificationStateSource) -> 
 // Positioning (pure math + platform glue)
 // ---------------------------------------------------------------------------
 
-/// Flow Bar's outer rect in physical pixels, or `None` when it is not on
-/// screen (hidden window, or never created).
+pub(crate) fn anchored_flowbar_rect(
+    window: (f64, f64, f64, f64),
+    interactive: Option<crate::overlay::FlowbarRect>,
+    css_to_physical: f64,
+) -> (f64, f64, f64, f64) {
+    interactive.map_or(window, |rect| {
+        (
+            window.0 + rect.x * css_to_physical,
+            window.1 + rect.y * css_to_physical,
+            rect.width * css_to_physical,
+            rect.height * css_to_physical,
+        )
+    })
+}
+
+/// Flow Bar's visible interactive rect in physical pixels, or `None` when it
+/// is not on screen. Falls back to the outer transparent window before the
+/// webview reports its visible notch bounds.
 fn flowbar_rect_physical(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
     let bar = app.get_webview_window(crate::window_labels::FLOWBAR)?;
     if !bar.is_visible().unwrap_or(false) {
@@ -244,12 +260,45 @@ fn flowbar_rect_physical(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
     }
     let pos = bar.outer_position().ok()?;
     let size = bar.outer_size().ok()?;
-    Some((
-        pos.x as f64,
-        pos.y as f64,
-        size.width as f64,
-        size.height as f64,
+    let scale = bar.scale_factor().unwrap_or(1.0);
+    #[cfg(target_os = "windows")]
+    let css_to_physical = scale * crate::overlay::windows_text_scale_factor();
+    #[cfg(not(target_os = "windows"))]
+    let css_to_physical = scale;
+    Some(anchored_flowbar_rect(
+        (
+            pos.x as f64,
+            pos.y as f64,
+            size.width as f64,
+            size.height as f64,
+        ),
+        crate::overlay::interactive_rect(),
+        css_to_physical,
     ))
+}
+
+fn flowbar_current_monitor(app: &AppHandle) -> Option<tauri::Monitor> {
+    let bar = app.get_webview_window(crate::window_labels::FLOWBAR)?;
+    if !bar.is_visible().unwrap_or(false) {
+        return None;
+    }
+    bar.current_monitor().ok().flatten()
+}
+
+#[cfg(target_os = "windows")]
+fn flowbar_monitor_from_rect(
+    app: &AppHandle,
+    rect: Option<(f64, f64, f64, f64)>,
+) -> Option<tauri::Monitor> {
+    rect.and_then(|rect| crate::overlay::get_monitor_for_rect(app, rect))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn flowbar_monitor_from_rect(
+    _app: &AppHandle,
+    _rect: Option<(f64, f64, f64, f64)>,
+) -> Option<tauri::Monitor> {
+    None
 }
 
 /// Top-left of the toast window inside `area` — all rects are `(x, y, w, h)`
@@ -290,15 +339,24 @@ pub(crate) fn toast_origin(
 }
 
 /// Compute the toast's physical-pixel bounds on the cursor's monitor.
-fn toast_bounds_physical(app: &AppHandle, content_height: f64) -> Option<(i32, i32, i32, i32)> {
-    let monitor = crate::overlay::get_monitor_with_cursor(app)?;
+fn toast_bounds_physical(
+    app: &AppHandle,
+    content_height: f64,
+) -> Option<(i32, i32, i32, i32, f64)> {
+    let settings = settings::get_settings(app);
+    let flowbar = flowbar_rect_physical(app);
+    let monitor = match settings.meeting_toast_position {
+        ToastPosition::AboveFlowbar => flowbar_monitor_from_rect(app, flowbar)
+            .or_else(|| flowbar_current_monitor(app))
+            .or_else(|| crate::overlay::get_flowbar_monitor(app))?,
+        ToastPosition::BottomRight => crate::overlay::get_monitor_with_cursor(app)?,
+    };
     let scale = monitor.scale_factor();
     #[cfg(target_os = "windows")]
     let text_scale = crate::overlay::windows_text_scale_factor();
     #[cfg(not(target_os = "windows"))]
     let text_scale = 1.0;
 
-    let settings = settings::get_settings(app);
     let wa = monitor.work_area();
     let area = (
         wa.position.x as f64,
@@ -312,7 +370,7 @@ fn toast_bounds_physical(app: &AppHandle, content_height: f64) -> Option<(i32, i
     let margin = TOAST_CORNER_MARGIN * scale;
     let (x, y) = toast_origin(
         area,
-        flowbar_rect_physical(app),
+        flowbar,
         size,
         settings.meeting_toast_position,
         gap,
@@ -323,6 +381,7 @@ fn toast_bounds_physical(app: &AppHandle, content_height: f64) -> Option<(i32, i
         y.round() as i32,
         size.0.round().max(1.0) as i32,
         size.1.round().max(1.0) as i32,
+        scale,
     ))
 }
 
@@ -333,7 +392,7 @@ fn place_toast_window(app: &AppHandle, window: &tauri::webview::WebviewWindow) {
     let content_height = lock_state(app)
         .map(|s| s.content_height)
         .unwrap_or(TOAST_DEFAULT_HEIGHT);
-    let Some((x, y, w, h)) = toast_bounds_physical(app, content_height) else {
+    let Some((x, y, w, h, _scale)) = toast_bounds_physical(app, content_height) else {
         log::debug!("toast: no monitor for placement");
         return;
     };
@@ -346,17 +405,13 @@ fn place_toast_window(app: &AppHandle, window: &tauri::webview::WebviewWindow) {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let Some(monitor) = crate::overlay::get_monitor_with_cursor(app) else {
-            return;
-        };
-        let scale = monitor.scale_factor();
         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
             width: TOAST_WIDTH,
             height: content_height,
         }));
         let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
-            x: x as f64 / scale,
-            y: y as f64 / scale,
+            x: x as f64 / _scale,
+            y: y as f64 / _scale,
         }));
     }
 }
@@ -367,6 +422,7 @@ fn show_toast_window(app: &AppHandle) {
         if let Some(window) = handle.get_webview_window(crate::window_labels::TOAST) {
             place_toast_window(&handle, &window);
             let _ = window.show();
+            place_toast_window(&handle, &window);
         }
     });
 }
@@ -374,8 +430,15 @@ fn show_toast_window(app: &AppHandle) {
 fn hide_toast_window(app: &AppHandle) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Some(window) = handle.get_webview_window(crate::window_labels::TOAST) {
-            let _ = window.hide();
+        // The hide can run after a newer show was queued. Re-check the shared
+        // state on the main thread so a stale close cannot hide fresh content.
+        let should_hide = lock_state(&handle)
+            .map(|state| state.collapsed || (state.detection.is_none() && state.notice.is_none()))
+            .unwrap_or(true);
+        if should_hide {
+            if let Some(window) = handle.get_webview_window(crate::window_labels::TOAST) {
+                let _ = window.hide();
+            }
         }
     });
 }
@@ -471,17 +534,13 @@ fn handle_detector_event(app: &AppHandle, payload: &str) {
     };
     // A re-announced detection that the user already let collapse stays
     // collapsed — refresh the payload, keep the amber dot (AC-008-07).
-    if let Some(state) = lock_state(app) {
+    if let Some(mut state) = lock_state(app) {
         if state.collapsed
             && state
                 .detection
                 .as_ref()
                 .is_some_and(|d| d.detection_id == detection_id)
         {
-            drop(state);
-            let Some(mut state) = lock_state(app) else {
-                return;
-            };
             state.detection = Some(ToastDetection {
                 detection_id,
                 app_label: parsed.app_label.unwrap_or_default(),

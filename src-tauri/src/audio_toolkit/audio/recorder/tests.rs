@@ -91,6 +91,31 @@ fn idle_chunks_are_discarded_without_reaching_the_recording() {
 }
 
 #[test]
+fn monitored_idle_chunks_feed_subscribers_and_the_level_meter() {
+    let levels = Arc::new(Mutex::new(Vec::new()));
+    let monitored = Arc::new(Mutex::new(Vec::new()));
+    let mut processor = CaptureProcessor::new(
+        16_000,
+        None,
+        Some(Arc::new({
+            let levels = Arc::clone(&levels);
+            move |buckets| levels.lock().unwrap().push(buckets)
+        })),
+        vec![subscriber(1, FrameTap::Raw, true, Arc::clone(&monitored))],
+        Instant::now(),
+    )
+    .expect("processor");
+
+    // At 16 kHz the visualizer's nearest 30 Hz window is 512 samples.
+    processor.process_raw_chunk(&[0.5f32; 512], ChunkDisposition::Monitor);
+
+    // Subscribers consume resampled 30 ms frames; the visualizer still
+    // observes the raw 512-sample window needed for its 30 Hz meter.
+    assert_eq!(monitored.lock().unwrap().as_slice(), &[0.5f32; 480]);
+    assert_eq!(levels.lock().unwrap().len(), 1);
+}
+
+#[test]
 fn shutdown_is_processed_without_audio_samples() {
     let (_producer, consumer) = RingBuffer::<f32>::new(48_000);
     let (cmd_tx, cmd_rx) = mpsc::channel();
@@ -722,11 +747,27 @@ fn subscribers_attach_and_detach_on_a_live_stream() {
 }
 
 #[test]
-fn subscribe_requires_an_open_stream() {
-    let recorder = AudioRecorder::new().expect("recorder");
-    let result = recorder.subscribe(FrameTap::Raw, true, Arc::new(|_| {}));
-    assert!(result.is_err());
-    assert!(recorder.unsubscribe(1).is_err());
+fn subscribe_requires_an_open_stream_and_unsubscribe_clears_the_registry() {
+    let recorder = AudioRecorder::new()
+        .expect("recorder")
+        .with_frame_subscriber(FrameTap::Raw, true, |_| {});
+    assert!(recorder
+        .subscribe(FrameTap::Raw, true, Arc::new(|_| {}))
+        .is_err());
+    assert_eq!(
+        recorder
+            .subscribers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len(),
+        1
+    );
+    recorder.unsubscribe(1).expect("remove registry subscriber");
+    assert!(recorder
+        .subscribers
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_empty());
 }
 
 #[test]

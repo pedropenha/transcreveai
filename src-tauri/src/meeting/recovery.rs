@@ -5,7 +5,9 @@
 //! in-progress status at startup has no live capture behind it. Such meetings
 //! are moved to `recovered` so the session layer (T-064) can offer them for
 //! processing; their audio is read back with
-//! [`super::blocks::scan_meeting_blocks`].
+//! [`super::blocks::scan_meeting_blocks`]. A `processing` row is likewise
+//! orphaned — queued post-processing jobs do not survive a restart — and is
+//! moved to `error` so it remains retriable instead of spinning forever.
 
 use std::path::Path;
 
@@ -14,18 +16,27 @@ use rusqlite::Connection;
 
 use crate::db::meetings::{Meeting, MeetingRepository, SqliteMeetingRepository};
 
-/// Statuses that mean "a live capture was expected to be running". `paused`
-/// counts: a paused session is still recording-owned state, and crashing
-/// while paused must not strand the meeting in `paused` forever (AC-009-04).
-const INTERRUPTED_STATUSES: [&str; 2] = ["recording", "paused"];
+/// Statuses that lose their in-process owner when the app exits. `paused`
+/// counts as capture-owned; `processing` is owned by the post-processing
+/// worker and must not survive a restart as a permanent spinner.
+const INTERRUPTED_STATUSES: [&str; 3] = ["recording", "paused", "processing"];
 
 /// Pure status classifier, kept free of the DB so the policy is testable.
 pub(crate) fn is_interrupted_status(status: &str) -> bool {
     INTERRUPTED_STATUSES.contains(&status)
 }
 
-/// Mark every orphaned in-progress meeting `recovered`. Returns the affected
-/// meetings (post-update) so the caller can log or surface them.
+fn recovery_status_for(status: &str) -> Option<(&'static str, &'static str)> {
+    match status {
+        "recording" | "paused" => Some(("recovered", "interrupted")),
+        "processing" => Some(("error", "processing_interrupted")),
+        _ => None,
+    }
+}
+
+/// Mark every orphaned in-progress meeting `recovered` (capture interrupted)
+/// or `error` (post-processing interrupted). Returns the affected meetings
+/// (post-update) so the caller can log or surface them.
 ///
 /// Idempotent: a second run finds nothing to recover.
 pub fn recover_interrupted_meetings(conn: &Connection) -> Result<Vec<Meeting>> {
@@ -39,8 +50,11 @@ pub fn recover_interrupted_meetings(conn: &Connection) -> Result<Vec<Meeting>> {
 
     let mut recovered = Vec::with_capacity(interrupted.len());
     for meeting in interrupted {
-        repo.set_status(&meeting.id, "recovered", Some("interrupted"))
-            .with_context(|| format!("Failed to mark meeting {} as recovered", meeting.id))?;
+        let Some((status, code)) = recovery_status_for(&meeting.status) else {
+            continue;
+        };
+        repo.set_status(&meeting.id, status, Some(code))
+            .with_context(|| format!("Failed to mark meeting {} as {status}", meeting.id))?;
         if let Some(updated) = repo
             .get(&meeting.id)
             .with_context(|| format!("Failed to reload meeting {}", meeting.id))?
@@ -89,13 +103,18 @@ mod tests {
 
         let recording = meeting_with_status(&conn, "recording");
         let paused = meeting_with_status(&conn, "paused");
+        let processing = meeting_with_status(&conn, "processing");
         let ready = meeting_with_status(&conn, "ready");
         let already = meeting_with_status(&conn, "recovered");
 
         let recovered = recover_interrupted_meetings(&conn).expect("recover");
         let mut ids: Vec<&str> = recovered.iter().map(|m| m.id.as_str()).collect();
         ids.sort();
-        let mut expected = vec![recording.id.as_str(), paused.id.as_str()];
+        let mut expected = vec![
+            recording.id.as_str(),
+            paused.id.as_str(),
+            processing.id.as_str(),
+        ];
         expected.sort();
         assert_eq!(ids, expected);
 
@@ -106,6 +125,13 @@ mod tests {
             // Recovery stamps ended_at so the meeting has a real end time.
             assert!(meeting.ended_at.is_some());
         }
+        let interrupted_processing = repo.get(&processing.id).unwrap().unwrap();
+        assert_eq!(interrupted_processing.status, "error");
+        assert_eq!(
+            interrupted_processing.error_code.as_deref(),
+            Some("processing_interrupted")
+        );
+        assert!(interrupted_processing.ended_at.is_some());
         // Terminal/already-recovered meetings are untouched.
         assert_eq!(repo.get(&ready.id).unwrap().unwrap().status, "ready");
         assert_eq!(repo.get(&already.id).unwrap().unwrap().error_code, None);

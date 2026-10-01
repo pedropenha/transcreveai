@@ -413,15 +413,23 @@ pub fn meeting_delete(app: AppHandle, id: String) -> CommandResult<()> {
         ));
     }
     let conn = open_session_db(&app)?;
-    SqliteMeetingRepository::new(&conn)
-        .delete(&id)
-        .map_err(|e| {
-            CommandError::logged(
-                CommandErrorCode::Internal,
-                "Failed to delete the meeting",
-                e,
-            )
-        })?;
+    let repo = SqliteMeetingRepository::new(&conn);
+    let meeting = repo.get(&id).map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
+    })?;
+    if meeting.is_some_and(|meeting| meeting.status == "processing") {
+        return Err(CommandError::new(
+            CommandErrorCode::Busy,
+            "Wait for meeting processing to finish before deleting it",
+        ));
+    }
+    repo.delete(&id).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to delete the meeting",
+            e,
+        )
+    })?;
     let app_data = app_data_dir(&app).map_err(|e| {
         CommandError::logged(CommandErrorCode::Internal, "Failed to resolve app data", e)
     })?;

@@ -46,8 +46,8 @@ use tokio::sync::oneshot;
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::db::meetings::{Meeting, MeetingRepository, SqliteMeetingRepository};
 use crate::meeting::session::{
-    open_session_db, MeetingStateEvent, ProcessRequestedPayload, ToastPayload,
-    MEETING_PROCESS_REQUESTED_EVENT, MEETING_STATE_EVENT, TOAST_SHOW_EVENT,
+    open_session_db, MeetingSessionManager, MeetingStateEvent, ProcessRequestedPayload,
+    ToastPayload, MEETING_PROCESS_REQUESTED_EVENT, MEETING_STATE_EVENT, TOAST_SHOW_EVENT,
 };
 use crate::settings::get_settings;
 
@@ -222,13 +222,38 @@ impl Worker {
         for job in rx {
             match job {
                 Job::Full { meeting_id, reply } => {
-                    let result = self.run_full(&meeting_id);
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        self.run_full(&meeting_id)
+                    }))
+                    .unwrap_or_else(|panic| {
+                        log::error!("Meeting {meeting_id} post-processing panicked: {panic:?}");
+                        self.fail(
+                            &meeting_id,
+                            "worker_panicked",
+                            CommandError::new(
+                                CommandErrorCode::Internal,
+                                "Meeting post-processing failed unexpectedly",
+                            ),
+                        )
+                    });
                     if let Some(reply) = reply {
                         let _ = reply.send(result);
                     }
                 }
                 Job::SummaryOnly { meeting_id, reply } => {
-                    let _ = reply.send(self.run_summary_only(&meeting_id));
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        self.run_summary_only(&meeting_id)
+                    }))
+                    .unwrap_or_else(|panic| {
+                        log::error!(
+                            "Meeting {meeting_id} summary regeneration panicked: {panic:?}"
+                        );
+                        Err(CommandError::new(
+                            CommandErrorCode::Internal,
+                            "Meeting summary regeneration failed unexpectedly",
+                        ))
+                    });
+                    let _ = reply.send(result);
                 }
             }
         }
@@ -280,15 +305,31 @@ impl Worker {
     }
 
     fn emit_state(&self, meeting_id: &str, status: &str, elapsed_ms: u64) {
-        if let Err(e) = self.app.emit(
-            MEETING_STATE_EVENT,
-            MeetingStateEvent {
-                meeting_id: meeting_id.to_string(),
-                status: status.to_string(),
-                elapsed_ms,
-            },
-        ) {
+        let event = MeetingStateEvent {
+            meeting_id: meeting_id.to_string(),
+            status: status.to_string(),
+            elapsed_ms,
+        };
+        // Keep `meeting_current` truthful after the session worker has
+        // released its machine. Snapshot ordering is only a late-mount guard;
+        // the lifecycle event itself always reaches already-mounted windows.
+        let claims_flowbar = self
+            .app
+            .try_state::<MeetingSessionManager>()
+            .map(|session| session.observe_meeting_state(&event))
+            .unwrap_or(true);
+        // A live dictation owns the pill. The lifecycle event still reaches the
+        // Hub and `note_meeting_state` still records the terminal dwell, but a
+        // background post-processing update must not steal the show/hide hint.
+        let dictation_active = crate::overlay::dictation_overlay_active(&self.app);
+        if claims_flowbar && !dictation_active {
+            crate::overlay::show_meeting_overlay(&self.app);
+        }
+        if let Err(e) = self.app.emit(MEETING_STATE_EVENT, &event) {
             log::warn!("Failed to emit {MEETING_STATE_EVENT}: {e}");
+        }
+        if claims_flowbar {
+            crate::overlay::note_meeting_state(&self.app, status);
         }
     }
 
@@ -447,9 +488,13 @@ impl Worker {
         log::warn!("Meeting {meeting_id} processing failed ({error_code})");
         self.persist_status(meeting_id, "error", Some(error_code));
         self.persist_summary_status(meeting_id, "error");
-        if let Ok(meeting) = self.meeting(meeting_id) {
-            self.emit_state(meeting_id, "error", Self::elapsed_ms(&meeting));
-        }
+        let elapsed_ms = self
+            .meeting(meeting_id)
+            .map(|meeting| Self::elapsed_ms(&meeting))
+            .unwrap_or(0);
+        // Even if reloading the row fails, the Flow Bar must leave
+        // `processing`; persistence already recorded the terminal status.
+        self.emit_state(meeting_id, "error", elapsed_ms);
         self.emit_toast_for(
             "meeting_error",
             self.toast_message("meeting_error"),

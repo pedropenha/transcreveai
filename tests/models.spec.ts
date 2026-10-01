@@ -72,7 +72,7 @@ test.describe("Models & Providers screen (mocked Tauri IPC)", () => {
     });
     await page.goto("/");
 
-    await page.getByTitle("Models & Providers").click();
+    await page.getByTitle("Models").click();
 
     // Providers block: local families only, no cloud entries.
     await expect(
@@ -111,7 +111,7 @@ test.describe("Models & Providers screen (mocked Tauri IPC)", () => {
       set_stt_provider: null,
     });
     await page.goto("/");
-    await page.getByTitle("Models & Providers").click();
+    await page.getByTitle("Models").click();
     await expect(
       page.getByRole("heading", { name: "Whisper Small" }),
     ).toBeVisible();
@@ -143,7 +143,7 @@ test.describe("Models & Providers screen (mocked Tauri IPC)", () => {
       set_active_model: null,
     });
     await page.goto("/");
-    await page.getByTitle("Models & Providers").click();
+    await page.getByTitle("Models").click();
     await expect(
       page.getByRole("heading", { name: "Whisper Small" }),
     ).toBeVisible();

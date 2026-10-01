@@ -33,6 +33,7 @@ import { formatKeyCombination } from "@/lib/utils/keyboard";
 import { useOsType } from "@/hooks/useOsType";
 import {
   effectiveEdge,
+  meetingStateClaimsFlowbar,
   resolveFlowbarView,
   toastBadgeVisible,
   type FlowbarView,
@@ -47,6 +48,9 @@ import type { ToastStateEvent } from "@/toast/toastView";
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
 // F001/T-008: the recording pill shows 7 bars.
 const WAVE_BARS = 7;
+// FFT room tone still produces a small positive level. Treat the calibrated
+// meter's lowest bucket range as silence so only speech-level input lifts bars.
+const MIN_VISIBLE_LEVEL = 0.08;
 
 // FR-001-02: hover opens after a 120 ms delay; FR-001-02 note: leaving is
 // lazier (400 ms) so crossing to the tooltip or wobbling over the slit edge
@@ -83,10 +87,13 @@ const RecordingOverlay: React.FC = () => {
   const [retrying, setRetrying] = useState(false);
 
   // --- Meeting lifecycle (`meeting://state`, T-064 / FR-009-07) ---
-  // Terminal statuses collapse to "idle" — post-processing is T-067's UI.
   const [meetingStatus, setMeetingStatus] = useState<MeetingStatus>("idle");
   const [meetingElapsed, setMeetingElapsed] = useState(0);
   const [meetingId, setMeetingId] = useState<string | null>(null);
+  const [meetingCaptureReady, setMeetingCaptureReady] = useState(false);
+  const [meetingLevels, setMeetingLevels] = useState<number[]>(
+    Array(WAVE_BARS).fill(0),
+  );
 
   // --- Hover / click-through (FR-001-02, NFR-001-02) ---
   const [hovered, setHovered] = useState(false);
@@ -121,6 +128,10 @@ const RecordingOverlay: React.FC = () => {
   const [overflowing, setOverflowing] = useState(false);
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
+  const meetingSmoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
+  const meetingStatusRef = useRef<MeetingStatus>("idle");
+  const meetingIdRef = useRef<string | null>(null);
+  const overlayEventGenerationRef = useRef(0);
   const enterTimerRef = useRef<number | undefined>(undefined);
   const leaveTimerRef = useRef<number | undefined>(undefined);
   // The interactive surface the core keeps clickable (rest of the window stays
@@ -162,6 +173,8 @@ const RecordingOverlay: React.FC = () => {
   const clearHoverTimers = useCallback(() => {
     window.clearTimeout(enterTimerRef.current);
     window.clearTimeout(leaveTimerRef.current);
+    enterTimerRef.current = undefined;
+    leaveTimerRef.current = undefined;
   }, []);
   const scheduleEnter = useCallback(() => {
     window.clearTimeout(leaveTimerRef.current);
@@ -187,6 +200,7 @@ const RecordingOverlay: React.FC = () => {
 
     const setupEventListeners = async () => {
       const unlistenShow = await listen("show-overlay", async (event) => {
+        const generation = ++overlayEventGenerationRef.current;
         const overlayHint = event.payload as OverlayHint;
         // Reset synchronously before settings I/O. A fast microphone can emit
         // recording-ready while the awaits below are in flight; resetting after
@@ -200,6 +214,7 @@ const RecordingOverlay: React.FC = () => {
 
         await syncLanguageFromSettings();
         await refreshSettings();
+        if (generation !== overlayEventGenerationRef.current) return;
         setHint(overlayHint);
         if (overlayHint === "streaming") {
           setStreamPhase("listening");
@@ -211,8 +226,10 @@ const RecordingOverlay: React.FC = () => {
       });
 
       const unlistenHide = await listen("hide-overlay", () => {
+        overlayEventGenerationRef.current += 1;
         setWindowActive(false);
         setHint(null);
+        setNotice(null);
         setCaptureReady(false);
         clearHoverTimers();
         setHovered(false);
@@ -256,6 +273,7 @@ const RecordingOverlay: React.FC = () => {
         "audio://level",
         (event) => {
           const newLevels = event.payload.rms;
+          setCaptureReady(true);
           // Exponential smoothing across the 16 buckets, then take the first N
           // bars for the shared waveform.
           const smoothed = smoothedLevelsRef.current.map((prev, i) => {
@@ -264,21 +282,70 @@ const RecordingOverlay: React.FC = () => {
           });
           smoothedLevelsRef.current = smoothed;
           setLevels(smoothed.slice(0, WAVE_BARS));
+          if (meetingStatusRef.current === "recording") {
+            const meetingSmoothed = meetingSmoothedLevelsRef.current.map(
+              (previous, index) =>
+                previous * 0.7 + (newLevels[index] || 0) * 0.3,
+            );
+            meetingSmoothedLevelsRef.current = meetingSmoothed;
+            setMeetingCaptureReady(true);
+            setMeetingLevels(meetingSmoothed.slice(0, WAVE_BARS));
+          }
         },
       );
 
       // Meeting session — the always-visible recording indicator (FR-009-07).
+      const applyMeetingState = (payload: MeetingStateEvent): boolean => {
+        const status = payload.status;
+        if (
+          !meetingStateClaimsFlowbar(
+            meetingStatusRef.current,
+            meetingIdRef.current,
+            status,
+            payload.meeting_id,
+          )
+        ) {
+          return false;
+        }
+        setMeetingElapsed(Math.floor(payload.elapsed_ms / 1000));
+        const knownStatus: MeetingStatus = (
+          [
+            "recording",
+            "paused",
+            "processing",
+            "ready",
+            "error",
+            "recovered",
+          ] as readonly string[]
+        ).includes(status)
+          ? (status as MeetingStatus)
+          : "idle";
+        const live = knownStatus === "recording" || knownStatus === "paused";
+        if (
+          meetingStatusRef.current !== "recording" &&
+          knownStatus === "recording"
+        ) {
+          setMeetingCaptureReady(false);
+          meetingSmoothedLevelsRef.current = Array(16).fill(0);
+          setMeetingLevels(Array(WAVE_BARS).fill(0));
+        } else if (!live) {
+          setMeetingCaptureReady(false);
+        }
+        meetingStatusRef.current = knownStatus;
+        setMeetingStatus(knownStatus);
+        // Terminal faces keep the id for the short dwell so clicking the
+        // outcome opens the finished meeting's transcript.
+        const nextMeetingId =
+          knownStatus === "idle" ? null : payload.meeting_id;
+        meetingIdRef.current = nextMeetingId;
+        setMeetingId(nextMeetingId);
+        return true;
+      };
+      let meetingEventSeen = false;
       const unlistenMeeting = await listen<MeetingStateEvent>(
         "meeting://state",
         (event) => {
-          const status = event.payload.status;
-          setMeetingElapsed(Math.floor(event.payload.elapsed_ms / 1000));
-          const live = status === "recording" || status === "paused";
-          setMeetingStatus(live ? status : "idle");
-          // FR-009-14: the pill's timer reopens the meeting window at the
-          // live meeting; a terminal status clears the id so a stale pill
-          // can't reopen a finished session's window.
-          setMeetingId(live ? event.payload.meeting_id : null);
+          meetingEventSeen = applyMeetingState(event.payload);
         },
       );
 
@@ -305,6 +372,19 @@ const RecordingOverlay: React.FC = () => {
         },
       );
 
+      try {
+        const currentMeeting = await commands.meetingCurrent();
+        if (
+          !meetingEventSeen &&
+          currentMeeting.status === "ok" &&
+          currentMeeting.data
+        ) {
+          applyMeetingState(currentMeeting.data);
+        }
+      } catch (error) {
+        console.warn("Failed to hydrate meeting state", error);
+      }
+
       return () => {
         unlistenShow();
         unlistenHide();
@@ -320,10 +400,15 @@ const RecordingOverlay: React.FC = () => {
     };
 
     let cleanup: (() => void) | undefined;
-    setupEventListeners().then((fn) => {
-      cleanup = fn;
-    });
+    let disposed = false;
+    setupEventListeners()
+      .then((fn) => {
+        if (disposed) fn();
+        else cleanup = fn;
+      })
+      .catch((error) => console.error("Failed to initialize Flow Bar", error));
     return () => {
+      disposed = true;
       cleanup?.();
       clearHoverTimers();
     };
@@ -341,6 +426,28 @@ const RecordingOverlay: React.FC = () => {
     hovered,
     retrying,
   });
+
+  // Terminal meeting outcomes get the same finite dwell as the dictation's
+  // done/error faces; `processing` stays up until the backend emits its
+  // terminal state.
+  useEffect(() => {
+    if (
+      meetingStatus !== "ready" &&
+      meetingStatus !== "recovered" &&
+      meetingStatus !== "error"
+    ) {
+      return;
+    }
+    const status = meetingStatus;
+    const timer = window.setTimeout(() => {
+      if (meetingStatusRef.current !== status) return;
+      meetingStatusRef.current = "idle";
+      setMeetingStatus("idle");
+      meetingIdRef.current = null;
+      setMeetingId(null);
+    }, 4_000);
+    return () => window.clearTimeout(timer);
+  }, [meetingStatus, meetingId]);
 
   // Report the interactive rect to the core so everything outside it stays
   // click-through (contracts.md §5 `flowbar_set_hover`, bounds form). Re-
@@ -363,7 +470,20 @@ const RecordingOverlay: React.FC = () => {
     };
     report();
     const settle = window.setTimeout(report, 240);
-    return () => window.clearTimeout(settle);
+    let frame = 0;
+    const observer =
+      typeof ResizeObserver === "undefined" || !el
+        ? null
+        : new ResizeObserver(() => {
+            window.cancelAnimationFrame(frame);
+            frame = window.requestAnimationFrame(report);
+          });
+    if (el) observer?.observe(el);
+    return () => {
+      window.clearTimeout(settle);
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
   }, [view, tip, hovered, toastPending]);
 
   // A tooltip belongs to the hover/error card — drop it the moment the bar
@@ -443,18 +563,29 @@ const RecordingOverlay: React.FC = () => {
 
   // ---- Shared building blocks (one visual language for every overlay form) ----
 
-  const waveform = (
-    <div className={`swave ${captureReady ? "ready" : "arming"}`}>
-      {levels.map((v, i) => (
-        <i
-          key={i}
-          style={{
-            height: `${Math.max(3, Math.min(18, 3 + Math.pow(v, 0.7) * 15))}px`,
-          }}
-        />
-      ))}
+  const renderWaveform = (
+    paused = false,
+    ready = captureReady,
+    values = levels,
+  ) => (
+    <div className={`swave ${paused ? "paused" : ready ? "ready" : "arming"}`}>
+      {values.map((v, i) => {
+        const level = v < MIN_VISIBLE_LEVEL ? 0 : v;
+        return (
+          <i
+            key={i}
+            style={{
+              height: `${Math.max(
+                3,
+                Math.min(18, 3 + Math.pow(level, 0.7) * 15),
+              )}px`,
+            }}
+          />
+        );
+      })}
     </div>
   );
+  const waveform = renderWaveform();
 
   const cancelBtn = (
     <button className="sx" aria-label={t("overlay.cancel")} onClick={cancel}>
@@ -499,14 +630,26 @@ const RecordingOverlay: React.FC = () => {
           ? t("overlay.meetingPaused")
           : t("overlay.meetingRecording");
       case "working":
+        if (meetingStatus === "processing" && phase === "idle") {
+          return t("overlay.meetingProcessing");
+        }
         if (retrying) return t("overlay.retrying");
         if (phase === "inserting") return t("overlay.inserting");
         return phase === "processing"
           ? t("overlay.processing")
           : t("overlay.transcribing");
       case "done":
+        if (phase === "idle" && meetingStatus === "recovered") {
+          return t("overlay.meetingRecovered");
+        }
+        if (phase === "idle" && meetingStatus === "ready") {
+          return t("overlay.meetingReady");
+        }
         return t("overlay.done");
       case "error":
+        if (phase === "idle" && meetingStatus === "error") {
+          return t("overlay.meetingFailed");
+        }
         return sessionError || t("overlay.failed");
       case "nothing-heard":
         return t("overlay.nothingHeard");
@@ -656,7 +799,7 @@ const RecordingOverlay: React.FC = () => {
         // pill's ■ ends-and-inserts, so this face only wins while idle).
         const paused = meetingStatus === "paused";
         return (
-          <div className="scard fbar-card f-rec">
+          <div className="scard fbar-card f-rec f-meeting">
             <div className="frow">
               <button
                 type="button"
@@ -670,15 +813,20 @@ const RecordingOverlay: React.FC = () => {
                   <Pause size={10} aria-hidden="true" />
                 )}
               </button>
-              <button
-                type="button"
-                className="sx fside stimer"
-                aria-label={t("overlay.openMeeting")}
-                title={t("overlay.openMeeting")}
-                onClick={meetingOpen}
-              >
-                {fmtTime(meetingElapsed)}
-              </button>
+              <div className="fmeeting-center">
+                {renderWaveform(paused, meetingCaptureReady, meetingLevels)}
+                <button
+                  type="button"
+                  className="sx stimer"
+                  aria-label={t("overlay.openMeetingAt", {
+                    time: fmtTime(meetingElapsed),
+                  })}
+                  title={t("overlay.openMeeting")}
+                  onClick={meetingOpen}
+                >
+                  {fmtTime(meetingElapsed)}
+                </button>
+              </div>
               <button
                 type="button"
                 className="sx fside fstop"
@@ -695,6 +843,27 @@ const RecordingOverlay: React.FC = () => {
       case "working":
         // F001 processing shape: three pulsing dots + an AT-only label — the
         // actual phase text lives in the live region, not color or motion.
+        if (meetingStatus === "processing" && phase === "idle") {
+          return (
+            <button
+              type="button"
+              className="scard fbar-card f-work f-meeting-state"
+              aria-label={t("overlay.meetingProcessing")}
+              onClick={meetingOpen}
+            >
+              <span className="frow frow-work">
+                <span className="fdots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="fbar-sr">
+                  {t("overlay.meetingProcessing")}
+                </span>
+              </span>
+            </button>
+          );
+        }
         return (
           <div className="scard fbar-card f-work">
             <div className="frow frow-work">
@@ -717,6 +886,21 @@ const RecordingOverlay: React.FC = () => {
         );
 
       case "done":
+        if (
+          (meetingStatus === "ready" || meetingStatus === "recovered") &&
+          phase === "idle"
+        ) {
+          return (
+            <button
+              type="button"
+              className="scard fbar-card f-done f-meeting-state"
+              aria-label={t("overlay.openMeetingTranscript")}
+              onClick={meetingOpen}
+            >
+              <Check size={12} className="fdone-icon" aria-hidden="true" />
+            </button>
+          );
+        }
         return (
           <div className="scard fbar-card f-done">
             <Check size={12} className="fdone-icon" aria-hidden="true" />
@@ -724,12 +908,46 @@ const RecordingOverlay: React.FC = () => {
         );
 
       case "error":
+        if (meetingStatus === "error" && phase === "idle") {
+          return (
+            <button
+              type="button"
+              className="scard fbar-card f-error f-meeting-state"
+              aria-label={t("overlay.meetingFailed")}
+              onClick={meetingOpen}
+            >
+              <TriangleAlert
+                size={12}
+                className="ferror-icon"
+                aria-hidden="true"
+              />
+              <span className="fbar-sr">{t("overlay.meetingFailed")}</span>
+            </button>
+          );
+        }
         // AC-001-08: ⚠ pill; hovering reveals a concise cause + retry affordance.
         return (
           <div
             className="scard fbar-card f-error"
+            role="button"
+            tabIndex={0}
+            aria-label={t("overlay.failed")}
+            aria-describedby={tip === "error" ? "fbar-error-tip" : undefined}
             onMouseEnter={() => setTip("error")}
             onMouseLeave={() => setTip(null)}
+            onFocus={() => setTip("error")}
+            onBlur={(event) => {
+              const zone = event.currentTarget.closest(".fbar-zone");
+              if (!zone?.contains(event.relatedTarget as Node | null)) {
+                setTip(null);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                retry();
+              }
+            }}
           >
             <TriangleAlert
               size={12}
@@ -754,52 +972,52 @@ const RecordingOverlay: React.FC = () => {
     }
   };
 
-  if (view === "hidden") return null;
-
-  // The zone is what the webview reports as interactive bounds — it wraps the
-  // card AND its tooltip so moving between them never crosses a dead pixel.
+  // The live region is mounted even while session-only mode hides the card;
+  // otherwise a screen reader can miss a live region that appears already
+  // populated on the first visible frame.
   return (
-    <div
-      dir={direction}
-      className={`ov-stage ${edge} ov-fade ${
-        alwaysOn || windowActive || phase !== "idle" ? "show" : ""
-      }`}
-    >
-      <div
-        ref={zoneRef}
-        className="fbar-zone"
-        onMouseEnter={scheduleEnter}
-        onMouseLeave={scheduleLeave}
-      >
-        {tipContent !== null && (
-          <div className="fbar-tip" role="tooltip">
-            <span>{tipContent}</span>
-            {tip === "error" && (
-              <button
-                type="button"
-                className="fbtn fretry"
-                onClick={retry}
-                aria-label={t("overlay.retry")}
-              >
-                {t("overlay.retry")}
-              </button>
-            )}
-          </div>
-        )}
-        {/* FR-008-10/12: collapsed/suppressed meeting toast → amber dot that
+    <div dir={direction} className={`ov-stage ${edge} ov-fade show`}>
+      {view !== "hidden" && (
+        <div
+          ref={zoneRef}
+          className="fbar-zone"
+          onMouseEnter={scheduleEnter}
+          onMouseLeave={scheduleLeave}
+        >
+          {tipContent !== null && (
+            <div
+              id={tip === "error" ? "fbar-error-tip" : undefined}
+              className="fbar-tip"
+              role="tooltip"
+            >
+              <span>{tipContent}</span>
+              {tip === "error" && (
+                <button
+                  type="button"
+                  className="fbtn fretry"
+                  onClick={retry}
+                  aria-label={t("overlay.retry")}
+                >
+                  {t("overlay.retry")}
+                </button>
+              )}
+            </div>
+          )}
+          {/* FR-008-10/12: collapsed/suppressed meeting toast → amber dot that
             reopens it on hover. In-flow inside the zone so the hit-test rect
             covers it (NFR-001-02 click-through otherwise eats the hover). */}
-        {toastBadgeVisible(view, toastPending) && (
-          <button
-            type="button"
-            className="fbar-toast-dot"
-            aria-label={t("toast.meetingPending")}
-            onMouseEnter={() => void invoke("toast_reopen")}
-            onFocus={() => void invoke("toast_reopen")}
-          />
-        )}
-        {view === "streaming" ? renderStreaming() : renderCompact()}
-      </div>
+          {toastBadgeVisible(view, toastPending) && (
+            <button
+              type="button"
+              className="fbar-toast-dot"
+              aria-label={t("toast.meetingPending")}
+              onMouseEnter={() => void invoke("toast_reopen")}
+              onFocus={() => void invoke("toast_reopen")}
+            />
+          )}
+          {view === "streaming" ? renderStreaming() : renderCompact()}
+        </div>
+      )}
       <span className="fbar-sr" aria-live="polite">
         {announce}
       </span>

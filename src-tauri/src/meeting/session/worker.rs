@@ -40,7 +40,6 @@ use crate::meeting::live::{
     MEETING_SEGMENT_EVENT,
 };
 use crate::settings::{get_settings, AppSettings};
-use crate::TranscriptionCoordinator;
 
 pub(super) struct Worker {
     app: AppHandle,
@@ -258,21 +257,48 @@ impl Worker {
         meeting.audio_dir = Some(audio_dir.to_string_lossy().to_string());
 
         // Capture first: a failed start leaves no orphaned `recording` row.
+        // Arm the shared-mic ownership flag before `mic_tap()` opens the stream —
+        // until the machine's Indicator effect runs, this is what stops a lazy
+        // close/dictation stop from closing the stream beneath the capture.
+        MEETING_ACTIVE.store(true, Ordering::SeqCst);
         // `start_capture` borrows `&mut self`, so no db borrow may be live.
         let (next_mic, next_system) = next_block_indices(&audio_dir);
-        let capture = self.start_capture(&audio_dir, !req.mic_only, now, next_mic, next_system)?;
+        let capture =
+            match self.start_capture(&audio_dir, !req.mic_only, now, next_mic, next_system) {
+                Ok(capture) => capture,
+                Err(error) => {
+                    self.abort_start();
+                    return Err(error);
+                }
+            };
 
-        let conn = self.conn()?;
-        SqliteMeetingRepository::new(conn)
-            .create(&meeting)
-            .map_err(|e| {
-                CommandError::logged(CommandErrorCode::Internal, "Failed to save the meeting", e)
-            })?;
+        let created = match self.conn() {
+            Ok(conn) => SqliteMeetingRepository::new(conn).create(&meeting),
+            Err(error) => {
+                self.abort_start();
+                return Err(error);
+            }
+        };
+        if let Err(e) = created {
+            self.abort_start();
+            return Err(CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to save the meeting",
+                e,
+            ));
+        }
         // FR-009-13 "Minhas notas": the tab's row exists from the start;
         // T-066 edits it in place.
         let mut note = Note::new("meeting");
         note.meeting_id = Some(meeting.id.clone());
-        if let Err(e) = SqliteNoteRepository::new(conn).create(&note) {
+        let note_created = match self.conn() {
+            Ok(conn) => SqliteNoteRepository::new(conn).create(&note),
+            Err(error) => {
+                self.abort_start();
+                return Err(error);
+            }
+        };
+        if let Err(e) = note_created {
             log::warn!("Failed to create the meeting notes row: {e}");
         }
 
@@ -336,6 +362,18 @@ impl Worker {
         }
         log::info!("Meeting {} started ({})", meeting.id, meeting.title);
         Ok(meeting)
+    }
+
+    /// Undo the early shared-mic ownership flag when `handle_start` fails
+    /// before the machine can take over Indicator effects. Dropping the local
+    /// capture unsubscribes its tap; this releases the stream for on-demand
+    /// mode so a failed start does not leave a warm microphone behind.
+    fn abort_start(&mut self) {
+        self.capture_rx = None;
+        MEETING_ACTIVE.store(false, Ordering::SeqCst);
+        if let Some(audio) = &self.audio {
+            audio.release_microphone_stream_if_idle();
+        }
     }
 
     /// Attach the shared mic stream + (optionally) the WASAPI loopback to a
@@ -422,6 +460,10 @@ impl Worker {
     }
 
     fn drain_capture_events(&mut self) {
+        self.drain_capture_events_inner(true);
+    }
+
+    fn drain_capture_events_inner(&mut self, flush: bool) {
         let mut pending = Vec::new();
         if let Some(rx) = &self.capture_rx {
             while let Ok(event) = rx.try_recv() {
@@ -431,7 +473,9 @@ impl Worker {
         for event in pending {
             self.handle_capture_event(event);
         }
-        self.flush();
+        if flush {
+            self.flush();
+        }
     }
 
     fn handle_capture_event(&mut self, event: MeetingCaptureEvent) {
@@ -488,16 +532,27 @@ impl Worker {
                 effects = m.take_effects();
                 events = m.take_events();
             }
-            for event in events {
-                *self.snapshot.lock().unwrap_or_else(|e| e.into_inner()) = Some(event.clone());
-                if let Err(e) = self.app.emit(MEETING_STATE_EVENT, &event) {
-                    log::warn!("Failed to emit {MEETING_STATE_EVENT}: {e}");
+            // Events journaled in one machine step are an ordered status
+            // trace; only the newest is still current after the effects run.
+            // Emitting an older live tick after `PersistStatus("paused")` would
+            // put the Flow Bar back in recording for a meeting that is already
+            // paused on disk.
+            if let Some(latest) = events.pop() {
+                events.clear();
+                events.push(latest);
+            }
+            let had_work = !effects.is_empty() || !events.is_empty();
+            for effect in effects {
+                // Persisted status must land before its lifecycle event wakes
+                // the Hub/Flow Bar. Emitting right after PersistStatus also
+                // keeps `processing` ahead of `meeting://process-requested`.
+                let persisted_status = matches!(effect, Effect::PersistStatus { .. });
+                self.run_effect(effect);
+                if persisted_status {
+                    self.publish_state_events(&mut events);
                 }
             }
-            let had_work = !effects.is_empty();
-            for effect in effects {
-                self.run_effect(effect);
-            }
+            self.publish_state_events(&mut events);
             // A finished machine is dropped after its final effects ran.
             if self.machine.as_ref().is_some_and(|m| !m.is_active()) {
                 // FR-009-10: a dictation still open at stop closes at the
@@ -514,6 +569,21 @@ impl Worker {
             }
             if !had_work {
                 break;
+            }
+        }
+    }
+
+    fn publish_state_events(&mut self, events: &mut Vec<MeetingStateEvent>) {
+        for event in events.drain(..) {
+            let claims_flowbar = super::commit_meeting_snapshot(&self.snapshot, &event);
+            if let Err(e) = self.app.emit(MEETING_STATE_EVENT, &event) {
+                log::warn!("Failed to emit {MEETING_STATE_EVENT}: {e}");
+            }
+            // The event is still broadcast for the Hub/detail rows, but only an
+            // event allowed to replace the snapshot may own the shared pill's
+            // lifecycle timer.
+            if claims_flowbar {
+                crate::overlay::note_meeting_state(&self.app, &event.status);
             }
         }
     }
@@ -566,8 +636,10 @@ impl Worker {
                     );
                     // stop() seals the in-flight tails — their `BlockSealed`
                     // events must still reach the pending bookkeeping and
-                    // the live queue before the receiver is dropped.
-                    self.drain_capture_events();
+                    // the live queue before the receiver is dropped. Do not
+                    // re-enter flush(): the finished machine is only dropped
+                    // after PersistStatus and RequestProcessing have run.
+                    self.drain_capture_events_inner(false);
                 }
                 self.capture_rx = None;
             }
@@ -759,16 +831,14 @@ impl Worker {
         MEETING_ACTIVE.store(active, Ordering::SeqCst);
         crate::tray::update_tray_menu(&self.app);
         if active {
-            crate::overlay::show_recording_overlay(&self.app);
+            crate::overlay::show_meeting_overlay(&self.app);
         } else {
-            // Don't clobber a live dictation pill: the overlay is shared.
-            let dictation_active = self
-                .app
-                .try_state::<TranscriptionCoordinator>()
-                .and_then(|c| c.current_session())
-                .is_some();
-            if !dictation_active {
-                crate::overlay::hide_recording_overlay(&self.app);
+            // Keep the window mapped through processing and the terminal
+            // dwell; `note_meeting_state` hides it after ready/error. Hiding at
+            // StopCapture would make session-only mode lose the entire
+            // post-processing lifecycle.
+            if let Some(audio) = &self.audio {
+                audio.release_microphone_stream_if_idle();
             }
         }
     }

@@ -2356,7 +2356,7 @@ excluded: boolean }
  */
 export type MeetingStateEvent = { meeting_id: string; 
 /**
- * 'recording' | 'paused' | 'processing' | 'error'
+ * 'recording' | 'paused' | 'processing' | 'ready' | 'error' | 'recovered'
  */
 status: string; 
 /**

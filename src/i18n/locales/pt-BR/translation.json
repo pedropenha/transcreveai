@@ -847,7 +847,13 @@
     "stopMeeting": "Parar reunião",
     "meetingRecording": "Gravando reunião",
     "meetingPaused": "Reunião pausada",
-    "openMeeting": "Abrir janela da reunião"
+    "meetingProcessing": "Transcrevendo reunião",
+    "meetingReady": "Transcrição da reunião pronta",
+    "meetingRecovered": "Reunião recuperada",
+    "meetingFailed": "Falha ao processar a reunião",
+    "openMeeting": "Abrir janela da reunião",
+    "openMeetingAt": "Abrir janela da reunião, tempo decorrido {{time}}",
+    "openMeetingTranscript": "Abrir transcrição da reunião"
   },
   "toast": {
     "meetingDetected": "Reunião detectada",

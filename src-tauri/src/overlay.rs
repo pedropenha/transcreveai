@@ -23,11 +23,13 @@ mod win32;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use click_through::set_interactive_rect;
 pub use click_through::FlowbarRect;
+pub(crate) use click_through::{interactive_rect, set_interactive_rect};
 // Shared with the toast window (T-062): same monitor pick and Windows
 // extended styles / text-scale conventions as the Flow Bar.
-pub(crate) use positioning::get_monitor_with_cursor;
+#[cfg(target_os = "windows")]
+pub(crate) use positioning::get_monitor_for_rect;
+pub(crate) use positioning::{get_flowbar_monitor, get_monitor_with_cursor};
 #[cfg(target_os = "windows")]
 pub(crate) use win32::{
     apply_overlay_extended_styles, set_window_bounds_physical, windows_text_scale_factor,
@@ -209,7 +211,15 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
+static MEETING_LIFECYCLE_GENERATION: AtomicU64 = AtomicU64::new(0);
+const MEETING_TERMINAL_DWELL: Duration = Duration::from_secs(4);
+
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
+    // A dictation/new meeting show supersedes any terminal meeting hide that
+    // is still sleeping. Terminal `note_meeting_state` runs after its own
+    // show call, so it starts a fresh generation rather than cancelling it.
+    MEETING_LIFECYCLE_GENERATION.fetch_add(1, Ordering::SeqCst);
+
     // Whether the overlay shows at all is governed by overlay_style +
     // flowbar_visibility; position only chooses the docked edge. Checked here
     // (off the main thread) so the common overlay-disabled case never pays for
@@ -344,6 +354,13 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "recording");
 }
 
+/// Shows the compact Flow Bar for a meeting lifecycle face. The `meeting`
+/// hint keeps the webview from treating this as a dictation pill while the
+/// authoritative `meeting://state` event is still in flight.
+pub fn show_meeting_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "meeting");
+}
+
 /// Shows the larger streaming overlay that displays live transcription text
 pub fn show_streaming_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "streaming");
@@ -465,6 +482,38 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
 /// press the coordinator remembered while the pipeline was busy and started
 /// the instant it drained, well inside the 300 ms hide delay.
 static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
+static MEETING_TERMINAL_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+
+/// True while the dictation coordinator still owns a session, including its
+/// done/error dwell. Meeting lifecycle events must never pull the Flow Bar's
+/// window out from under an active dictation.
+pub(crate) fn dictation_overlay_active(app_handle: &AppHandle) -> bool {
+    app_handle
+        .try_state::<crate::transcription_coordinator::TranscriptionCoordinator>()
+        .and_then(|coordinator| coordinator.current_session())
+        .is_some()
+}
+
+fn meeting_status_claims_overlay(status: &str, terminal_until_ms: u64, now_ms: u64) -> bool {
+    matches!(status, "recording" | "paused" | "processing")
+        || (matches!(status, "ready" | "error" | "recovered") && now_ms < terminal_until_ms)
+}
+
+fn meeting_overlay_claimed(app_handle: &AppHandle) -> bool {
+    if crate::meeting::session::meeting_recording_active() {
+        return true;
+    }
+    app_handle
+        .try_state::<crate::meeting::session::MeetingSessionManager>()
+        .and_then(|session| session.current())
+        .is_some_and(|state| {
+            meeting_status_claims_overlay(
+                &state.status,
+                MEETING_TERMINAL_UNTIL_MS.load(Ordering::SeqCst),
+                now_unix_ms_u64(),
+            )
+        })
+}
 
 /// Fade the card out, then unmap the overlay once the session UI has settled.
 ///
@@ -477,6 +526,50 @@ static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 ///   `session://state` event can land just after this call) so the outcome
 ///   stays visible - that is what makes the Error state perceivable
 ///   (AC-001-08) when the bar is not always on.
+///
+/// Track `meeting://state` for session-only Flow Bar lifetime. Terminal
+/// outcomes stay visible long enough to click, then unmap; any newer lifecycle
+/// event cancels the pending hide.
+/// Arm the terminal dwell deadline. Called by the meeting session *before* a
+/// terminal status is committed to the snapshot, so a `hide_recording_overlay`
+/// racing `emit_state` never observes `(terminal snapshot, dwell = 0)` and
+/// unmaps the face the user is about to see.
+pub(crate) fn arm_meeting_terminal_deadline() {
+    MEETING_TERMINAL_UNTIL_MS.store(
+        now_unix_ms_u64() + MEETING_TERMINAL_DWELL.as_millis() as u64,
+        Ordering::SeqCst,
+    );
+}
+
+pub fn note_meeting_state(app_handle: &AppHandle, status: &str) {
+    let generation = MEETING_LIFECYCLE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    if !matches!(status, "ready" | "error" | "recovered") {
+        MEETING_TERMINAL_UNTIL_MS.store(0, Ordering::SeqCst);
+        return;
+    }
+    arm_meeting_terminal_deadline();
+    let handle = app_handle.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(MEETING_TERMINAL_DWELL);
+        // A dictation that started before this meeting finished owns the pill.
+        // Keep waiting (without emitting hide-overlay) until the coordinator is
+        // done; then the terminal meeting face gets its normal unmap. A newer
+        // lifecycle/show generation cancels this stale hide entirely.
+        while MEETING_LIFECYCLE_GENERATION.load(Ordering::SeqCst) == generation
+            && dictation_overlay_active(&handle)
+        {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        if MEETING_LIFECYCLE_GENERATION.load(Ordering::SeqCst) == generation {
+            hide_recording_overlay(&handle);
+        }
+    });
+}
+
+fn session_hide_can_unmap(always_on: bool, meeting_claimed: bool) -> bool {
+    !always_on && !meeting_claimed
+}
+
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
@@ -487,7 +580,10 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         // Emit event to trigger fade-out animation
         let _ = overlay_window.emit("hide-overlay", ());
 
-        if flowbar_always_on(&settings::get_settings(app_handle)) {
+        if !session_hide_can_unmap(
+            flowbar_always_on(&settings::get_settings(app_handle)),
+            meeting_overlay_claimed(app_handle),
+        ) {
             return;
         }
 
@@ -565,8 +661,9 @@ pub fn set_flowbar_user_hidden(app_handle: &AppHandle, hidden: bool) {
 }
 
 /// IPC contract (contracts.md §5): the flowbar receives `audio://level` with
-/// `{ rms: f32[] }` at ~30 Hz, only while recording. The values are the
-/// visualizer's per-band levels - the flowbar renders them directly as bars.
+/// `{ rms: f32[] }` at ~30 Hz while dictation records or meeting capture
+/// monitors the shared mic. The values are the visualizer's per-band levels -
+/// the flowbar renders them directly as bars.
 const LEVEL_EVENT: &str = "audio://level";
 
 pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {

@@ -180,6 +180,66 @@ pub struct MeetingSessionManager {
     snapshot: Arc<Mutex<Option<MeetingStateEvent>>>,
 }
 
+fn meeting_state_terminal(status: &str) -> bool {
+    matches!(status, "ready" | "error" | "recovered")
+}
+
+/// Whether an event may replace the snapshot a late-mounted Flow Bar reads.
+/// This ordering guard is deliberately separate from broadcasting: a stale
+/// event must not cover the snapshot, but it is still emitted so Hub rows and
+/// already-mounted meeting windows can update their own meeting id.
+fn meeting_snapshot_accepts_state(
+    current: Option<&MeetingStateEvent>,
+    incoming: &MeetingStateEvent,
+) -> bool {
+    let Some(current) = current else {
+        return true;
+    };
+
+    if current.meeting_id == incoming.meeting_id {
+        // A retry legitimately moves ready/error/recovered back to
+        // processing. Live ticks after processing starts or after a terminal
+        // state are stale capture events, not a new lifecycle.
+        return incoming.status == "processing"
+            || meeting_state_terminal(&incoming.status)
+            || !matches!(
+                current.status.as_str(),
+                "processing" | "ready" | "error" | "recovered"
+            );
+    }
+
+    if matches!(incoming.status.as_str(), "recording" | "paused") {
+        return true;
+    }
+
+    // While another meeting is live, post-processing from an older meeting is
+    // broadcast for its Hub row but must not hide the active pill. Once the
+    // snapshot is terminal, only a cross-meeting `processing` may replace it —
+    // a `ready`/`error`/`recovered` for a meeting this snapshot never saw
+    // process is a stale replay (startup recovery, a retried old meeting), not
+    // the live lifecycle. A legitimately newer meeting arrives as `processing`
+    // first; its own terminal event then lands via the same-id rule above.
+    meeting_state_terminal(&current.status) && incoming.status == "processing"
+}
+
+/// Accept-or-reject + commit for the late-mount snapshot. Terminal commits arm
+/// the overlay dwell *before* the snapshot flips, closing the window where a
+/// racing `hide_recording_overlay` could read `(terminal, dwell = 0)`.
+fn commit_meeting_snapshot(
+    snapshot: &Mutex<Option<MeetingStateEvent>>,
+    event: &MeetingStateEvent,
+) -> bool {
+    let mut guard = snapshot.lock().unwrap_or_else(|e| e.into_inner());
+    if !meeting_snapshot_accepts_state(guard.as_ref(), event) {
+        return false;
+    }
+    if meeting_state_terminal(&event.status) {
+        crate::overlay::arm_meeting_terminal_deadline();
+    }
+    *guard = Some(event.clone());
+    true
+}
+
 impl Clone for MeetingSessionManager {
     fn clone(&self) -> Self {
         Self {
@@ -290,6 +350,14 @@ impl MeetingSessionManager {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+
+    /// Record a lifecycle event emitted outside the session worker (the
+    /// post-processor owns `processing` → `ready`/`error`). Snapshot ordering
+    /// is only for late-mounted UI; it never suppresses the event broadcast.
+    /// Returns whether the event may claim the Flow Bar's single meeting face.
+    pub fn observe_meeting_state(&self, event: &MeetingStateEvent) -> bool {
+        commit_meeting_snapshot(&self.snapshot, event)
     }
 
     fn call<T>(&self, mk: impl FnOnce(Sender<T>) -> Command) -> CommandResult<T> {
@@ -508,6 +576,62 @@ mod tests {
         // nothing and succeeds (idempotent).
         remove_meeting_audio_dir(Path::new("data"), "9f0c0000-0000-4000-8000-000000000000")
             .expect("UUID id");
+    }
+
+    #[test]
+    fn meeting_snapshot_accepts_terminal_state_for_the_same_meeting_only() {
+        let event = |id: &str, status: &str| MeetingStateEvent {
+            meeting_id: id.to_string(),
+            status: status.to_string(),
+            elapsed_ms: 1_000,
+        };
+        let recording = event("meeting-1", "recording");
+        let processing = event("meeting-1", "processing");
+        let ready = event("meeting-1", "ready");
+
+        assert!(meeting_snapshot_accepts_state(
+            Some(&recording),
+            &processing
+        ));
+        assert!(meeting_snapshot_accepts_state(Some(&processing), &ready));
+        // A stale post-processing event from an older meeting must not cover
+        // the newer live pill; a new active session may replace a terminal one.
+        assert!(!meeting_snapshot_accepts_state(
+            Some(&recording),
+            &event("meeting-2", "processing"),
+        ));
+        assert!(meeting_snapshot_accepts_state(
+            Some(&ready),
+            &event("meeting-2", "recording"),
+        ));
+        // A retry moves the same meeting back to processing; a new meeting's
+        // `processing` may replace an old terminal snapshot, but its terminal
+        // event cannot jump in directly — it lands via the same-id rule after
+        // its own processing was observed. A replayed terminal from an unseen
+        // meeting (startup recovery, stale worker) must not claim the bar.
+        assert!(meeting_snapshot_accepts_state(Some(&ready), &processing));
+        assert!(meeting_snapshot_accepts_state(
+            Some(&ready),
+            &event("meeting-2", "processing")
+        ));
+        assert!(!meeting_snapshot_accepts_state(
+            Some(&ready),
+            &event("meeting-2", "ready")
+        ));
+        assert!(!meeting_snapshot_accepts_state(
+            Some(&ready),
+            &event("meeting-2", "recovered")
+        ));
+        assert!(!meeting_snapshot_accepts_state(
+            Some(&recording),
+            &event("meeting-2", "ready")
+        ));
+        // A stale live tick must not regress processing or a terminal state.
+        assert!(!meeting_snapshot_accepts_state(
+            Some(&processing),
+            &recording
+        ));
+        assert!(!meeting_snapshot_accepts_state(Some(&ready), &recording));
     }
 
     #[test]

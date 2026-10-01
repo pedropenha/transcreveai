@@ -2,13 +2,15 @@ use rustfft::{num_complex::Complex32, Fft, FftPlanner};
 use std::sync::Arc;
 
 // `db` below is not true dBFS: it's a per-bin average divided by the FFT
-// window size, which lands ~20 dB low for speech. So this window is calibrated
-// against measured mic audio (dictation ~-32 dBFS, room tone ~-48 dBFS) rather
-// than absolute dBFS. The old -55/-8 left speech ~1 px above the overlay's
-// floor, which reads as a frozen waveform (#1694). Not lowered past -68: at
-// -70 a noisy room starts making the idle waveform twitch.
+// window size, which lands well below absolute input level. The adaptive floor
+// tracks persistent room tone and adds headroom, so only a signal clearly above
+// the measured noise floor can lift the Flow Bar. The old -55/-8 range left
+// speech ~1 px above the overlay floor, which reads as a frozen waveform
+// (#1694).
 const DB_MIN: f32 = -68.0;
 const DB_MAX: f32 = -30.0;
+const NOISE_TRACK_MAX_DB: f32 = -56.0;
+const NOISE_HEADROOM_DB: f32 = 8.0;
 const GAIN: f32 = 1.3;
 const CURVE_POWER: f32 = 0.7;
 
@@ -76,7 +78,10 @@ impl AudioVisualiser {
             window,
             bucket_ranges,
             fft_input: vec![Complex32::new(0.0, 0.0); window_size],
-            noise_floor: vec![-40.0; buckets], // Initialize to reasonable noise floor
+            // Start at the absolute floor. Persistent quiet input then adapts
+            // the per-band floor upward instead of leaving a fixed threshold
+            // that every headset has to fit.
+            noise_floor: vec![DB_MIN; buckets],
             buffer: Vec::with_capacity(window_size * 2),
             window_size,
             buckets,
@@ -131,15 +136,19 @@ impl AudioVisualiser {
                 -80.0 // Very low floor for zero power
             };
 
-            // Only update noise floor when signal is quiet (below current floor + 10dB)
-            if db < self.noise_floor[bucket_idx] + 10.0 {
-                const NOISE_ALPHA: f32 = 0.001; // Very slow adaptation
+            // Track persistent quiet input as room tone, but never let a
+            // speech-band transient raise the floor. A signal must clear the
+            // floor plus headroom before it can animate a bar.
+            if db < NOISE_TRACK_MAX_DB {
+                const NOISE_ALPHA: f32 = 0.01; // ~100 windows to adapt
                 self.noise_floor[bucket_idx] =
                     NOISE_ALPHA * db + (1.0 - NOISE_ALPHA) * self.noise_floor[bucket_idx];
             }
+            let floor_gate =
+                (self.noise_floor[bucket_idx] + NOISE_HEADROOM_DB).clamp(DB_MIN, DB_MAX - 1.0);
 
-            // Map configurable dB range to 0-1 with gain and curve shaping
-            let normalized = ((db - DB_MIN) / (DB_MAX - DB_MIN)).clamp(0.0, 1.0);
+            // Map the adaptive dB range to 0-1 with gain and curve shaping.
+            let normalized = ((db - floor_gate) / (DB_MAX - floor_gate)).clamp(0.0, 1.0);
             buckets[bucket_idx] = (normalized * GAIN).powf(CURVE_POWER).clamp(0.0, 1.0);
         }
 
@@ -156,8 +165,7 @@ impl AudioVisualiser {
 
     pub fn reset(&mut self) {
         self.buffer.clear();
-        // Reset noise floor to initial values
-        self.noise_floor.fill(-40.0);
+        self.noise_floor.fill(DB_MIN);
     }
 }
 
@@ -220,6 +228,21 @@ mod tests {
         assert!(
             buckets.iter().all(|&b| b <= 0.05),
             "silence should pin every bar near zero: {buckets:?}"
+        );
+    }
+
+    #[test]
+    fn room_tone_below_the_speech_floor_stays_flat() {
+        let mut vis = visualizer_for(RATE);
+        // A ~-52 dBFS in-band tone is a generous stand-in for a headset's room
+        // tone: audible to the meter, but not user speech. It must not animate
+        // the Flow Bar by itself.
+        let buckets = vis
+            .feed(&sine(0.0025, 1000.0, 2048))
+            .expect("a full window emits buckets");
+        assert!(
+            buckets.iter().all(|&b| b <= 0.05),
+            "room tone should pin every bar near zero: {buckets:?}"
         );
     }
 

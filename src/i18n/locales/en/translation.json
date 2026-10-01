@@ -921,7 +921,13 @@
     "stopMeeting": "Stop meeting",
     "meetingRecording": "Recording meeting",
     "meetingPaused": "Meeting paused",
-    "openMeeting": "Open meeting window"
+    "meetingProcessing": "Transcribing meeting",
+    "meetingReady": "Meeting transcript ready",
+    "meetingRecovered": "Meeting recovered",
+    "meetingFailed": "Meeting processing failed",
+    "openMeeting": "Open meeting window",
+    "openMeetingAt": "Open meeting window, elapsed time {{time}}",
+    "openMeetingTranscript": "Open meeting transcript"
   },
   "toast": {
     "meetingDetected": "Meeting detected",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   effectiveEdge,
+  meetingStateClaimsFlowbar,
   resolveFlowbarView,
   toastBadgeVisible,
   type FlowbarViewInput,
@@ -105,6 +106,95 @@ assert.equal(
 assert.equal(
   resolveFlowbarView({ ...base, meeting: "recording", phase: "done" }),
   "done",
+);
+// Meeting post-processing is not an idle state: the pill must explain the
+// asynchronous work, the successful handoff and failures instead of
+// disappearing while the transcript is still being built.
+assert.equal(resolveFlowbarView({ ...base, meeting: "processing" }), "working");
+assert.equal(resolveFlowbarView({ ...base, meeting: "ready" }), "done");
+assert.equal(resolveFlowbarView({ ...base, meeting: "error" }), "error");
+assert.equal(resolveFlowbarView({ ...base, meeting: "recovered" }), "done");
+// Dictation keeps precedence while it has its own live/terminal lifecycle.
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "processing", phase: "recording" }),
+  "recording",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "processing", phase: "transcribing" }),
+  "working",
+);
+// A show-overlay hint that races ahead of `session://state` is still a
+// dictation face: the meeting pill's ■ must not hijack a dictation stop.
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "recording", hint: "recording" }),
+  "recording",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "recording", hint: "streaming" }),
+  "streaming",
+);
+// `show-overlay("meeting")` is only a native wake hint: the meeting status,
+// not a synthetic dictation face, chooses the rendered pill.
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "processing", hint: "meeting" }),
+  "working",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "idle", hint: "meeting" }),
+  "idle",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "recording", retrying: true }),
+  "working",
+);
+assert.equal(
+  resolveFlowbarView({
+    ...base,
+    meeting: "recording",
+    notice: "nothing_heard",
+  }),
+  "nothing-heard",
+);
+// Unknown future statuses are deliberately safe: they collapse to idle rather
+// than leaving a stale terminal face on screen.
+assert.equal(resolveFlowbarView({ ...base, meeting: "unexpected" }), "idle");
+
+// A delayed terminal event from an old meeting cannot steal the active pill;
+// after the terminal face, a newer lifecycle may take over the resting bar.
+assert.equal(
+  meetingStateClaimsFlowbar("recording", "meeting-1", "ready", "meeting-2"),
+  false,
+);
+assert.equal(
+  meetingStateClaimsFlowbar("ready", "meeting-1", "error", "meeting-2"),
+  true,
+);
+assert.equal(
+  meetingStateClaimsFlowbar("ready", "meeting-1", "recording", "meeting-2"),
+  true,
+);
+// Same-meeting ordering mirrors the backend snapshot: retry may return to
+// processing, but a stale recording/paused tick must not resurrect the pill.
+assert.equal(
+  meetingStateClaimsFlowbar(
+    "processing",
+    "meeting-1",
+    "recording",
+    "meeting-1",
+  ),
+  false,
+);
+assert.equal(
+  meetingStateClaimsFlowbar("ready", "meeting-1", "paused", "meeting-1"),
+  false,
+);
+assert.equal(
+  meetingStateClaimsFlowbar("ready", "meeting-1", "processing", "meeting-1"),
+  true,
+);
+assert.equal(
+  meetingStateClaimsFlowbar("paused", "meeting-1", "recording", "meeting-1"),
+  true,
 );
 // FR-008-10/12: the collapsed-toast amber dot only exists while the bar
 // itself renders a face.

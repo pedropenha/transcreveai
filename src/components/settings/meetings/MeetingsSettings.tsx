@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import { emit, listen } from "@tauri-apps/api/event";
 import { Check, ChevronDown, Copy, Plus, Search, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { commands, type Meeting } from "@/bindings";
+import { commands, type Meeting, type MeetingStateEvent } from "@/bindings";
 import { formatDateTime } from "@/utils/dateFormat";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
@@ -22,9 +21,8 @@ import {
 /**
  * FR-009-25 (T-068): meeting list in the Hub with full-text search over
  * title, notes, summary and transcript (`meeting_search` unions the three
- * FTS tables backend-side). `meeting_window_open` is delivered by the
- * parallel T-066 lane — we invoke it by name and degrade to a warn until it
- * lands, so both orders of the merge converge.
+ * FTS tables backend-side). Rows and Flow Bar terminal states open the
+ * persisted transcript through `meeting_window_open`.
  */
 export const MeetingsSettings: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -32,6 +30,8 @@ export const MeetingsSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const refreshSeq = useRef(0);
+  const lastLifecycleRef = useRef<string | null>(null);
 
   // Debounce the search box so FTS only runs once the user pauses typing.
   useEffect(() => {
@@ -42,34 +42,61 @@ export const MeetingsSettings: React.FC = () => {
     return () => clearTimeout(handle);
   }, [query]);
 
+  const refreshMeetings = useCallback(async () => {
+    const seq = ++refreshSeq.current;
+    try {
+      const result = await commands.meetingSearch(debouncedQuery);
+      if (seq !== refreshSeq.current) return;
+      if (result.status === "ok") {
+        setMeetings(result.data);
+      } else {
+        console.warn("meeting_search failed:", result.error);
+      }
+    } catch (e) {
+      console.warn("meeting_search invoke failed:", e);
+    }
+  }, [debouncedQuery]);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void commands
-      .meetingSearch(debouncedQuery)
-      .then((result) => {
-        if (cancelled) return;
-        if (result.status === "ok") {
-          setMeetings(result.data);
-        } else {
-          console.warn("meeting_search failed:", result.error);
-        }
-      })
-      .catch((e) => console.warn("meeting_search invoke failed:", e))
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    void refreshMeetings().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery]);
+  }, [refreshMeetings]);
+
+  // The backend owns meeting lifecycle. `meeting://state` is emitted after a
+  // row changes status, so refresh immediately instead of waiting for the
+  // search box to change or for the user to leave/re-enter this section.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<MeetingStateEvent>("meeting://state", (event) => {
+      const lifecycleKey = `${event.payload.meeting_id}:${event.payload.status}`;
+      if (lifecycleKey === lastLifecycleRef.current) return;
+      lastLifecycleRef.current = lifecycleKey;
+      void refreshMeetings();
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [refreshMeetings]);
 
   const openMeetingWindow = useCallback(async (meetingId: string) => {
     try {
-      await invoke("meeting_window_open", { meetingId });
+      const result = await commands.meetingWindowOpen(meetingId);
+      if (result.status !== "ok") {
+        console.warn("meeting_window_open failed:", result.error);
+      }
     } catch (e) {
-      // T-066 lane: the command may not exist yet at merge time.
-      console.warn("meeting_window_open is unavailable:", e);
+      console.warn("meeting_window_open invoke failed:", e);
     }
   }, []);
 
@@ -99,7 +126,8 @@ export const MeetingsSettings: React.FC = () => {
 
   const deleteMeeting = useCallback(
     async (meetingId: string) => {
-      // Optimistic remove; reload the list on failure.
+      // Optimistic remove; drop any search response already in flight.
+      refreshSeq.current += 1;
       setMeetings((prev) => prev.filter((m) => m.id !== meetingId));
       try {
         const result = await commands.meetingDelete(meetingId);
@@ -183,6 +211,8 @@ const NewMeetingButton: React.FC<{
 }> = ({ onStart }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const triggerId = `${menuId}-trigger`;
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -193,6 +223,9 @@ const NewMeetingButton: React.FC<{
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
+    menuRef.current
+      ?.querySelector<HTMLButtonElement>('[role="menuitem"]')
+      ?.focus();
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
@@ -204,12 +237,14 @@ const NewMeetingButton: React.FC<{
   return (
     <div className="relative" ref={menuRef}>
       <Button
+        id={triggerId}
         variant="secondary"
         size="sm"
         className="flex items-center gap-2"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
       >
         <Plus className="w-4 h-4" />
         <span>{t("settings.meetings.newMeeting")}</span>
@@ -217,8 +252,39 @@ const NewMeetingButton: React.FC<{
       </Button>
       {open && (
         <div
+          id={menuId}
           role="menu"
+          aria-labelledby={triggerId}
           className="absolute end-0 top-full mt-1 bg-background border border-mid-gray/80 rounded-md shadow-lg z-50 min-w-[220px] overflow-hidden"
+          onKeyDown={(event) => {
+            const items = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                '[role="menuitem"]',
+              ),
+            );
+            const index = items.indexOf(event.target as HTMLButtonElement);
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setOpen(false);
+              document.getElementById(triggerId)?.focus();
+              return;
+            }
+            if (index < 0) return;
+            const nextIndex =
+              event.key === "ArrowDown"
+                ? (index + 1) % items.length
+                : event.key === "ArrowUp"
+                  ? (index - 1 + items.length) % items.length
+                  : event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? items.length - 1
+                      : -1;
+            if (nextIndex >= 0) {
+              event.preventDefault();
+              items[nextIndex]?.focus();
+            }
+          }}
         >
           {options.map((option) => (
             <button
@@ -282,6 +348,7 @@ const MeetingRow: React.FC<{
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onOpen();

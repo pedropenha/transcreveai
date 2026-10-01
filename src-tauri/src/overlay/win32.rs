@@ -11,7 +11,7 @@ use tauri::AppHandle;
 use super::geometry::{
     docked_position, effective_edge, BarEdge, FLOWBAR_EDGE_MARGIN, OVERLAY_TOP_OFFSET,
 };
-use super::positioning::get_monitor_with_cursor;
+use super::positioning::get_flowbar_monitor;
 use crate::settings;
 
 /// Whether the currently shown overlay state is the streaming panel — the
@@ -191,8 +191,8 @@ pub(crate) fn place_windows_overlay(
     logical_width: f64,
     logical_height: f64,
 ) -> Result<(), String> {
-    let monitor = get_monitor_with_cursor(app_handle)
-        .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
+    let monitor = get_flowbar_monitor(app_handle)
+        .ok_or_else(|| "failed to determine the Flow Bar monitor".to_string())?;
     let text_scale = windows_text_scale_factor();
     let settings = settings::get_settings(app_handle);
     let (x, y, width, height) = windows_overlay_bounds(

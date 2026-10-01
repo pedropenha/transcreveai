@@ -40,6 +40,10 @@ pub fn set_interactive_rect(rect: Option<FlowbarRect>) {
     *INTERACTIVE_RECT.lock().unwrap_or_else(|e| e.into_inner()) = rect;
 }
 
+pub(crate) fn interactive_rect() -> Option<FlowbarRect> {
+    *INTERACTIVE_RECT.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Poll cadence: fast while the cursor is near the window (≈30 Hz, inside the
 /// FR-001-02 hover budget), lazy far away (NFR-001-04 — idle CPU ≈ 0).
 const NEAR_POLL: Duration = Duration::from_millis(33);
@@ -180,10 +184,18 @@ fn apply(app: &AppHandle, window: &tauri::webview::WebviewWindow, ignore: bool) 
         return;
     }
     let window = window.clone();
-    let _ = app.run_on_main_thread(move || {
-        let _ = window.set_ignore_cursor_events(ignore);
-        let _ = window.emit("flowbar://cursor", !ignore);
-    });
+    if app
+        .run_on_main_thread(move || {
+            if window.set_ignore_cursor_events(ignore).is_err() {
+                IGNORING.store(!ignore, Ordering::SeqCst);
+                return;
+            }
+            let _ = window.emit("flowbar://cursor", !ignore);
+        })
+        .is_err()
+    {
+        IGNORING.store(!ignore, Ordering::SeqCst);
+    }
 }
 
 /// Cursor position in the coordinate space `cursor_space_rect` produces:
@@ -194,6 +206,7 @@ fn cursor_position(_app: &AppHandle) -> Option<(i32, i32)> {
     use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
     let mut point = POINT::default();
+    // SAFETY: `point` is a valid, initialized out-buffer owned by this call.
     unsafe { GetCursorPos(&mut point) }
         .ok()
         .map(|_| (point.x, point.y))

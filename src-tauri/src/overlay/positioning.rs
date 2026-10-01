@@ -7,7 +7,7 @@ use tauri::{AppHandle, PhysicalPosition, PhysicalSize};
 
 use super::geometry::{docked_position, edge_margin, effective_edge, OVERLAY_TOP_OFFSET};
 use crate::input;
-use crate::settings;
+use crate::settings::{self, FlowbarFollow};
 
 pub(crate) fn get_monitor_with_cursor(app_handle: &AppHandle) -> Option<tauri::Monitor> {
     if let Some(mouse_location) = input::get_cursor_position(app_handle) {
@@ -41,6 +41,98 @@ pub(crate) fn get_monitor_with_cursor(app_handle: &AppHandle) -> Option<tauri::M
     }
 
     app_handle.primary_monitor().ok().flatten()
+}
+
+pub(crate) fn preferred_monitor_point(
+    follow: FlowbarFollow,
+    foreground: Option<(i32, i32)>,
+) -> Option<(i32, i32)> {
+    match follow {
+        FlowbarFollow::ForegroundMonitor => foreground,
+        FlowbarFollow::Cursor | FlowbarFollow::PrimaryMonitor => None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn monitor_index_for_rect(
+    rect: (f64, f64, f64, f64),
+    monitors: &[(i32, i32, u32, u32)],
+) -> Option<usize> {
+    let center = (
+        (rect.0 + rect.2 / 2.0).round() as i32,
+        (rect.1 + rect.3 / 2.0).round() as i32,
+    );
+    monitors.iter().position(|(x, y, width, height)| {
+        center.0 >= *x
+            && center.0 < *x + *width as i32
+            && center.1 >= *y
+            && center.1 < *y + *height as i32
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn foreground_window_center() -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect};
+
+    // SAFETY: GetForegroundWindow has no memory-safety preconditions; the
+    // returned handle is only passed to GetWindowRect while `rect` is a valid,
+    // initialized out-buffer owned by this call.
+    let window = unsafe { GetForegroundWindow() };
+    if window.0.is_null() {
+        return None;
+    }
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(window, &mut rect) }.ok()?;
+    Some(((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn foreground_window_center() -> Option<(i32, i32)> {
+    None
+}
+
+fn monitor_containing_physical_point(
+    app_handle: &AppHandle,
+    point: (i32, i32),
+) -> Option<tauri::Monitor> {
+    app_handle
+        .available_monitors()
+        .ok()?
+        .into_iter()
+        .find(|monitor| is_mouse_within_monitor(point, monitor.position(), monitor.size()))
+}
+
+pub(crate) fn get_flowbar_monitor(app_handle: &AppHandle) -> Option<tauri::Monitor> {
+    let follow = settings::get_settings(app_handle).flowbar_follow;
+    if follow == FlowbarFollow::Cursor {
+        return get_monitor_with_cursor(app_handle);
+    }
+    let foreground = foreground_window_center();
+    #[cfg(not(target_os = "windows"))]
+    if follow == FlowbarFollow::ForegroundMonitor && foreground.is_none() {
+        return get_monitor_with_cursor(app_handle);
+    }
+    preferred_monitor_point(follow, foreground)
+        .and_then(|point| monitor_containing_physical_point(app_handle, point))
+        .or_else(|| app_handle.primary_monitor().ok().flatten())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn get_monitor_for_rect(
+    app_handle: &AppHandle,
+    rect: (f64, f64, f64, f64),
+) -> Option<tauri::Monitor> {
+    let monitors = app_handle.available_monitors().ok()?;
+    let areas = monitors
+        .iter()
+        .map(|monitor| {
+            let position = monitor.position();
+            let size = monitor.size();
+            (position.x, position.y, size.width, size.height)
+        })
+        .collect::<Vec<_>>();
+    monitor_index_for_rect(rect, &areas).and_then(|index| monitors.get(index).cloned())
 }
 
 pub(crate) fn is_mouse_within_monitor(
@@ -81,7 +173,7 @@ pub(crate) fn calculate_overlay_position(
     width: f64,
     height: f64,
 ) -> Option<(f64, f64)> {
-    let monitor = get_monitor_with_cursor(app_handle)?;
+    let monitor = get_flowbar_monitor(app_handle)?;
     let scale = monitor.scale_factor();
     let settings = settings::get_settings(app_handle);
 

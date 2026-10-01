@@ -65,7 +65,7 @@ pub fn clamp_meeting_max_minutes(minutes: u64) -> u64 {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
 pub struct MeetingStateEvent {
     pub meeting_id: String,
-    /// 'recording' | 'paused' | 'processing' | 'error'
+    /// 'recording' | 'paused' | 'processing' | 'ready' | 'error' | 'recovered'
     pub status: String,
     /// Milliseconds since the meeting started (pause time included).
     pub elapsed_ms: u64,
@@ -677,6 +677,28 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].status, "recording");
         assert_eq!(events[0].elapsed_ms, 0);
+    }
+
+    #[test]
+    fn stop_orders_capture_persist_processing_and_indicator() {
+        let t0 = Instant::now();
+        let mut m = machine(t0);
+        m.stop(t0 + MIN, StopReason::User);
+        let e = effects(&mut m);
+        let position = |effect: &Effect| e.iter().position(|item| item == effect);
+        assert!(
+            position(&Effect::StopCapture)
+                < position(&Effect::PersistStatus {
+                    status: "processing",
+                    error_code: None,
+                })
+                && position(&Effect::PersistStatus {
+                    status: "processing",
+                    error_code: None,
+                }) < position(&Effect::RequestProcessing)
+                && position(&Effect::RequestProcessing) < position(&Effect::Indicator(false))
+        );
+        assert_eq!(m.take_events().last().unwrap().status, "processing");
     }
 
     #[test]

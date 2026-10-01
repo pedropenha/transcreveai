@@ -29,6 +29,30 @@ fn suppressed_via_source_trait() {
 }
 
 #[test]
+fn visual_notch_rect_ignores_the_transparent_window_frame() {
+    let rect = anchored_flowbar_rect(
+        (1080.0, 1264.0, 400.0, 120.0),
+        Some(crate::overlay::FlowbarRect {
+            x: 176.0,
+            y: 104.0,
+            width: 48.0,
+            height: 8.0,
+        }),
+        1.0,
+    );
+    assert_eq!(rect, (1256.0, 1368.0, 48.0, 8.0));
+    let (_, y) = toast_origin(
+        (0.0, 0.0, 2560.0, 1400.0),
+        Some(rect),
+        (376.0, 88.0),
+        ToastPosition::AboveFlowbar,
+        6.0,
+        16.0,
+    );
+    assert_eq!(y, 1368.0 - 6.0 - 88.0);
+}
+
+#[test]
 fn bottom_right_forces_corner() {
     let flowbar = Some((800.0, 900.0, 300.0, 100.0));
     let (x, y) = toast_origin(
