@@ -7,22 +7,11 @@
 
 - **Alvo de merges**: `integration/v1` (worktree `C:\multimidia\ecc-v1`). `main` nunca é tocada.
 - **Base**: `chore/t-001a-baseline` + `chore/t-008-design-direction` (já mergeada em `3a82c14`).
-- **Última atualização**: 2026-10-02 — onda A mergeada em série (T-064→T-061→T-062, commits 8aabfe7/7493e9b/92ff749 + consolidação a085971). Gates pós-merge verdes: 704 testes lib, clippy -D warnings limpo, lint/build/translations/catracas ok, bindings regen. Fix de merge: toast::init realocado p/ initialize_core_logic; meeting_toast_sound deduplicado.
+- **Última atualização**: 2026-10-02 — **notetaker completo (T-061–T-069 mergeadas)**. Ondas A/B/C mergeadas em série; verificação final verde: 779 testes lib, clippy `-D warnings`, lint/build/translations/test:unit ok, bindings regen, catracas ok (13→12 arquivos >800 linhas após split `db/meeting_app_rules.rs`). Roteiro de smoke manual entregue em `docs/smoke/notetaker.md` — pendente de execução pelo usuário com apps reais.
 
 ## Em andamento (lanes)
 
-- (nenhuma — onda A mergeada e verificada; preparando onda B)
-## Contratos fixados entre lanes da onda A
-- `detector://meeting` → `{ detection_id, app_label, exe, pid, action, started_at }` / `{ detection_id, ended: true }` / `{ detection_id, dismissed: true }`.
-- `detector_respond(detection_id, action)` com `action ∈ start|start_mic_only|always|never|ignore_meeting|dismiss`; `start*`/`always` → `detector://start-requested { detection_id, app_label, exe, mic_only }`.
-- `meeting://state { meeting_id, status, elapsed_ms }`; `meeting://process-requested` = seam do pós-processamento (T-067).
-- `toast://state { collapsed, detection? }` backend→todas as janelas; `toast_set_collapsed`/`toast_reopen` commands.
-- Settings novos: T-061 → `meeting_detection_enabled`, `detect_any_call_enabled`, `meeting_auto_start`, `meeting_auto_stop`, `meeting_toast_sound`... (detecção); T-062 → `meeting_toast_position`, `meeting_toast_sound`; T-064 → `meeting_max_minutes`, `meeting_consent_*`, `meeting_silence_checkin_enabled`. ⚠️ `meeting_toast_sound` atribuído às duas lanes T-061/T-062 — deduplicar no merge.
-
-### Onda B (depois de T-064 mergear)
-- **T-065** transcrição ao vivo por trilha + coexistência com ditado · **T-066** janela da reunião · **T-067** pós-processamento/resumo (consome `meeting://process-requested`, `llm::router::complete_for_purpose`).
-### Onda C
-- **T-068** markdown/lista/busca · **T-069** auto-start/auto-stop + roteiro manual.
+- (nenhuma)
 
 ## Concluído
 
@@ -52,14 +41,23 @@
 - [x] **T-040** — merge `7439760`. Flow Bar: click-through, hover Ditar/Notetaker, posição inferior-centro.
 - [x] **T-043** — merge `bb30a12`. Tela Modelos & Provedores, só locais na v1.
 - [x] **T-050** — merge `403ddfb`. Trait `LlmProvider` + roteamento cost-aware (BYOK).
+- [x] **T-064** — merge `8aabfe7`. Sessão de reunião: `meeting_start/pause/resume/stop`, consentimento FR-009-02, limite FR-009-08, check-in FR-009-09, indicador Flow Bar/bandeja; consome `notetaker://start-requested` + `detector://start-requested`; emite `meeting://state` + `meeting://process-requested`.
+- [x] **T-061** — merge `7493e9b`. Detector: máquina pura (debounce 5 s, memória de título 10 min, grace 15 s), `detector://meeting`, `detector_respond`, regras Zoom/Teams/Meet/Webex em `meeting_app_rules`, `detector://start-requested`.
+- [x] **T-062** — merge `92ff749` + fix `a085971` (`toast::init` realocado p/ `initialize_core_logic`, `meeting_toast_sound` deduplicado). Toast não-ativável compacto/expandido, colapso 60 s → ponto âmbar, supressão DND/tela cheia.
+- [x] **T-065** — merge `9aced0b`. Transcrição ao vivo por trilha (`meeting_blocks`, fila pendente, STT local), intervalos de ditado excluídos do mic com `dictation_marker` (FR-009-10), gate por setting (FR-009-15).
+- [x] **T-067** — merge `61adcad` + consolidação `043aa62` (colisão de migration: schema `meeting_blocks` unificado no da T-065 + `list_by_meeting`). Pós-processamento: transcrição pendente, resumo map-reduce, título sugerido, fallback sem chave (FR-009-16..22).
+- [x] **T-066** — merge `253be5e`. Janela da reunião (notas, transcrição, resumo), edição de título/notas, fechar preserva gravação.
+- [x] **T-068** — merge `c2d6575`. Copiar como Markdown (FR-009-23) + lista/busca FTS5 de reuniões (FR-009-25) + UI de lista no hub.
+- [x] **T-069** — merge `f0388fc`. Auto-start/auto-stop vinculado ao `detection_id` (FR-008-13..14), "continuar gravando" na janela de stop pendente, `meeting_continue_recording`; checklist de smoke `docs/smoke/notetaker.md`.
 
 ## Próximas na DAG (prontas para lanes)
 
 - **T-041** Flow Bar menu/soneca/sons · **T-042** Hub Início/Histórico · **T-044** Configurações + Dicionário (dep. T-035 ✔) · **T-045** onboarding · **T-046** privacidade/retenção
+- Depois: smoke manual do notetaker (`docs/smoke/notetaker.md`) + `bun run tauri build` de entrega.
 
 ## Merges pendentes
 
-- Onda A: T-061, T-062, T-064 (ordem sugerida: T-064 → T-061 → T-062; conferir dedup de `meeting_toast_sound` e o wiring `detector://start-requested` → `meeting_start`).
+- (nenhum)
 
 ## Bloqueios
 
@@ -86,4 +84,5 @@
 
 - Conflitos esperados entre lanes: `src/bindings.ts` (regenerar após cada merge), `src/i18n/locales/en/translation.json`, `specs/tasks.md`.
 - Windows: cargo/`bun run tauri` só em PowerShell com `. .\scripts\windows-dev-env.ps1 -BypassJunction`.
-- Catracas da T-001a: clippy `-D warnings`, `cargo deny`/`audit`, ≤12 arquivos >800 linhas, ≤158 unwrap/expect (re-medido), ≤50 unsafe. Nunca regredir.
+- Catracas da T-001a: clippy `-D warnings`, `cargo deny`/`audit`, ≤12 arquivos >800 linhas, ≤158 unwrap/expect, unsafe com teto documentado no script (63 atual). Nunca regredir.
+- Resíduos conhecidos do notetaker (deferred pelas lanes): atalho global Alt+M não wired; UI de settings de reunião (duração máx., consentimento, check-in) pendente; após aceitar consentimento o usuário dispara o start de novo; evento `shortcut://hook-dead` e aviso de fallback de mic seguem sem listener de UI.
