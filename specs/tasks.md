@@ -119,10 +119,10 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [x] **T-050** **Estender** `llm_client.rs` (OpenAI-compatível + Anthropic já existem) para o trait `LlmProvider`; teste de conexão; roteamento conforme `cost-aware-llm-pipeline`. **Na v1 serve só ao resumo de reunião (BYOK)**: sem chave configurada, transcrição e notas funcionam e o resumo fica desabilitado (FR-009-21). Depende de: T-016. — Refs: [contracts §3–4](architecture/contracts.md#3-llmprovider), FR-009-17..21
 
 - [x] **T-060** Monitor de uso do microfone (registro ConsentStore) + snapshots de janelas. — Refs: FR-008-01
-- [ ] **T-061** Detector (regras, debounce, memória de título, fim de reunião). Regras embutidas na v1: **Zoom, Teams, Meet (navegador), Webex**; demais apps da F008 ficam como regras v1.1+. — Refs: FR-008-02..06, FR-008-13..14
-- [ ] **T-062** Toast não-ativável (compacto/expandido, ▾, recolher). — Refs: FR-008-07..12, AC-008-01..03, AC-008-07
+- [x] **T-061** Detector (regras, debounce, memória de título, fim de reunião). Regras embutidas na v1: **Zoom, Teams, Meet (navegador), Webex**; demais apps da F008 ficam como regras v1.1+. — Refs: FR-008-02..06, FR-008-13..14
+- [x] **T-062** Toast não-ativável (compacto/expandido, ▾, recolher). — Refs: FR-008-07..12, AC-008-01..03, AC-008-07
 - [x] **T-063** Captura loopback + troca de dispositivo + gravação em blocos + recuperação. — Refs: FR-009-03..05, AC-009-04..05
-- [ ] **T-064** Sessão de reunião: iniciar/pausar/parar, limites, check-in, indicador, consentimento. — Refs: FR-009-01..02, FR-009-06..09, AC-009-08
+- [x] **T-064** Sessão de reunião: iniciar/pausar/parar, limites, check-in, indicador, consentimento. — Refs: FR-009-01..02, FR-009-06..09, AC-009-08
 - [ ] **T-065** Transcrição ao vivo por trilha + coexistência com ditado. — Refs: FR-009-10, FR-009-15, AC-009-03
 - [ ] **T-066** Janela da reunião (Minhas notas, Transcrição, Resumo). — Refs: FR-009-12..14, AC-009-02
 - [ ] **T-067** Pós-processamento: resumo, map-reduce, título, regenerar. — Refs: FR-009-16..22, AC-009-01, AC-009-06

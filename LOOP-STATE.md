@@ -7,15 +7,12 @@
 
 - **Alvo de merges**: `integration/v1` (worktree `C:\multimidia\ecc-v1`). `main` nunca é tocada.
 - **Base**: `chore/t-001a-baseline` + `chore/t-008-design-direction` (já mergeada em `3a82c14`).
-- **Última atualização**: 2026-10-02 — onda A (notetaker) em execução com 3 lanes paralelas: `feat/t-061-detector` (ecc-t061), `feat/t-062-toast` (ecc-t062), `feat/t-064-meeting-session` (ecc-t064). Onda 5 mergeada em série (T-030→T-031→T-035→T-040→T-043→T-050); verificação pós-merge completa e verde (653 testes lib, clippy -D warnings, catracas ok, bindings regen).
+- **Última atualização**: 2026-10-02 — onda A mergeada em série (T-064→T-061→T-062, commits 8aabfe7/7493e9b/92ff749 + consolidação a085971). Gates pós-merge verdes: 704 testes lib, clippy -D warnings limpo, lint/build/translations/catracas ok, bindings regen. Fix de merge: toast::init realocado p/ initialize_core_logic; meeting_toast_sound deduplicado.
 
 ## Em andamento (lanes)
 
-- **T-061** detector → `C:\multimidia\ecc-t061` (`feat/t-061-detector`): máquina pura + `detector://meeting` + `detector_respond` + `detector://start-requested` + settings de detecção + CRUD de `meeting_app_rules`.
-- **T-062** toast → `C:\multimidia\ecc-t062` (`feat/t-062-toast`): janela `toast` não-ativável, compacto/expandido/▾, colapso 60 s → ponto âmbar, `toast://show`, supressão DND/tela cheia. Consome `detector://meeting`; chama `detector_respond` via `invoke` direto (bindings chegam no merge).
-- **T-064** sessão → `C:\multimidia\ecc-t064` (`feat/t-064-meeting-session`): `MeetingSessionManager` + `meeting_start/pause/resume/stop/get/list/delete`, consentimento FR-009-02, limite FR-009-08, check-in FR-009-09, indicador FR-009-07. Consome `notetaker://start-requested` + `detector://start-requested`; emite `meeting://state` + `toast://show` + `meeting://process-requested` (seam T-067).
-
-### Contratos fixados entre lanes da onda A
+- (nenhuma — onda A mergeada e verificada; preparando onda B)
+## Contratos fixados entre lanes da onda A
 - `detector://meeting` → `{ detection_id, app_label, exe, pid, action, started_at }` / `{ detection_id, ended: true }` / `{ detection_id, dismissed: true }`.
 - `detector_respond(detection_id, action)` com `action ∈ start|start_mic_only|always|never|ignore_meeting|dismiss`; `start*`/`always` → `detector://start-requested { detection_id, app_label, exe, mic_only }`.
 - `meeting://state { meeting_id, status, elapsed_ms }`; `meeting://process-requested` = seam do pós-processamento (T-067).
