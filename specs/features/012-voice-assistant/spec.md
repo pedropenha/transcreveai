@@ -48,9 +48,12 @@ usando a assinatura que o usuário já tem.
   adaptadores por ferramenta. Cada adaptador define: nome do binário, argv de
   modo não-interativo, formato de saída e flags de desativação de
   confirmações/permite writes desligadas (somente leitura/geração de texto).
-  Alvos iniciais: `codex exec`, `claude -p`, `devin` (modo headless),
-  `cursor-agent -p`. Os flags exatos são confirmados na implementação contra a
-  versão instalada.
+  Alvos iniciais: `codex exec`, `claude -p`. `cursor-agent` e `devin`
+  ficam **listados como experimentais** — sem modo não-mutante headless
+  verificado, o backend os recusa até que flags de somente-leitura sejam
+  comprovados contra a versão instalada (NFR-012-02); a UI os marca como
+  experimental e não permite habilitá-los. Os flags exatos de `codex` e
+  `claude` são confirmados na implementação contra a versão instalada.
 - **FR-012-02** Detecção: o provider aparece na tela Modelos & Provedores como
   `detectado`/`ausente` conforme o binário estar no `PATH`. Ausente → linha
   desabilitada com dica de instalação.
