@@ -29,15 +29,14 @@
 - [x] **T-015** — merge (ver git log). `managers/hardware.rs` (RAM/AVX2/VRAM → tiers + recomendações FR-003-05); `model/disk.rs` (gate de espaço); `import_model` (GGUF probe + sha256 + cópia atômica); turbo = recommended no catálogo; 3 comandos novos reconciliados a CommandError no merge. 398 testes.
 - [x] **T-009** — merge (ver git log). Playwright nas webviews (`tests/helpers/tauri-mock.ts` + 3 specs); harness nativo pywinauto em `e2e/native/` (smoke manual); feature cargo `audio-fixture` com `TRANSCREVE_AUDIO_FIXTURE` alimentando o ring do recorder; fixtures WAV pt-BR sintéticos. 380 testes (c/ feature).
 - [x] **T-013** — merge (ver git log). `prompt.rs` (initial_prompt c/ dedup + budget) + `hallucination.rs` (blocklist pt/en, filtros R0–R3 por energia RMS do segmento). Custom words já chegavam via vocabulary_hints. 437 testes. `bindings.ts` REGENERADO de verdade (teste de drift passa) — dívida da edição manual quitada.
+- [x] **T-060** — merge. `meeting/`: ConsentStore (RegNotify + poll 2s) + EnumWindows + classificador puro (browser exige título — FR-008-02) + gates (pause/offline) + seeds Zoom/Teams/Meet/Webex. ~20 testes.
+- [x] **T-063** — merge. Loopback WASAPI via cpal (render device → input stream); `meeting/blocks.rs` (WAV 60s fsync por trilha), `capture.rs` (mic FrameTap::Raw+when_idle + system), `recovery.rs` (órfãs→recovered no startup); reattach backoff p/ troca de device.
+- [x] **T-022** — merge. Máquina completa Idle→Arming→Recording→Transcribing→Processing→Inserting→Done/Error em `transcription_coordinator/` (transições puras + effect executor); fila FIFO=5, limite 5min c/ aviso T-60s, <300ms → Empty, strip de comando "enviar", PasteLastAction, failed→dictations. 49 testes da máquina. Bug do manifest do exe de teste RESOLVIDO no build.rs (MANIFEST:EMBED).
 - [x] **T-007** — merge (ver git log). Menu da bandeja = FR-010-14 (Hub, ditado, reunião desabilitada até T-064, Flow Bar show/hide, pausa de detecção 1h, modo offline, sair); autostart default on; `offline_mode` + `meeting_detection_paused_until_ms` no schema; quit c/ confirmação se gravando; `--no-tray` fecha de verdade; relaunch hidden. 373 testes + `cargo check` pós-merge verde.
 
 ## Em andamento (lanes)
 
 - **T-021** `feat/t-021-matcher` @ `ecc-t021` (54045a53)
-- **T-011** `feat/t-011-vad` @ `ecc-t011` (dfd4b643)
-- **T-022** `feat/t-022-coordinator` @ `ecc-t022` (8ef225a5)
-- **T-060** `feat/t-060-mic-monitor` @ `ecc-t060` (07ab58ff)
-- **T-063** `feat/t-063-loopback` @ `ecc-t063` (c049a38c)
 
 ## Próximas na DAG (prontas para lanes)
 
