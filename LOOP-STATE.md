@@ -36,7 +36,7 @@
 
 ## Em andamento (lanes)
 
-(onda 3 fechada; T-021 merge pendente)
+(onda 4 em andamento — 6 lanes)
 
 ## Próximas na DAG (prontas para lanes)
 
