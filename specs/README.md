@@ -45,6 +45,7 @@ Detalhes em [constitution.md](constitution.md#0-hierarquia-de-autoridade). Se um
 | [features/009-meeting-notetaker](features/009-meeting-notetaker/spec.md)         | Gravar, transcrever e resumir reuniões                        | v1                                |
 | [features/010-hub-settings](features/010-hub-settings/spec.md)                   | Hub, histórico, configurações, onboarding, bandeja            | v1                                |
 | [features/011-security-privacy](features/011-security-privacy/spec.md)           | Segredos, dados, rede, consentimento                          | v1                                |
+| [features/012-voice-assistant](features/012-voice-assistant/spec.md)             | Assistente por voz no overlay + providers de agentes CLI      | v1.1+ (antecipável)               |
 | [tasks.md](tasks.md)                                                             | Plano de implementação por fases                              | —                                 |
 
 ## Convenções
