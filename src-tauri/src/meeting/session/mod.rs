@@ -1,0 +1,444 @@
+//! Meeting session manager (T-064; FR-009-01/02, FR-009-06..09, AC-009-08).
+//!
+//! A single worker thread serializes every session input — the `meeting_*`
+//! commands, `detector://start-requested` / `notetaker://start-requested`
+//! cross-lane events and `MeetingCaptureEvent`s — through the pure
+//! [`SessionMachine`] (`machine` module) and executes its [`Effect`]s against
+//! SQLite, the capture plumbing and IPC. Same shape as
+//! `transcription_coordinator`: the machine owns policy and timing; the
+//! shell in `worker` owns `AppHandle`, the db connection and the live
+//! [`MeetingCapture`].
+//!
+//! Post-processing is T-067's: when a meeting enters `processing` the worker
+//! emits `meeting://process-requested` (`{ meeting_id }`) and stops there.
+
+mod machine;
+mod worker;
+
+pub use machine::{
+    clamp_meeting_max_minutes, MeetingPolicy, MeetingStateEvent, SessionMachine,
+    DETECTOR_START_REQUESTED_EVENT, MEETING_PROCESS_REQUESTED_EVENT, MEETING_STATE_EVENT,
+    TOAST_SHOW_EVENT,
+};
+pub(crate) use machine::{Effect, StopReason, ToastKind};
+
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
+
+use rusqlite::Connection;
+use serde::Serialize;
+use tauri::AppHandle;
+
+use crate::commands::{CommandError, CommandErrorCode, CommandResult};
+use crate::db::meetings::Meeting;
+use crate::meeting::blocks::{
+    meeting_audio_dir, meetings_root, scan_meeting_blocks, SealedBlock, Track,
+};
+
+/// Whether a meeting session is active (recording or paused). Read by the
+/// tray (`meeting_active` flag + red icon, FR-009-07) and by
+/// `tray::quit_needs_confirmation` (FR-010-15) without going through the
+/// worker thread.
+pub(crate) static MEETING_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+pub fn meeting_recording_active() -> bool {
+    MEETING_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// What decides whether a sealed block carries speech (FR-009-09). Behind a
+/// trait so tests inject silence/speech without depending on WAV content.
+pub trait SpeechSignal: Send {
+    fn has_speech(&self, block: &SealedBlock) -> bool;
+}
+
+/// Production signal: RMS of the sealed WAV block above a small threshold.
+/// Reading a 60 s block (~1.9 MB) once per minute per track is well inside
+/// the NFR-009-01 CPU budget.
+pub struct RmsSpeechSignal {
+    /// Minimum normalized RMS that counts as speech (0.01 ≈ −40 dBFS).
+    threshold: f32,
+}
+
+impl Default for RmsSpeechSignal {
+    fn default() -> Self {
+        Self { threshold: 0.01 }
+    }
+}
+
+impl SpeechSignal for RmsSpeechSignal {
+    fn has_speech(&self, block: &SealedBlock) -> bool {
+        let Ok(samples) = crate::audio_toolkit::read_wav_samples(&block.path) else {
+            return false;
+        };
+        if samples.is_empty() {
+            return false;
+        }
+        let mean_square = samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32;
+        mean_square.sqrt() >= self.threshold
+    }
+}
+
+/// Who asked for a meeting and how it should capture (FR-009-01).
+#[derive(Clone, Debug)]
+pub struct StartRequest {
+    /// 'auto_prompt' | 'auto_start' | 'manual' | 'in_person'.
+    pub detection: String,
+    pub app_label: Option<String>,
+    pub app_exe: Option<String>,
+    /// `true` = mic only ("Presencial" / detector `mic_only`) — the system
+    /// track stays off.
+    pub mic_only: bool,
+}
+
+impl StartRequest {
+    /// Flow Bar ◉ / tray / Hub "Nova reunião" — manual call mode (mic +
+    /// system).
+    pub fn manual() -> Self {
+        Self {
+            detection: "manual".to_string(),
+            app_label: None,
+            app_exe: None,
+            mic_only: false,
+        }
+    }
+}
+
+/// `toast://show` payload (contracts.md §5).
+#[derive(Clone, Debug, Serialize)]
+pub struct ToastPayload {
+    pub kind: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+}
+
+/// `meeting://process-requested` payload — the T-067 seam.
+#[derive(Clone, Debug, Serialize)]
+pub struct ProcessRequestedPayload {
+    pub meeting_id: String,
+}
+
+pub(crate) enum Command {
+    Start {
+        req: StartRequest,
+        reply: Sender<CommandResult<Meeting>>,
+    },
+    Pause {
+        reply: Sender<CommandResult<()>>,
+    },
+    Resume {
+        reply: Sender<CommandResult<()>>,
+    },
+    Stop {
+        reply: Sender<CommandResult<()>>,
+    },
+    Extend {
+        reply: Sender<CommandResult<()>>,
+    },
+    Checkin {
+        keep_recording: bool,
+        reply: Sender<CommandResult<()>>,
+    },
+}
+
+/// Handle to the session worker. Cheap to clone (channel + shared snapshot);
+/// Tauri manages one instance.
+pub struct MeetingSessionManager {
+    tx: Sender<Command>,
+    /// Last emitted `meeting://state` — `meeting_current` answers
+    /// late-mounted frontends (Flow Bar, meeting window) without a round
+    /// trip through the worker.
+    snapshot: Arc<Mutex<Option<MeetingStateEvent>>>,
+}
+
+impl Clone for MeetingSessionManager {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+            snapshot: Arc::clone(&self.snapshot),
+        }
+    }
+}
+
+impl MeetingSessionManager {
+    pub fn new(app: AppHandle) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let snapshot = Arc::new(Mutex::new(None));
+        let worker_snapshot = Arc::clone(&snapshot);
+        let spawned = std::thread::Builder::new()
+            .name("meeting-session".to_string())
+            .spawn(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    worker::Worker::new(app, worker_snapshot).run(rx);
+                }));
+                if let Err(e) = result {
+                    log::error!("Meeting session worker panicked: {e:?}");
+                    MEETING_ACTIVE.store(false, Ordering::SeqCst);
+                }
+            });
+        if let Err(e) = spawned {
+            log::error!("Failed to spawn meeting session worker: {e}");
+        }
+        Self { tx, snapshot }
+    }
+
+    /// FR-009-01/02: start the single allowed meeting. Fails with
+    /// `consent_required` until `meeting_consent_accept` has run and `busy`
+    /// while another meeting is active.
+    pub fn request_start(&self, req: StartRequest) -> CommandResult<Meeting> {
+        self.call(|reply| Command::Start { req, reply })?
+    }
+
+    pub fn request_stop(&self) -> CommandResult<()> {
+        self.call(|reply| Command::Stop { reply })?
+    }
+
+    pub fn request_pause(&self) -> CommandResult<()> {
+        self.call(|reply| Command::Pause { reply })?
+    }
+
+    pub fn request_resume(&self) -> CommandResult<()> {
+        self.call(|reply| Command::Resume { reply })?
+    }
+
+    /// FR-009-08: "Estender 30 min" from the limit toast.
+    pub fn request_extend(&self) -> CommandResult<()> {
+        self.call(|reply| Command::Extend { reply })?
+    }
+
+    /// FR-009-09 check-in answer; `keep_recording = false` stops the meeting.
+    pub fn request_checkin_respond(&self, keep_recording: bool) -> CommandResult<()> {
+        self.call(|reply| Command::Checkin {
+            keep_recording,
+            reply,
+        })?
+    }
+
+    /// A meeting is recording or paused (the worker owns the truth).
+    pub fn is_active(&self) -> bool {
+        meeting_recording_active()
+    }
+
+    /// Latest `meeting://state` snapshot (`meeting_current`).
+    pub fn current(&self) -> Option<MeetingStateEvent> {
+        self.snapshot
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    fn call<T>(&self, mk: impl FnOnce(Sender<T>) -> Command) -> CommandResult<T> {
+        let (reply, rx) = mpsc::channel();
+        self.tx.send(mk(reply)).map_err(|_| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Meeting session is unavailable",
+                "worker channel closed",
+            )
+        })?;
+        rx.recv().map_err(|_| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Meeting session did not answer",
+                "reply channel closed",
+            )
+        })
+    }
+}
+
+/// The default meeting title (FR-009-12): "<App> · <dd/mm hh:mm>", or
+/// "Reunião · …" when no app triggered the start.
+pub(crate) fn default_title(
+    app_label: Option<&str>,
+    now: chrono::DateTime<chrono::Local>,
+) -> String {
+    let stamp = now.format("%d/%m %H:%M");
+    match app_label {
+        Some(label) if !label.trim().is_empty() => format!("{label} · {stamp}"),
+        _ => format!("Reunião · {stamp}"),
+    }
+}
+
+/// First block index per track when (re)starting a capture into `dir` —
+/// `scan_meeting_blocks` is the source of truth so a resumed meeting keeps
+/// numbering (and offsets, via the shared `time_base`) across pauses.
+pub(crate) fn next_block_indices(dir: &Path) -> (u32, u32) {
+    let scanned = scan_meeting_blocks(dir).unwrap_or_default();
+    let next = |track: Track| {
+        scanned
+            .blocks
+            .iter()
+            .filter(|b| b.track == track)
+            .map(|b| b.index + 1)
+            .max()
+            .unwrap_or(1)
+    };
+    (next(Track::Mic), next(Track::System))
+}
+
+/// `true` when `dir` is inside the meetings audio root — the guard
+/// `meeting_delete` applies before `remove_dir_all` so a tampered
+/// `audio_dir` can never reach outside `app_data`.
+fn dir_inside_meetings_root(app_data_dir: &Path, dir: &Path) -> bool {
+    dir.starts_with(meetings_root(app_data_dir))
+}
+
+/// Localized toast text for each [`ToastKind`]. `lang` is the normalized
+/// `app_language` (`"pt-BR"` or `"en"`).
+pub(crate) fn toast_message(kind: ToastKind, lang: &str) -> String {
+    let pt = lang == "pt-BR";
+    let text = match kind {
+        ToastKind::MicUnavailable => {
+            if pt {
+                "Microfone indisponível — outro app pode estar usando o microfone."
+            } else {
+                "Microphone unavailable — another app may be using it."
+            }
+        }
+        ToastKind::SystemUnavailable => {
+            if pt {
+                "Os outros participantes não estão sendo capturados."
+            } else {
+                "The other participants are not being captured."
+            }
+        }
+        ToastKind::LimitWarning => {
+            if pt {
+                "A reunião atingirá o limite de duração em 5 minutos."
+            } else {
+                "The meeting will reach the duration limit in 5 minutes."
+            }
+        }
+        ToastKind::SilenceCheckin => {
+            if pt {
+                "Ainda em reunião?"
+            } else {
+                "Still in the meeting?"
+            }
+        }
+        ToastKind::WriteFailed => {
+            if pt {
+                "Falha ao gravar o áudio da reunião — o disco pode estar cheio."
+            } else {
+                "Failed to write meeting audio — the disk may be full."
+            }
+        }
+    };
+    text.to_string()
+}
+
+/// Open the app db for session use (same path resolution as recovery).
+pub(crate) fn open_session_db(app: &AppHandle) -> CommandResult<Connection> {
+    let dir = crate::portable::app_data_dir(app).map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to resolve app data", e)
+    })?;
+    let path = crate::db::database_path(&dir).map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to resolve database", e)
+    })?;
+    crate::db::open_connection(&path)
+        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Failed to open database", e))
+}
+
+/// Delete a meeting's audio dir — guarded to `audio/meetings/` so a tampered
+/// row can never delete outside `app_data`.
+pub(crate) fn remove_meeting_audio_dir(app_data_dir: &Path, meeting_id: &str) -> CommandResult<()> {
+    let dir = meeting_audio_dir(app_data_dir, meeting_id);
+    if !dir_inside_meetings_root(app_data_dir, &dir) {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "Refusing to delete audio outside the meetings directory",
+        ));
+    }
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => Ok(()),
+        // Never recorded / already gone: deleting is idempotent.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to delete the meeting audio",
+            e,
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::meeting::blocks::BlockWriter;
+    use std::time::Instant;
+
+    #[test]
+    fn title_uses_app_label_or_generic_prefix() {
+        let now = chrono::Local::now();
+        let titled = default_title(Some("Zoom"), now);
+        assert!(titled.starts_with("Zoom · "), "{titled}");
+        assert!(default_title(None, now).starts_with("Reunião · "));
+        assert!(default_title(Some("  "), now).starts_with("Reunião · "));
+    }
+
+    #[test]
+    fn resume_indices_continue_on_disk_numbering() {
+        let dir = tempfile::tempdir().unwrap();
+        let t0 = Instant::now();
+        let mut mic = BlockWriter::with_block_samples(dir.path(), Track::Mic, t0, 10).unwrap();
+        let mut sys = BlockWriter::with_block_samples(dir.path(), Track::System, t0, 10).unwrap();
+        mic.push(&[0.1; 25], t0).unwrap();
+        sys.push(&[0.2; 10], t0).unwrap();
+        mic.finish(t0).unwrap();
+        sys.finish(t0).unwrap();
+
+        assert_eq!(next_block_indices(dir.path()), (4, 2));
+        assert_eq!(next_block_indices(&dir.path().join("nope")), (1, 1));
+    }
+
+    #[test]
+    fn audio_dir_guard_confines_deletes_to_meetings_root() {
+        let root = Path::new("data");
+        assert!(dir_inside_meetings_root(
+            root,
+            &meeting_audio_dir(root, "abc")
+        ));
+        assert!(!dir_inside_meetings_root(root, Path::new("data/other")));
+        assert!(!dir_inside_meetings_root(root, Path::new("elsewhere")));
+    }
+
+    #[test]
+    fn speech_signal_reads_rms_from_sealed_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let t0 = Instant::now();
+        let mut loud = BlockWriter::with_block_samples(dir.path(), Track::Mic, t0, 100).unwrap();
+        loud.push(&[0.4; 100], t0).unwrap();
+        let loud = loud.finish(t0).unwrap();
+        // Different track — both writers would otherwise seal `mic-0001.wav`.
+        let mut quiet =
+            BlockWriter::with_block_samples(dir.path(), Track::System, t0, 100).unwrap();
+        quiet.push(&[0.0001; 100], t0).unwrap();
+        let quiet = quiet.finish(t0).unwrap();
+
+        let signal = RmsSpeechSignal::default();
+        assert!(signal.has_speech(&loud[0]));
+        assert!(!signal.has_speech(&quiet[0]));
+    }
+
+    #[test]
+    fn toast_messages_are_localized() {
+        assert_eq!(
+            toast_message(ToastKind::SilenceCheckin, "pt-BR"),
+            "Ainda em reunião?"
+        );
+        assert_eq!(
+            toast_message(ToastKind::SilenceCheckin, "en"),
+            "Still in the meeting?"
+        );
+        assert!(toast_message(ToastKind::SystemUnavailable, "pt-BR").contains("participantes"));
+    }
+
+    #[test]
+    fn toast_kinds_carry_contract_action_names() {
+        assert_eq!(ToastKind::LimitWarning.action(), Some("extend_30"));
+        assert_eq!(ToastKind::SilenceCheckin.action(), Some("checkin"));
+        assert_eq!(ToastKind::MicUnavailable.action(), None);
+    }
+}

@@ -48,6 +48,9 @@ pub enum CommandErrorCode {
     Keyring,
     /// External provider (HTTP) request failures.
     Provider,
+    /// The meeting consent (FR-009-02) has not been acknowledged yet — the
+    /// frontend shows the first-use modal in response to this code.
+    ConsentRequired,
 }
 
 /// The error half of the IPC envelope — a stable `code` plus a
@@ -135,6 +138,7 @@ mod tests {
             (CommandErrorCode::Model, "model"),
             (CommandErrorCode::Keyring, "keyring"),
             (CommandErrorCode::Provider, "provider"),
+            (CommandErrorCode::ConsentRequired, "consent_required"),
         ] {
             let json = serde_json::to_value(code).expect("code must serialize");
             assert_eq!(json, serde_json::json!(expected));

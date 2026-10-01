@@ -60,9 +60,8 @@ struct MenuInputs {
     /// drains (the coordinator's remembered-press path).
     recording: bool,
     warning: bool,
-    /// A meeting is being recorded — switches its entry to "Stop Meeting".
-    /// Always `false` until the meeting session (T-064) reports state; the
-    /// entry ships disabled in the meantime.
+    /// A meeting is being recorded (T-064) — switches its entry to "Stop
+    /// Meeting" and forces the red recording icon (FR-009-07).
     meeting_active: bool,
     /// Tray "Ocultar Flow Bar" suppression is on (runtime-only, FR-001-07).
     flowbar_hidden: bool,
@@ -322,16 +321,23 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
     let settings = settings::get_settings(app);
     let theme = get_current_theme(app);
     let warning = crate::secure_input::tray_warning_active(app);
+    // FR-009-07: a recording meeting shows the same red icon as a dictation
+    // — audio is being captured either way. The *menu* flags below stay on
+    // the dictation's own state ("Stop Dictation"/"Cancel" describe it).
+    let meeting_active = crate::meeting::session::meeting_recording_active();
+    let display_state = if meeting_active {
+        TrayIconState::Recording
+    } else {
+        icon_state
+    };
 
     TrayDesired {
-        icon_path: get_icon_path(theme, icon_state, warning),
+        icon_path: get_icon_path(theme, display_state, warning),
         menu: MenuInputs {
             busy: icon_state.is_busy(),
             recording: icon_state == TrayIconState::Recording,
             warning,
-            // No meeting session exists yet (T-064); when it lands, feed the
-            // live "meeting recording" state here.
-            meeting_active: false,
+            meeting_active,
             flowbar_hidden: crate::overlay::is_flowbar_user_hidden(),
             meeting_detection_paused: meeting_detection_is_paused(
                 settings.meeting_detection_paused_until_ms,
@@ -505,15 +511,14 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     let toggle_dictation_i =
         MenuItem::with_id(app, "toggle_dictation", dictation_label, true, None::<&str>)?;
 
-    // Meeting sessions land with T-064; until then the entry is present (the
-    // menu already matches FR-010-14) but disabled.
+    // FR-010-14: "Iniciar/Parar reunião" — wired to the T-064 session.
     let meeting_label = if inputs.meeting_active {
         &strings.stop_meeting
     } else {
         &strings.start_meeting
     };
     let toggle_meeting_i =
-        MenuItem::with_id(app, "toggle_meeting", meeting_label, false, None::<&str>)?;
+        MenuItem::with_id(app, "toggle_meeting", meeting_label, true, None::<&str>)?;
 
     let flowbar_label = if inputs.flowbar_hidden {
         &strings.show_flowbar
@@ -621,11 +626,11 @@ pub fn meeting_detection_is_paused(paused_until: Option<i64>, now_ms: i64) -> bo
 }
 
 /// Whether quitting now should be confirmed first (FR-010-15 / AC-010-06): a
-/// recording in progress would be silently lost. Meeting sessions (T-064)
-/// fold into this check when they land.
+/// dictation recording or a live meeting would be silently lost.
 pub fn quit_needs_confirmation(app: &AppHandle) -> bool {
     app.try_state::<Arc<AudioRecordingManager>>()
         .is_some_and(|manager| manager.is_recording())
+        || crate::meeting::session::meeting_recording_active()
 }
 
 pub fn set_tray_visibility(app: &AppHandle, visible: bool) {

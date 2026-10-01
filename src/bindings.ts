@@ -1245,6 +1245,145 @@ async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
 }
 },
 /**
+ * FR-009-01: start the meeting. `mic_only` selects "Presencial" (in-person,
+ * mic track only); the default is "Chamada no computador" (mic + system
+ * loopback). Detector/Flow Bar starts go through the same gate.
+ */
+async meetingStart(micOnly: boolean | null) : Promise<Result<Meeting, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_start", { micOnly }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-06: pause both tracks and stamp the meeting `paused`.
+ */
+async meetingPause() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_pause") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-06: resume — a `gap_marker` covers the pause span and block
+ * numbering continues from the on-disk files.
+ */
+async meetingResume() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_resume") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-06: stop, seal the in-flight blocks and hand off to processing.
+ */
+async meetingStop() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_stop") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-08: the "Estender 30 min" toast action.
+ */
+async meetingExtend30() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_extend_30") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-09: answer the silence check-in — `keep_recording: true` for
+ * "Continuar", `false` for "Parar" (stops and processes the meeting).
+ */
+async meetingCheckinRespond(keepRecording: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_checkin_respond", { keepRecording }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Latest `meeting://state` snapshot — lets a freshly mounted frontend catch
+ * up without waiting for the next tick.
+ */
+async meetingCurrent() : Promise<Result<MeetingStateEvent | null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_current") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * One meeting row (hub detail / meeting window).
+ */
+async meetingGet(id: string) : Promise<Result<Meeting | null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_get", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Every meeting, newest first (FR-009-13 "Minhas notas" list).
+ */
+async meetingList() : Promise<Result<Meeting[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete a meeting row (segments/notes cascade) plus its audio blocks —
+ * the dir is only removed when it sits inside `audio/meetings/`.
+ */
+async meetingDelete(id: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_delete", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-02: the user acknowledged the first-use consent modal — persisted
+ * so the gate opens from now on.
+ */
+async meetingConsentAccept() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_consent_accept") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-02: the configurable reminder text for "Copiar aviso para o chat".
+ */
+async meetingConsentCopy() : Promise<Result<string, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_consent_copy") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
  */
@@ -1489,7 +1628,33 @@ offline_mode?: boolean;
  * normally. A timestamp in the past counts as not paused. Consumed by
  * the detector (T-061).
  */
-meeting_detection_paused_until_ms?: number | null }
+meeting_detection_paused_until_ms?: number | null; 
+/**
+ * FR-009-08: maximum meeting length in minutes — the spec options are
+ * 30/60/120/180/240 (default 120); `meeting::session` clamps other values
+ * onto the nearest option when the session starts.
+ */
+meeting_max_minutes?: number; 
+/**
+ * FR-009-02: the first-use consent modal was acknowledged. Until this is
+ * true `meeting_start` fails with `consent_required` so the frontend can
+ * show the modal.
+ */
+meeting_consent_acknowledged?: boolean; 
+/**
+ * FR-009-02: the configurable text behind "Copiar aviso para o chat".
+ */
+meeting_consent_text?: string; 
+/**
+ * FR-009-02: show the discreet consent reminder toast on every meeting
+ * start (the modal itself is first-use only).
+ */
+meeting_consent_reminder?: boolean; 
+/**
+ * FR-009-09 / AC-009-08: after 10 min without speech on every track, ask
+ * "Ainda em reunião?"; unanswered for 2 min stops the meeting.
+ */
+meeting_silence_checkin_enabled?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1579,7 +1744,12 @@ export type CommandErrorCode =
 /**
  * External provider (HTTP) request failures.
  */
-"provider"
+"provider" | 
+/**
+ * The meeting consent (FR-009-02) has not been acknowledged yet — the
+ * frontend shows the first-use modal in response to this code.
+ */
+"consent_required"
 export type CustomSounds = { start: boolean; stop: boolean }
 /**
  * Effective local model id per usage slot after inheritance is applied
@@ -1724,6 +1894,51 @@ key_hint: string | null; missing_api_key: boolean; missing_model: boolean;
  */
 offline: boolean }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+export type Meeting = { 
+/**
+ * uuid
+ */
+id: string; title: string; 
+/**
+ * e.g. "Zoom.exe", "chrome.exe"
+ */
+app_exe: string | null; 
+/**
+ * e.g. "Google Meet"
+ */
+app_label: string | null; 
+/**
+ * 'auto_prompt' | 'auto_start' | 'manual' | 'in_person'
+ */
+detection: string; 
+/**
+ * 'recording' | 'paused' | 'processing' | 'ready' | 'error' | 'recovered'
+ */
+status: string; 
+/**
+ * Unix epoch seconds.
+ */
+started_at: number; ended_at: number | null; capture_system_audio: boolean; stt_provider_id: string | null; llm_provider_id: string | null; template_id: string | null; 
+/**
+ * Editable markdown summary.
+ */
+summary_md: string | null; 
+/**
+ * Directory with the 60 s audio blocks; NULL after retention expiry.
+ */
+audio_dir: string | null; language: string | null; error_code: string | null }
+/**
+ * `meeting://state` payload (contracts.md §5).
+ */
+export type MeetingStateEvent = { meeting_id: string; 
+/**
+ * 'recording' | 'paused' | 'processing' | 'error'
+ */
+status: string; 
+/**
+ * Milliseconds since the meeting started (pause time included).
+ */
+elapsed_ms: number }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**

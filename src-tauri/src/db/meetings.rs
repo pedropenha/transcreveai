@@ -4,13 +4,15 @@
 use anyhow::Result;
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::Serialize;
+use specta::Type;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // meetings
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
 pub struct Meeting {
     /// uuid
     pub id: String,
@@ -208,7 +210,7 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
 // meeting_segments
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
 pub struct MeetingSegment {
     /// uuid
     pub id: String,
