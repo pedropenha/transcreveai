@@ -527,10 +527,14 @@ pub struct AppSettings {
     pub paste_delay_ms: u64,
     #[serde(default = "default_paste_delay_after_ms")]
     pub paste_delay_after_ms: u64,
-    /// Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
-    /// after the target app actually reads the transcript, instead of after a
-    /// fixed delay. See `paste_tx`. macOS and Windows only.
-    #[serde(default)]
+    /// Receipt-sequenced paste: restore the clipboard only after the target
+    /// app actually reads the transcript, instead of after a fixed delay —
+    /// and only while we still own the clipboard (`GetClipboardSequenceNumber`
+    /// / changeCount). See `paste_tx`. Default-on where implemented
+    /// (macOS/Windows): it is the only path meeting FR-005-02..04 —
+    /// multi-format snapshot, clipboard history/cloud exclusion,
+    /// guarded restore. The Debug toggle remains as an opt-out.
+    #[serde(default = "default_reliable_paste")]
     pub reliable_paste: bool,
     #[serde(default = "default_typing_tool")]
     pub typing_tool: TypingTool,
@@ -732,8 +736,16 @@ fn default_paste_delay_ms() -> u64 {
     60
 }
 
+/// FR-005-04: the fixed-delay (legacy) paste path waits this long after
+/// the paste chord before restoring the clipboard; spec default is 120 ms.
 fn default_paste_delay_after_ms() -> u64 {
-    60
+    120
+}
+
+/// `reliable_paste` defaults on where the receipt-sequenced path exists;
+/// the field is inert elsewhere.
+fn default_reliable_paste() -> bool {
+    cfg!(any(target_os = "macos", target_os = "windows"))
 }
 
 fn default_auto_submit() -> bool {
@@ -1151,7 +1163,7 @@ pub fn get_default_settings() -> AppSettings {
         show_tray_icon: default_show_tray_icon(),
         paste_delay_ms: default_paste_delay_ms(),
         paste_delay_after_ms: default_paste_delay_after_ms(),
-        reliable_paste: false,
+        reliable_paste: default_reliable_paste(),
         typing_tool: default_typing_tool(),
         external_script_path: None,
         filler_word_removal_enabled: default_filler_word_removal_enabled(),
@@ -1803,6 +1815,24 @@ mod tests {
             settings.settings_schema_version,
             CURRENT_SETTINGS_SCHEMA_VERSION
         );
+    }
+
+    /// FR-005-02..04 (AC-005-01/02/04): the receipt-sequenced paste is the
+    /// only path that snapshots every clipboard format, keeps the dictated
+    /// text out of the Windows clipboard history/cloud and restores the
+    /// previous clipboard only while we still own it — so it is the
+    /// default wherever implemented. The Debug toggle remains as opt-out.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn default_settings_enable_reliable_paste() {
+        assert!(get_default_settings().reliable_paste);
+    }
+
+    /// FR-005-04: the legacy fixed-delay path waits `paste_delay_after_ms`
+    /// before restoring the clipboard; the spec's default is 120 ms.
+    #[test]
+    fn default_paste_delay_after_ms_is_120() {
+        assert_eq!(get_default_settings().paste_delay_after_ms, 120);
     }
 
     #[cfg(not(target_os = "linux"))]

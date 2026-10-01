@@ -18,7 +18,7 @@ use std::sync::{mpsc::Sender, Arc, Mutex, Once};
 use std::thread;
 use std::time::Instant;
 
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use tauri::Manager;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
@@ -295,6 +295,30 @@ unsafe fn restore_snapshot(shared: &WinTxShared) {
     info!("[reliable-paste] restored previous clipboard");
 }
 
+/// Formats whose handles are not plain global memory cannot be byte-copied
+/// into the snapshot (they are GDI/metafile handles, owner-drawn, or
+/// palette entries). FR-005-02 asks us to warn-and-continue for anything
+/// we cannot save; this helper gives those skips a loggable reason.
+fn unsaveable_format_reason(format: u32) -> Option<&'static str> {
+    if format == CF_ENHMETAFILE.0 as u32 {
+        Some("enhanced metafile handle (not byte-copyable)")
+    } else if format == CF_DSPENHMETAFILE.0 as u32 {
+        Some("display private enhanced metafile handle")
+    } else if format == CF_DSPBITMAP.0 as u32 {
+        Some("display private bitmap handle")
+    } else if format == CF_DSPMETAFILEPICT.0 as u32 {
+        Some("display private metafile-picture handle")
+    } else if format == CF_DSPTEXT.0 as u32 {
+        Some("display private text handle")
+    } else if format == CF_OWNERDISPLAY.0 as u32 {
+        Some("owner-display format (rendered by its owner)")
+    } else if format == CF_PALETTE.0 as u32 {
+        Some("palette handle")
+    } else {
+        None
+    }
+}
+
 unsafe fn snapshot_clipboard(hwnd: HWND, shared: &WinTxShared) -> Result<(), String> {
     OpenClipboard(Some(hwnd)).map_err(|e| format!("OpenClipboard failed: {e}"))?;
     let mut formats = Vec::new();
@@ -306,42 +330,58 @@ unsafe fn snapshot_clipboard(hwnd: HWND, shared: &WinTxShared) -> Result<(), Str
         }
         if format == CF_BITMAP.0 as u32 {
             // GDI object, not global memory: duplicate the handle instead.
-            if let Ok(handle) = GetClipboardData(CF_BITMAP.0 as u32) {
-                if let Ok(copy) =
-                    CopyImage(handle, IMAGE_BITMAP_TYPE, 0, 0, LR_CREATEDIBSECTION_FLAG)
-                {
-                    if let Ok(mut slot) = shared.saved_bitmap.lock() {
-                        *slot = Some(copy.0 as usize);
+            match GetClipboardData(CF_BITMAP.0 as u32) {
+                Ok(handle) => {
+                    match CopyImage(handle, IMAGE_BITMAP_TYPE, 0, 0, LR_CREATEDIBSECTION_FLAG) {
+                        Ok(copy) => {
+                            if let Ok(mut slot) = shared.saved_bitmap.lock() {
+                                *slot = Some(copy.0 as usize);
+                            }
+                        }
+                        Err(e) => warn!(
+                            "[reliable-paste] could not snapshot CF_BITMAP ({e}); it will not be restored"
+                        ),
                     }
                 }
+                Err(e) => warn!(
+                    "[reliable-paste] could not read CF_BITMAP ({e}); it will not be restored"
+                ),
             }
             continue;
         }
         // Formats whose handles are not plain global memory cannot be
         // byte-copied; skipping them matches what the legacy path restored.
-        if format == CF_ENHMETAFILE.0 as u32
-            || format == CF_DSPENHMETAFILE.0 as u32
-            || format == CF_DSPBITMAP.0 as u32
-            || format == CF_DSPMETAFILEPICT.0 as u32
-            || format == CF_DSPTEXT.0 as u32
-            || format == CF_OWNERDISPLAY.0 as u32
-            || format == CF_PALETTE.0 as u32
-        {
+        if let Some(reason) = unsaveable_format_reason(format) {
+            debug!(
+                "[reliable-paste] skipping clipboard format {format} ({reason}); it will not be restored"
+            );
             continue;
         }
-        if let Ok(handle) = GetClipboardData(format) {
-            let hg = HGLOBAL(handle.0);
-            let size = GlobalSize(hg);
-            if size == 0 || size > MAX_FORMAT_BYTES {
-                continue;
+        match GetClipboardData(format) {
+            Ok(handle) => {
+                let hg = HGLOBAL(handle.0);
+                let size = GlobalSize(hg);
+                if size == 0 {
+                    continue;
+                }
+                if size > MAX_FORMAT_BYTES {
+                    warn!(
+                        "[reliable-paste] clipboard format {format} is {size} bytes (> {MAX_FORMAT_BYTES}); skipping, it will not be restored"
+                    );
+                    continue;
+                }
+                let ptr = GlobalLock(hg) as *const u8;
+                if ptr.is_null() {
+                    warn!("[reliable-paste] could not lock clipboard format {format}; skipping");
+                    continue;
+                }
+                let data = std::slice::from_raw_parts(ptr, size).to_vec();
+                let _ = GlobalUnlock(hg);
+                formats.push(SavedFormat { format, data });
             }
-            let ptr = GlobalLock(hg) as *const u8;
-            if ptr.is_null() {
-                continue;
-            }
-            let data = std::slice::from_raw_parts(ptr, size).to_vec();
-            let _ = GlobalUnlock(hg);
-            formats.push(SavedFormat { format, data });
+            Err(e) => warn!(
+                "[reliable-paste] could not read clipboard format {format} ({e}); it will not be restored"
+            ),
         }
     }
     let _ = CloseClipboard();
@@ -621,4 +661,45 @@ pub(super) fn run(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::System::Ole::{CF_ENHMETAFILE, CF_METAFILEPICT, CF_TEXT};
+
+    /// FR-005-02: formats that cannot be byte-copied must classify as
+    /// skippable with a reason (they get logged), while ordinary
+    /// HGLOBAL-backed formats snapshot silently.
+    #[test]
+    fn unsaveable_format_reason_covers_the_gdi_skip_list() {
+        for format in [
+            CF_ENHMETAFILE.0 as u32,
+            CF_DSPENHMETAFILE.0 as u32,
+            CF_DSPBITMAP.0 as u32,
+            CF_DSPMETAFILEPICT.0 as u32,
+            CF_DSPTEXT.0 as u32,
+            CF_OWNERDISPLAY.0 as u32,
+            CF_PALETTE.0 as u32,
+        ] {
+            assert!(
+                unsaveable_format_reason(format).is_some(),
+                "format {format} must be classified as unsaveable"
+            );
+        }
+    }
+
+    /// Byte-copyable formats — text, metafile-picture and any private
+    /// registered format — go through the snapshot path.
+    #[test]
+    fn byte_copyable_formats_are_not_skipped() {
+        for format in [
+            CF_UNICODETEXT.0 as u32,
+            CF_TEXT.0 as u32,
+            CF_METAFILEPICT.0 as u32,
+            0xC000,
+        ] {
+            assert_eq!(unsaveable_format_reason(format), None);
+        }
+    }
 }
