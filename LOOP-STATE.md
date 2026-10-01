@@ -36,7 +36,7 @@
 
 ## Em andamento (lanes)
 
-- **T-021** `feat/t-021-matcher` @ `ecc-t021` (54045a53)
+(onda 3 fechada; T-021 merge pendente)
 
 ## Próximas na DAG (prontas para lanes)
 
@@ -44,7 +44,7 @@
 
 ## Merges pendentes
 
-- (nenhum)
+- **T-021** `feat/t-021-matcher` (5 commits) — conflitos prováveis: `matcher.rs`, `handy_keys.rs`, `settings.rs`, `lib.rs`, `bindings.ts`, `build.rs` (manter fix de manifest da T-022).
 
 ## Bloqueios
 
