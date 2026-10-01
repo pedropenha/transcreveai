@@ -526,6 +526,79 @@ mod tests {
         assert_eq!(hits, 1);
     }
 
+    /// Migration 14 rebuilds `dictations` to widen the `status` CHECK with
+    /// `'routed'` (FR-012-12). Existing rows — ids included — must survive
+    /// verbatim, and the FTS index + sync triggers must keep working.
+    #[test]
+    fn migration_14_preserves_rows_and_fts() {
+        // Stop at version 13 (the last migration before the rebuild).
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        let up_to_13 = Migrations::new(migrations::MIGRATIONS[..13].to_vec());
+        up_to_13
+            .to_latest(&mut conn)
+            .expect("apply migrations 1-13");
+        conn.execute(
+            "INSERT INTO dictations (created_at, raw_text, final_text)
+             VALUES (100, 'texto preservado', 'texto preservado')",
+            [],
+        )
+        .expect("insert dictation at v13");
+
+        run_migrations(&mut conn).expect("migrate to latest");
+
+        let (id, status): (i64, String) = conn
+            .query_row(
+                "SELECT id, status FROM dictations WHERE raw_text = 'texto preservado'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read migrated row");
+        assert_eq!(id, 1);
+        assert_eq!(status, "inserted");
+
+        // The widened CHECK accepts 'routed'…
+        conn.execute(
+            "UPDATE dictations SET status = 'routed' WHERE id = 1",
+            [],
+        )
+        .expect("routed status must be accepted after migration 14");
+
+        // …the index is back…
+        let index_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_dictations_created'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("check index");
+        assert!(index_exists);
+
+        // …and the FTS shadow table + triggers still track the row.
+        let hits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM dictations_fts WHERE dictations_fts MATCH 'preservado'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fts match after rebuild");
+        assert_eq!(hits, 1);
+        conn.execute(
+            "UPDATE dictations SET raw_text = 'renomeado', final_text = 'renomeado'
+             WHERE id = 1",
+            [],
+        )
+        .expect("update after rebuild");
+        let stale: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM dictations_fts WHERE dictations_fts MATCH 'preservado'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fts stale check");
+        assert_eq!(stale, 0);
+    }
+
     #[test]
     fn sqlx_tracking_is_adopted_without_rerunning_old_migrations() {
         let mut conn = Connection::open_in_memory().expect("open in-memory db");

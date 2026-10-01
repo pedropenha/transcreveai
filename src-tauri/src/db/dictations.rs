@@ -38,7 +38,8 @@ pub struct Dictation {
     pub final_text: String,
     /// Spoken instruction (Command Mode) / post-process prompt (legacy rows).
     pub instruction: Option<String>,
-    /// 'inserted' | 'copied' | 'failed' | 'cancelled' | 'saved_note'
+    /// 'inserted' | 'copied' | 'failed' | 'cancelled' | 'saved_note' |
+    /// 'routed' (FR-012-12: delivered to the assistant panel, not pasted)
     pub status: String,
     pub error_code: Option<String>,
     /// JSON object, e.g. {"stt_ms":…,"llm_ms":…,"insert_ms":…,"total_ms":…}
@@ -714,6 +715,24 @@ mod tests {
         assert!(repo
             .update_insertion_outcome(999, "failed", None, None, None, None)
             .is_err());
+    }
+
+    /// FR-012-12: an assistant-routed dictation is marked `routed` — the
+    /// status CHECK must accept it (migration 14 widened the set), otherwise
+    /// the patch fails silently and the row keeps its provisional `inserted`.
+    #[test]
+    fn update_insertion_outcome_accepts_routed_status() {
+        let conn = setup();
+        let repo = repo(&conn);
+        let d = repo
+            .insert(&NewDictation::new("ola".to_string(), None))
+            .expect("insert");
+
+        repo.update_insertion_outcome(d.id, "routed", None, None, None, None)
+            .expect("routed status must round-trip");
+
+        let d = repo.get(d.id).expect("get").expect("exists");
+        assert_eq!(d.status, "routed");
     }
 
     /// A row whose `latency_json` is not a JSON object (legacy garbage)

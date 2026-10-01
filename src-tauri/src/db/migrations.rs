@@ -424,4 +424,70 @@ Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todo
         INSERT INTO meeting_fts(rowid, text)
         SELECT rowid, text FROM meeting_segments WHERE excluded = 0;",
     ),
+
+    // --- dictations.status gains 'routed' (14, F012 voice assistant) --------
+    // FR-012-12: a dictation claimed by the assistant panel is marked
+    // 'routed' by `actions.rs` — the text went to the panel input instead of
+    // being pasted. SQLite cannot alter a CHECK constraint, so the table is
+    // rebuilt the canonical way: new table → copy rows verbatim (ids too, so
+    // `sqlite_sequence` follows the rename) → drop old → rename.
+    // `dictations_fts` is external-content keyed by rowid; since rowids are
+    // preserved the shadow table survives untouched — only its sync triggers
+    // (dropped with the old table) are recreated.
+    M::up(
+        "CREATE TABLE dictations_new (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at    INTEGER NOT NULL,
+            mode          TEXT NOT NULL DEFAULT 'dictation' CHECK (mode IN ('dictation','command','note')),
+            duration_ms   INTEGER NOT NULL DEFAULT 0,
+            app_exe       TEXT,
+            app_name      TEXT,
+            stt_provider_id TEXT REFERENCES providers(id) ON DELETE SET NULL,
+            llm_provider_id TEXT REFERENCES providers(id) ON DELETE SET NULL,
+            language      TEXT,
+            raw_text      TEXT NOT NULL,
+            final_text    TEXT NOT NULL,
+            instruction   TEXT,
+            status        TEXT NOT NULL DEFAULT 'inserted' CHECK (status IN ('inserted','copied','failed','cancelled','saved_note','routed')),
+            error_code    TEXT,
+            latency_json  TEXT NOT NULL DEFAULT '{}',
+            audio_path    TEXT,
+            word_count    INTEGER NOT NULL DEFAULT 0,
+            flagged       INTEGER NOT NULL DEFAULT 0,
+            post_processed_text TEXT,
+            title         TEXT NOT NULL DEFAULT '',
+            post_process_requested INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO dictations_new (
+            id, created_at, mode, duration_ms, app_exe, app_name,
+            stt_provider_id, llm_provider_id, language,
+            raw_text, final_text, instruction, status, error_code,
+            latency_json, audio_path, word_count, flagged,
+            post_processed_text, title, post_process_requested
+        )
+        SELECT
+            id, created_at, mode, duration_ms, app_exe, app_name,
+            stt_provider_id, llm_provider_id, language,
+            raw_text, final_text, instruction, status, error_code,
+            latency_json, audio_path, word_count, flagged,
+            post_processed_text, title, post_process_requested
+        FROM dictations;
+        DROP TABLE dictations;
+        ALTER TABLE dictations_new RENAME TO dictations;
+        CREATE INDEX idx_dictations_created ON dictations(created_at DESC);
+        CREATE TRIGGER dictations_fts_ai AFTER INSERT ON dictations BEGIN
+            INSERT INTO dictations_fts(rowid, final_text, raw_text)
+            VALUES (new.rowid, new.final_text, new.raw_text);
+        END;
+        CREATE TRIGGER dictations_fts_ad AFTER DELETE ON dictations BEGIN
+            INSERT INTO dictations_fts(dictations_fts, rowid, final_text, raw_text)
+            VALUES ('delete', old.rowid, old.final_text, old.raw_text);
+        END;
+        CREATE TRIGGER dictations_fts_au AFTER UPDATE ON dictations BEGIN
+            INSERT INTO dictations_fts(dictations_fts, rowid, final_text, raw_text)
+            VALUES ('delete', old.rowid, old.final_text, old.raw_text);
+            INSERT INTO dictations_fts(rowid, final_text, raw_text)
+            VALUES (new.rowid, new.final_text, new.raw_text);
+        END;",
+    ),
 ];
