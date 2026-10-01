@@ -6,6 +6,7 @@ pub mod llm;
 pub mod models;
 pub mod secrets;
 pub mod text_pipeline;
+pub mod toast;
 pub mod transcription;
 
 pub use error::{CommandError, CommandErrorCode, CommandResult};

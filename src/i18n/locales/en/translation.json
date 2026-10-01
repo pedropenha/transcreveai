@@ -754,6 +754,19 @@
     "retry": "Try again",
     "retrying": "Retrying..."
   },
+  "toast": {
+    "meetingDetected": "Meeting detected",
+    "nowWithApp": "Now · {{app}}",
+    "startNotetaker": "Start Notetaker",
+    "moreActions": "More actions",
+    "startMicOnly": "Start with microphone only",
+    "alwaysStartFor": "Always start automatically for {{app}}",
+    "neverAskFor": "Never ask for {{app}}",
+    "ignoreMeeting": "Ignore this meeting",
+    "dismiss": "Dismiss",
+    "recording": "Recording · {{app}}",
+    "meetingPending": "Meeting detected — hover to reopen the toast"
+  },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",
     "blockedWithCulprit_other": "{{name}} may be blocking {{count}} shortcuts",

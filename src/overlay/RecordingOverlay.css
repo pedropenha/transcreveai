@@ -713,6 +713,34 @@
   background: var(--s-hair);
 }
 
+/* Collapsed meeting toast indicator (FR-008-10/12): a small amber dot just
+   above the bar; hover reopens the toast via `toast_reopen`. In-flow inside
+   .fbar-zone so it is covered by the reported interactive rect. */
+.fbar-toast-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--flowbar-warning);
+  cursor: pointer;
+  animation: fdots-pulse var(--motion-duration-pulse) ease-in-out infinite;
+}
+.ov-stage.top .fbar-toast-dot {
+  margin: 6px 0 0;
+}
+.fbar-toast-dot:hover {
+  transform: scale(1.25);
+}
+.fbar-toast-dot:focus-visible {
+  outline: 2px solid var(--flowbar-accent);
+  outline-offset: 2px;
+}
+
 /* Screen-reader-only text (live region + AT-only labels). */
 .fbar-sr {
   position: absolute;

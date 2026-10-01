@@ -25,6 +25,13 @@ mod tests;
 
 pub(crate) use click_through::set_interactive_rect;
 pub use click_through::FlowbarRect;
+// Shared with the toast window (T-062): same monitor pick and Windows
+// extended styles / text-scale conventions as the Flow Bar.
+pub(crate) use positioning::get_monitor_with_cursor;
+#[cfg(target_os = "windows")]
+pub(crate) use win32::{
+    apply_overlay_extended_styles, set_window_bounds_physical, windows_text_scale_factor,
+};
 
 #[cfg(target_os = "macos")]
 pub(crate) use macos::create_recording_overlay;

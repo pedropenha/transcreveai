@@ -751,6 +751,19 @@
     "retry": "Tentar novamente",
     "retrying": "Tentando novamente..."
   },
+  "toast": {
+    "meetingDetected": "Reunião detectada",
+    "nowWithApp": "Agora · {{app}}",
+    "startNotetaker": "Iniciar Notetaker",
+    "moreActions": "Mais ações",
+    "startMicOnly": "Iniciar só com microfone",
+    "alwaysStartFor": "Sempre iniciar automaticamente para {{app}}",
+    "neverAskFor": "Nunca perguntar para {{app}}",
+    "ignoreMeeting": "Ignorar esta reunião",
+    "dismiss": "Dispensar",
+    "recording": "Gravando · {{app}}",
+    "meetingPending": "Reunião detectada — passe o mouse para reabrir o toast"
+  },
   "whatsNew": {
     "title": "Novidades no Transcreve.ai v{{version}}"
   },

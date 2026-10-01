@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   effectiveEdge,
   resolveFlowbarView,
+  toastBadgeVisible,
   type FlowbarViewInput,
 } from "./flowbarView";
 
@@ -76,6 +77,14 @@ assert.equal(
   resolveFlowbarView({ ...base, phase: "error", hovered: true }),
   "error",
 );
+
+// FR-008-10/12: the collapsed-toast amber dot only exists while the bar
+// itself renders a face.
+assert.equal(toastBadgeVisible("idle", true), true);
+assert.equal(toastBadgeVisible("recording", true), true);
+assert.equal(toastBadgeVisible("hover", true), true);
+assert.equal(toastBadgeVisible("hidden", true), false);
+assert.equal(toastBadgeVisible("idle", false), false);
 
 // effectiveEdge mirrors geometry::effective_edge.
 assert.equal(effectiveEdge("bottom", "bottom"), "bottom");

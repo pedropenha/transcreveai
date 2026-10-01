@@ -1244,6 +1244,38 @@ async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async toastSetCollapsed(collapsed: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toast_set_collapsed", { collapsed }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toastReopen() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toast_reopen") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toastDismiss() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toast_dismiss") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toastSetContentHeight(height: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toast_set_content_height", { height }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
@@ -1489,7 +1521,16 @@ offline_mode?: boolean;
  * normally. A timestamp in the past counts as not paused. Consumed by
  * the detector (T-061).
  */
-meeting_detection_paused_until_ms?: number | null }
+meeting_detection_paused_until_ms?: number | null; 
+/**
+ * Where the meeting-detection toast anchors (FR-008-07/15).
+ */
+meeting_toast_position?: ToastPosition; 
+/**
+ * Optional notification sound when the meeting toast first appears
+ * (FR-008-11). Off by default; independent of `audio_feedback`.
+ */
+meeting_toast_sound?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1906,6 +1947,19 @@ export type Suitability =
  * and `Dark` force one of the two palettes Handy already ships.
  */
 export type Theme = "system" | "light" | "dark"
+/**
+ * Where the meeting-detection toast anchors (FR-008-07/15).
+ */
+export type ToastPosition = 
+/**
+ * Just above the Flow Bar; falls back to the bottom-right corner of the
+ * cursor's monitor when the bar is not on screen.
+ */
+"above_flowbar" | 
+/**
+ * Always the bottom-right corner of the cursor's monitor work area.
+ */
+"bottom_right"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"

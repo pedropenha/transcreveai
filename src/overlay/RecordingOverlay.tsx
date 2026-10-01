@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import React, {
   useCallback,
@@ -23,11 +24,13 @@ import { useOsType } from "@/hooks/useOsType";
 import {
   effectiveEdge,
   resolveFlowbarView,
+  toastBadgeVisible,
   type FlowbarView,
   type OverlayHint,
   type SessionPhase,
   type StageEdge,
 } from "./flowbarView";
+import type { ToastStateEvent } from "@/toast/toastView";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -77,6 +80,9 @@ const RecordingOverlay: React.FC = () => {
   // --- Dock edge the stage mirrors (FR-001-01/08) ---
   const [edge, setEdge] = useState<StageEdge>("bottom");
   const [dictateShortcut, setDictateShortcut] = useState<string>("");
+
+  // --- Collapsed/suppressed meeting toast → amber dot (FR-008-10/12) ---
+  const [toastPending, setToastPending] = useState(false);
 
   // `Stream::play()` returning does not mean hardware callbacks are flowing.
   // Stay visually in an arming state until the backend processes the first
@@ -254,6 +260,19 @@ const RecordingOverlay: React.FC = () => {
         if (payload.kind) setWorkKind(payload.kind);
       });
 
+      // F008/T-062: `toast://state` is broadcast to every window; the Flow Bar
+      // only cares that a collapsed toast still has content → amber dot.
+      const unlistenToast = await listen<ToastStateEvent>(
+        "toast://state",
+        (event) => {
+          const payload = event.payload;
+          setToastPending(
+            payload.collapsed &&
+              (payload.detection !== null || payload.notice !== null),
+          );
+        },
+      );
+
       return () => {
         unlistenShow();
         unlistenHide();
@@ -263,6 +282,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenLevel();
         unlistenStream();
         unlistenPhase();
+        unlistenToast();
       };
     };
 
@@ -310,7 +330,7 @@ const RecordingOverlay: React.FC = () => {
     report();
     const settle = window.setTimeout(report, 240);
     return () => window.clearTimeout(settle);
-  }, [view, tip, hovered]);
+  }, [view, tip, hovered, toastPending]);
 
   // A tooltip belongs to the hover/error card — drop it the moment the bar
   // morphs into another state, otherwise "Ditar · Ctrl+Win" would linger over
@@ -671,6 +691,18 @@ const RecordingOverlay: React.FC = () => {
               </button>
             )}
           </div>
+        )}
+        {/* FR-008-10/12: collapsed/suppressed meeting toast → amber dot that
+            reopens it on hover. In-flow inside the zone so the hit-test rect
+            covers it (NFR-001-02 click-through otherwise eats the hover). */}
+        {toastBadgeVisible(view, toastPending) && (
+          <button
+            type="button"
+            className="fbar-toast-dot"
+            aria-label={t("toast.meetingPending")}
+            onMouseEnter={() => void invoke("toast_reopen")}
+            onFocus={() => void invoke("toast_reopen")}
+          />
         )}
         {view === "streaming" ? renderStreaming() : renderCompact()}
       </div>

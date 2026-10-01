@@ -11,6 +11,9 @@ pub const HUB: &str = "hub";
 /// Always-on-top recording indicator (the Wispr "Flow Bar").
 pub const FLOWBAR: &str = "flowbar";
 
+/// Non-activatable meeting-detection toast (F008, T-062).
+pub const TOAST: &str = "toast";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -26,9 +29,12 @@ mod tests {
     }
 
     #[test]
-    fn default_capability_covers_hub_and_flowbar() {
+    fn default_capability_covers_all_webview_windows() {
         let windows = capability_windows(include_str!("../capabilities/default.json"));
-        assert_eq!(windows, vec![HUB.to_owned(), FLOWBAR.to_owned()]);
+        assert_eq!(
+            windows,
+            vec![HUB.to_owned(), FLOWBAR.to_owned(), TOAST.to_owned()]
+        );
     }
 
     #[test]
