@@ -857,6 +857,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::flowbar::flowbar_toggle_dictation,
             commands::flowbar::flowbar_start_notetaker,
             commands::flowbar::flowbar_retry_last_failed,
+            commands::detector::detector_respond,
+            commands::meeting_rules::meeting_rules_list,
+            commands::meeting_rules::meeting_rule_add,
+            commands::meeting_rules::meeting_rule_set_action,
+            commands::meeting_rules::meeting_rule_delete,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

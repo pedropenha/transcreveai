@@ -1,4 +1,4 @@
-//! Meeting detection support (F008), T-060 scope.
+//! Meeting detection support (F008), T-060 + T-061 scope.
 //!
 //! Pieces delivered here:
 //!
@@ -11,25 +11,34 @@
 //! - [`classifier`]: pure function mapping (mic usages × windows ×
 //!   `meeting_app_rules` rows) → [`classifier::MeetingApp`] (FR-008-02 match
 //!   semantics: exe match suffices, browsers additionally need a title hit).
-//! - [`monitor`]: the tick loop honouring `meeting_detection_paused_until_ms`
-//!   and `offline_mode` ([`monitor::DetectionGate`]) before any classification
-//!   runs.
+//! - [`detector`]: the T-061 state machine — debounce, 10 min title memory,
+//!   end-of-meeting, `detection_id` dedup (FR-008-02..06) — fed by the monitor
+//!   and emitting [`detector::DetectorOutput`]s that [`run`] translates into
+//!   `detector://meeting` IPC events (contracts.md §5).
+//! - [`monitor`]: the tick loop honouring `meeting_detection_enabled`,
+//!   `meeting_detection_paused_until_ms` and `offline_mode`
+//!   ([`monitor::DetectionGate`]) before any classification runs.
 //!
-//! Deliberately **out of scope** (later tasks): the debouncing / title-memory
-//! state machine and IPC `detector://meeting` events (T-061), the toast window
-//! (T-062), the meeting session itself (T-064). Today detections only hit the
-//! log, which is enough to smoke-test the S1+S2 pipeline.
+//! Deliberately **out of scope** (later tasks): the toast window (T-062), the
+//! meeting session itself (T-064 — it listens for `detector://start-requested`
+//! emitted by `commands::detector::detector_respond`), auto-start/auto-stop
+//! wiring (T-069).
 
 mod classifier;
 mod consent;
+mod detector;
 mod monitor;
 mod window_snapshot;
 
-// Re-exports consumed by the T-061 detector (state machine + IPC events); the
-// ones nothing names yet are kept public on purpose.
+// Re-exports consumed by the commands layer and the wiring below; the ones
+// nothing names yet are kept public on purpose (platform sources).
 #[allow(unused_imports)]
-pub use classifier::{classify, current_exe_name, MeetingApp, RuleAction};
+pub use classifier::{classify, current_exe_name, MeetingApp, RuleAction, BROWSER_EXES};
 pub use consent::{MicUsage, MicUsageSource};
+pub use detector::{
+    Detection, DetectionSource, Detector, DetectorMeetingEvent, DetectorOutput,
+    DetectorStartRequest, TickInput, DETECTOR_MEETING_EVENT, DETECTOR_START_REQUESTED_EVENT,
+};
 pub use monitor::DetectionGate;
 #[allow(unused_imports)]
 pub use monitor::{MicUsageMonitor, POLL_INTERVAL};
@@ -41,24 +50,37 @@ pub use consent::ConsentStoreSource;
 #[cfg(target_os = "windows")]
 pub use window_snapshot::EnumWindowsSource;
 
-/// Spawn the microphone-usage monitor thread. No-op outside Windows (macOS has
-/// its own S1/S2 equivalents, scheduled for v1.0 — see spec F008 notas
-/// técnicas).
+use tauri::Manager as _;
+
+/// Shared detector instance — managed as Tauri state so `detector_respond`
+/// can address live detections by id while the monitor thread ticks it.
+pub type SharedDetector = std::sync::Arc<std::sync::Mutex<Detector>>;
+
+/// Create the detector, publish it as [`SharedDetector`] state and spawn the
+/// microphone-usage monitor thread. The monitor is a no-op outside Windows
+/// (macOS has its own S1/S2 equivalents, scheduled for v1.0 — see spec F008
+/// notas técnicas); the managed state exists on every platform so the IPC
+/// commands resolve uniformly.
 pub fn start(app: &tauri::AppHandle) {
+    let shared: SharedDetector = std::sync::Arc::new(std::sync::Mutex::new(Detector::new(
+        current_exe_name().unwrap_or_default(),
+    )));
+    app.manage(shared.clone());
     #[cfg(target_os = "windows")]
     {
         let app = app.clone();
         match std::thread::Builder::new()
             .name("meeting-mic-monitor".to_string())
-            .spawn(move || run(app))
+            .spawn(move || run(app, shared))
         {
-            Ok(_) => log::info!("Meeting mic monitor started (ConsentStore + window snapshots)"),
+            Ok(_) => log::info!("Meeting detector started (ConsentStore + window snapshots)"),
             Err(e) => log::error!("Failed to spawn meeting mic monitor: {e}"),
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = app;
+        let _ = shared;
         log::debug!("Meeting mic monitor is not implemented on this platform yet");
     }
 }
@@ -66,9 +88,10 @@ pub fn start(app: &tauri::AppHandle) {
 /// The monitor loop body. Runs until process exit (the thread is detached;
 /// there is no shutdown signal wired in this task).
 #[cfg(target_os = "windows")]
-fn run(app: tauri::AppHandle) {
+fn run(app: tauri::AppHandle, detector: SharedDetector) {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::time::Instant;
 
     let source = ConsentStoreSource::new();
     let windows = EnumWindowsSource;
@@ -78,55 +101,82 @@ fn run(app: tauri::AppHandle) {
     // Rules change rarely; the connection is opened once and a failure
     // degrades to "no rules" instead of killing the monitor.
     let conn = open_rules_conn(&app);
-    let mut last_detected: Vec<MeetingApp> = Vec::new();
+    let mut was_suppressed = false;
 
     let gate = || {
         let settings = crate::settings::get_settings(&app);
-        DetectionGate {
+        let suppressed = DetectionGate {
+            enabled: settings.meeting_detection_enabled,
             paused_until_ms: settings.meeting_detection_paused_until_ms,
             offline_mode: settings.offline_mode,
         }
-        .suppressed(crate::tray::now_unix_ms())
+        .suppressed(crate::tray::now_unix_ms());
+        if suppressed && !was_suppressed {
+            // Entering suppression drops in-flight candidates/detections so
+            // an un-pause starts clean — matching `MicUsageMonitor::tick`,
+            // which clears its active set on suppressed ticks. The `Ended`
+            // outputs are emitted so the toast layer closes anything open.
+            let outputs = detector.lock().unwrap_or_else(|e| e.into_inner()).reset();
+            emit_detector_outputs(&app, outputs);
+        }
+        was_suppressed = suppressed;
+        suppressed
     };
 
     monitor::run_loop(
         source,
         gate,
-        |usages: &[MicUsage], changed: bool| {
-            if usages.is_empty() {
-                if !last_detected.is_empty() {
-                    log::info!("Meeting detection: mic released by all tracked processes");
-                    last_detected.clear();
-                }
-                return;
-            }
-
+        |usages: &[MicUsage], _changed: bool| {
             let rules = load_rules(conn.as_ref());
-            let detected = classify(usages, &windows.snapshot(), &rules, &self_exe);
-            if detected != last_detected {
-                for app in &detected {
-                    log::info!(
-                        "Meeting app detected: {} (exe={}, pid={:?}, action={:?})",
-                        app.label,
-                        app.exe_name,
-                        app.pid,
-                        app.action
-                    );
-                }
-                if detected.is_empty() && changed {
-                    log::debug!(
-                        "Mic in use by {:?} — no meeting_app_rules match",
-                        usages
-                            .iter()
-                            .map(|u| u.exe_name.as_str())
-                            .collect::<Vec<_>>()
-                    );
-                }
-                last_detected = detected;
-            }
+            let window_list = windows.snapshot();
+            let classified = classify(usages, &window_list, &rules, &self_exe);
+            let detect_any_call = crate::settings::get_settings(&app).detect_any_call_enabled;
+            let outputs = detector
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .tick(&TickInput {
+                    classified: &classified,
+                    mic_usages: usages,
+                    windows: &window_list,
+                    rules: &rules,
+                    detect_any_call,
+                    now: Instant::now(),
+                    now_unix_ms: crate::tray::now_unix_ms(),
+                });
+            emit_detector_outputs(&app, outputs);
         },
         stop,
     );
+}
+
+/// Translate detector outputs into `detector://meeting` IPC events
+/// (contracts.md §5); emit failures are logged, never fatal.
+#[cfg(target_os = "windows")]
+fn emit_detector_outputs(app: &tauri::AppHandle, outputs: Vec<DetectorOutput>) {
+    use tauri::Emitter;
+
+    for output in outputs {
+        let event = match output {
+            DetectorOutput::Started(detection) => {
+                log::info!(
+                    "Meeting detected: {} (id={}, exe={}, action={:?}, source={:?})",
+                    detection.app_label,
+                    detection.detection_id,
+                    detection.exe_name,
+                    detection.action,
+                    detection.source
+                );
+                DetectorMeetingEvent::started(&detection)
+            }
+            DetectorOutput::Ended { ref detection_id } => {
+                log::info!("Meeting ended (id={detection_id})");
+                DetectorMeetingEvent::ended(detection_id)
+            }
+        };
+        if let Err(e) = app.emit(DETECTOR_MEETING_EVENT, event) {
+            log::warn!("detector://meeting emit failed: {e}");
+        }
+    }
 }
 
 /// Fresh `meeting_app_rules` rows each tick so user edits apply live; `None`

@@ -4,6 +4,8 @@
 use anyhow::Result;
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::Serialize;
+use specta::Type;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -315,7 +317,9 @@ impl MeetingSegmentRepository for SqliteMeetingSegmentRepository<'_> {
 // meeting_app_rules
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+/// Serialized+exported for the `meeting_rules_*` IPC commands (FR-008-15,
+/// T-061) — the rules-settings screen binds straight to this shape.
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
 pub struct MeetingAppRule {
     /// uuid
     pub id: String,
@@ -361,6 +365,9 @@ pub trait MeetingAppRuleRepository {
     /// Rules whose `exe` matches (exact, case-insensitive).
     fn find_by_exe(&self, exe: &str) -> Result<Vec<MeetingAppRule>>;
     fn list(&self) -> Result<Vec<MeetingAppRule>>;
+    /// Update only the `action` column ('ask' | 'auto_start' | 'ignore';
+    /// FR-008-15). No-op when `id` does not exist.
+    fn set_action(&self, id: &str, action: &str) -> Result<()>;
     fn delete(&self, id: &str) -> Result<()>;
 }
 
@@ -405,6 +412,14 @@ impl MeetingAppRuleRepository for SqliteMeetingAppRuleRepository<'_> {
             .prepare("SELECT * FROM meeting_app_rules ORDER BY label ASC")?;
         let rows = stmt.query_map([], MeetingAppRule::from_row)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn set_action(&self, id: &str, action: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE meeting_app_rules SET action = ?1 WHERE id = ?2",
+            params![action, id],
+        )?;
+        Ok(())
     }
 
     fn delete(&self, id: &str) -> Result<()> {
@@ -503,6 +518,33 @@ mod tests {
         let created_id = rules.find_by_exe("MyApp.exe").expect("find")[0].id.clone();
         rules.delete(&created_id).expect("delete");
         assert_eq!(rules.list().expect("list").len(), seeded + 1);
+    }
+
+    #[test]
+    fn app_rule_set_action_updates_only_the_action() {
+        // T-061: `detector_respond` "always"/"never" and the rules screen land
+        // here — builtin rows are editable in action, just not deletable.
+        let conn = setup();
+        let rules = SqliteMeetingAppRuleRepository::new(&conn);
+        let zoom = rules
+            .find_by_exe("Zoom.exe")
+            .expect("find")
+            .into_iter()
+            .next()
+            .expect("builtin Zoom rule exists");
+
+        rules
+            .set_action(&zoom.id, "auto_start")
+            .expect("set_action");
+        let updated = rules.find_by_exe("zoom.exe").expect("find")[0].clone();
+        assert_eq!(updated.action, "auto_start");
+        assert_eq!(updated.label, zoom.label);
+        assert_eq!(updated.title_pattern, zoom.title_pattern);
+        assert!(updated.builtin);
+
+        // Unknown id is a no-op, not an error (the command layer checks
+        // existence separately for a proper NotFound).
+        rules.set_action("missing", "ignore").expect("no-op");
     }
 
     #[test]
