@@ -130,13 +130,14 @@ Sem ferramentas/tool use: o LLM só devolve texto. Nada que ele retorne é execu
 | -------------------- | ------------------------------------------------------------------ |
 | `session://state`    | `{ session_id, state, mode, error? }`                              |
 | `audio://level`      | `{ rms: f32[] }` a 30 Hz, só durante gravação                      |
-| `session://result`   | `{ session_id, final_text, inserted: bool }`                       |
+| `session://result`   | `{ session_id, final_text, inserted, insertion_status?, insertion_method?, insertion_fallback?, insert_ms? }` |
 | `detector://meeting` | `{ detection_id, app_label, exe, icon, started_at }` / `{ ended }` |
 | `meeting://state`    | `{ meeting_id, status, elapsed_ms }`                               |
 | `meeting://segment`  | `Segment` (transcrição ao vivo)                                    |
 | `meeting://progress` | `{ meeting_id, step, pct }`                                        |
 | `models://progress`  | `{ model_id, bytes, total }`                                       |
 | `toast://show`       | `{ kind, message, action? }`                                       |
+| `insertion://clipboard-only-warning` | `{ reason: requested \| elevated_target \| no_foreground_target \| window_changed, exe_name? }` — texto ficou no clipboard, nada foi injetado (FR-005-07/08/09) |
 | `settings://changed` | patch                                                              |
 
 Tipos TypeScript são gerados a partir dos structs Rust (`specta`/`tauri-specta`) para evitar divergência.

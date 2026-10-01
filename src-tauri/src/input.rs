@@ -299,17 +299,6 @@ pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), St
     Ok(())
 }
 
-/// Pastes text directly using the enigo text method.
-/// This tries to use system input methods if possible, otherwise simulates keystrokes one by one.
-pub fn paste_text_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
-    let _guard = InjectionGuard::begin();
-    enigo
-        .text(text)
-        .map_err(|e| format!("Failed to send text directly: {}", e))?;
-
-    Ok(())
-}
-
 /// FR-002-04 "menu mask key": inject an inert press+release of the
 /// unassigned virtual key `0xE8`. Windows opens the Start menu (or focuses
 /// the menu bar, for Alt) when a Win/Alt press→release pair passes with no

@@ -443,7 +443,22 @@ fn classify_ptt_event(
 pub struct SessionResultEvent {
     pub session_id: String,
     pub final_text: String,
+    /// True only when the text was actually injected (`inserted`); a
+    /// `copied` outcome (clipboard_only) leaves this false.
     pub inserted: bool,
+    /// FR-005-11: `inserted` | `copied` | `failed`; `None` when no insertion
+    /// was attempted (e.g. an STT failure upstream).
+    pub insertion_status: Option<String>,
+    /// Effective insertion method after `auto` resolution and UIPI fallback
+    /// (`paste`, `paste_shift_insert`, `paste_ctrl_shift_v`, `type`,
+    /// `clipboard_only`, `external_script`).
+    pub insertion_method: Option<String>,
+    /// Why the plan degraded to `clipboard_only`
+    /// (`elevated_target` | `no_foreground_target` | `window_changed` |
+    /// `requested`).
+    pub insertion_fallback: Option<String>,
+    /// Insert dispatch wall time in milliseconds.
+    pub insert_ms: Option<u64>,
 }
 
 /// Snapshot of the active session shared with the pipeline (`actions.rs`):

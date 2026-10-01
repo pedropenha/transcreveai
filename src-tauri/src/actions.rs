@@ -2,12 +2,15 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::insertion::InsertionStatus;
 use crate::managers::audio::{AudioRecordingManager, StopOutcome};
 use crate::managers::history::{HistoryManager, SessionEntry};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    get_settings, AppSettings, InsertionMethod, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use crate::shortcut;
 use crate::transcription_coordinator::{
     PipelineOutcome, PipelinePhase, SessionResultEvent, SESSION_RESULT_EVENT,
@@ -762,6 +765,11 @@ impl ShortcutAction for TranscribeAction {
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
 
+        // FR-005-09: remember which window is focused now — the user just
+        // finished dictating in it — so the insertion can detect a focus
+        // change before the text arrives.
+        crate::insertion::note_session_window();
+
         let ah = app.clone();
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
         let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
@@ -968,9 +976,13 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
-                            // Save to history if WAV was saved
-                            if wav_saved {
-                                if let Err(err) = hm.save_session_entry(SessionEntry {
+                            // Save the provisional history row when the WAV
+                            // was kept. `inserted` is the optimistic default —
+                            // the row is patched with the real insertion
+                            // outcome after the attempt below (FR-005-11), or
+                            // overwritten on the cancelled/empty paths.
+                            let history_entry_id = if wav_saved {
+                                match hm.save_session_entry(SessionEntry {
                                     file_name: Some(file_name.clone()),
                                     raw_text: transcription.clone(),
                                     post_processed_text: processed.post_processed_text.clone(),
@@ -982,16 +994,34 @@ impl ShortcutAction for TranscribeAction {
                                     language: Some(settings.selected_language.clone()),
                                     stt_provider_id: Some(settings.selected_model.clone()),
                                 }) {
-                                    error!("Failed to save history entry: {}", err);
+                                    Ok(entry) => Some(entry.id),
+                                    Err(err) => {
+                                        error!("Failed to save history entry: {}", err);
+                                        None
+                                    }
                                 }
-                            }
+                            } else {
+                                None
+                            };
 
                             if processed.final_text.is_empty() {
+                                // Nothing was produced to deliver — the row
+                                // keeps its WAV but cannot claim `inserted`.
+                                if let Some(id) = history_entry_id {
+                                    if let Err(err) = hm.update_session_status(
+                                        id,
+                                        "failed",
+                                        Some("empty_transcription"),
+                                    ) {
+                                        error!("Failed to update history entry: {}", err);
+                                    }
+                                }
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 finish.report(PipelineOutcome::Empty);
                             } else {
                                 let ah_clone = ah.clone();
+                                let hm_for_paste = Arc::clone(&hm);
                                 let paste_time = Instant::now();
                                 let final_text = processed.final_text;
                                 let rm_for_paste = Arc::clone(&rm);
@@ -1002,59 +1032,96 @@ impl ShortcutAction for TranscribeAction {
                                 }
                                 let session_id =
                                     session.as_ref().map(|s| s.id.clone()).unwrap_or_default();
-                                let can_insert =
-                                    settings.paste_method != crate::settings::PasteMethod::None;
+                                // `clipboard_only` never injects, so the
+                                // auto-submit key can't have been sent by the
+                                // insertion. Every other method counts as
+                                // "inserting" for the double-submit check.
+                                let method_inserts =
+                                    settings.insertion_method != InsertionMethod::ClipboardOnly;
                                 // The auto-submit setting already sends the
                                 // submit key after every insertion; the
                                 // spoken "enviar" only needs its own send
                                 // when that setting is off.
                                 let need_spoken_submit =
-                                    spoken_submit && !(settings.auto_submit && can_insert);
+                                    spoken_submit && !(settings.auto_submit && method_inserts);
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");
+                                        if let Some(id) = history_entry_id {
+                                            if let Err(e) = hm_for_paste.update_session_status(
+                                                id,
+                                                "cancelled",
+                                                None,
+                                            ) {
+                                                error!(
+                                                    "Failed to mark history entry cancelled: {e}"
+                                                );
+                                            }
+                                        }
                                         utils::hide_recording_overlay(&ah_clone);
                                         set_tray_state(&ah_clone, TrayIconState::Idle);
                                         return;
                                     }
 
-                                    let inserted = match utils::paste(
+                                    let report = utils::paste_for_session(
                                         final_text.clone(),
                                         ah_clone.clone(),
-                                    ) {
-                                        Ok(()) => {
-                                            debug!(
-                                                "Text pasted successfully in {:?}",
-                                                paste_time.elapsed()
-                                            );
-                                            if need_spoken_submit {
-                                                // FR-002-17: the spoken
-                                                // "enviar" submits after the
-                                                // insertion (AC-002-10).
-                                                if let Err(e) =
-                                                    crate::clipboard::send_auto_submit_key(
-                                                        &ah_clone,
-                                                    )
-                                                {
-                                                    warn!(
-                                                        "Voice 'send' command: auto-submit failed: {e}"
-                                                    );
-                                                }
+                                    );
+                                    let inserted = report.status == InsertionStatus::Inserted;
+                                    if report.status == InsertionStatus::Failed {
+                                        error!(
+                                            "Failed to insert transcription: {}",
+                                            report.error.as_deref().unwrap_or("unknown error")
+                                        );
+                                        let _ = ah_clone.emit("paste-error", ());
+                                    } else {
+                                        debug!(
+                                            "Text delivered in {:?} via {} (requested {:?})",
+                                            paste_time.elapsed(),
+                                            report.plan.method_name(),
+                                            report.requested,
+                                        );
+                                        if need_spoken_submit {
+                                            // FR-002-17: the spoken
+                                            // "enviar" submits after the
+                                            // insertion (AC-002-10).
+                                            if let Err(e) =
+                                                crate::clipboard::send_auto_submit_key(&ah_clone)
+                                            {
+                                                warn!(
+                                                    "Voice 'send' command: auto-submit failed: {e}"
+                                                );
                                             }
-                                            can_insert
                                         }
-                                        Err(e) => {
-                                            error!("Failed to paste transcription: {}", e);
-                                            let _ = ah_clone.emit("paste-error", ());
-                                            false
+                                    }
+
+                                    // FR-005-11: patch the provisional row
+                                    // with the real outcome, method and
+                                    // `insert_ms`.
+                                    if let Some(id) = history_entry_id {
+                                        if let Err(e) =
+                                            hm_for_paste.record_insertion_outcome(id, &report)
+                                        {
+                                            error!("Failed to record insertion outcome: {e}");
                                         }
-                                    };
+                                    }
+
                                     let _ = ah_clone.emit(
                                         SESSION_RESULT_EVENT,
                                         SessionResultEvent {
                                             session_id,
                                             final_text,
                                             inserted,
+                                            insertion_status: Some(
+                                                report.status.as_str().to_string(),
+                                            ),
+                                            insertion_method: Some(
+                                                report.plan.method_name().to_string(),
+                                            ),
+                                            insertion_fallback: report
+                                                .clipboard_only_reason
+                                                .map(|r| r.as_str().to_string()),
+                                            insert_ms: Some(report.elapsed.as_millis() as u64),
                                         },
                                     );
                                     utils::hide_recording_overlay(&ah_clone);
@@ -1110,6 +1177,12 @@ impl ShortcutAction for TranscribeAction {
                                         .unwrap_or_default(),
                                     final_text: String::new(),
                                     inserted: false,
+                                    // No insertion was attempted — the
+                                    // failure happened upstream (STT).
+                                    insertion_status: None,
+                                    insertion_method: None,
+                                    insertion_fallback: None,
+                                    insert_ms: None,
                                 },
                             );
                             utils::hide_recording_overlay(&ah);
@@ -1154,8 +1227,12 @@ impl ShortcutAction for PasteLastAction {
                 let ah = app.clone();
                 let ah_for_paste = ah.clone();
                 if let Err(e) = ah.run_on_main_thread(move || {
-                    if let Err(e) = utils::paste(text, ah_for_paste.clone()) {
-                        error!("Failed to re-paste last transcription: {}", e);
+                    let report = utils::paste(text, ah_for_paste.clone());
+                    if report.status == InsertionStatus::Failed {
+                        error!(
+                            "Failed to re-paste last transcription: {}",
+                            report.error.as_deref().unwrap_or("unknown error")
+                        );
                         let _ = ah_for_paste.emit("paste-error", ());
                     }
                 }) {

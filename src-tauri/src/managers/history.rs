@@ -212,6 +212,75 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    /// Patch the provisional session row with the real insertion outcome
+    /// (FR-005-11): `status` (`inserted`/`copied`/`failed`), the error when it
+    /// failed, and `insert_ms`/`insert_method`/`insert_fallback` telemetry in
+    /// `latency_json`.
+    pub fn record_insertion_outcome(
+        &self,
+        id: i64,
+        report: &crate::insertion::InsertionReport,
+    ) -> Result<HistoryEntry> {
+        self.patch_insertion_outcome(
+            id,
+            report.status.as_str(),
+            report.error.as_deref(),
+            Some(report.elapsed.as_millis() as i64),
+            Some(report.plan.method_name()),
+            report.clipboard_only_reason.map(|r| r.as_str()),
+        )
+    }
+
+    /// Overwrite the provisional status of a session row whose pipeline ended
+    /// without an insertion attempt (`cancelled`, or `failed` for an empty
+    /// transcription).
+    pub fn update_session_status(
+        &self,
+        id: i64,
+        status: &str,
+        error_code: Option<&str>,
+    ) -> Result<HistoryEntry> {
+        self.patch_insertion_outcome(id, status, error_code, None, None, None)
+    }
+
+    fn patch_insertion_outcome(
+        &self,
+        id: i64,
+        status: &str,
+        error_code: Option<&str>,
+        insert_ms: Option<i64>,
+        insert_method: Option<&str>,
+        insert_fallback: Option<&str>,
+    ) -> Result<HistoryEntry> {
+        let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
+
+        repo.update_insertion_outcome(
+            id,
+            status,
+            error_code,
+            insert_ms,
+            insert_method,
+            insert_fallback,
+        )
+        .map_err(|e| anyhow!("Failed to update insertion outcome of {}: {}", id, e))?;
+
+        let entry = HistoryEntry::from(
+            repo.get(id)?
+                .ok_or_else(|| anyhow!("History entry {} not found", id))?,
+        );
+
+        if let Err(e) = (HistoryUpdatePayload::Updated {
+            entry: entry.clone(),
+        })
+        .emit(&self.app_handle)
+        {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+
+        Ok(entry)
+    }
+
     pub fn cleanup_old_entries(&self) -> Result<()> {
         let retention_period = crate::settings::get_recording_retention_period(&self.app_handle);
 

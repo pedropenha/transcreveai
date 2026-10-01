@@ -11,6 +11,7 @@ mod commands;
 pub mod db;
 mod helpers;
 mod input;
+mod insertion;
 mod llm_client;
 mod managers;
 /// Meeting notetaker domain (F009). `pub` so the capture plumbing T-063 ships
@@ -734,6 +735,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_paste_delay_after_ms_setting,
             shortcut::change_reliable_paste_setting,
             shortcut::change_paste_method_setting,
+            shortcut::change_insertion_method_setting,
+            shortcut::change_newline_mode_setting,
+            shortcut::change_type_char_delay_ms_setting,
+            shortcut::change_clipboard_only_on_window_change_setting,
             shortcut::get_available_typing_tools,
             shortcut::change_typing_tool_setting,
             shortcut::change_external_script_path_setting,

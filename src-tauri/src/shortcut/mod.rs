@@ -23,9 +23,9 @@ use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
-    self, get_settings, AutoSubmitKey, ClipboardHandling, KeyboardImplementation, LLMPrompt,
-    OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation, ShortcutBinding, SoundTheme,
-    Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
+    self, get_settings, AutoSubmitKey, ClipboardHandling, InsertionMethod, KeyboardImplementation,
+    LLMPrompt, NewlineMode, OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation,
+    ShortcutBinding, SoundTheme, Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
 
@@ -923,6 +923,71 @@ pub fn change_paste_method_setting(app: AppHandle, method: String) -> CommandRes
         }
     };
     settings.paste_method = parsed;
+    // Legacy UI store writes land here — keep the authoritative
+    // `insertion_method` in sync so the dispatcher sees the choice
+    // (`ctrl_shift_v` keeps working through the Paste chord selection).
+    settings.insertion_method = settings::insertion_method_from_legacy(parsed);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// F005 / ADR-0002: `insertion_method` is the authoritative delivery
+/// setting. `change_paste_method_setting` stays for legacy UI stores (the
+/// migration keeps both in sync for readers that only know the old key).
+#[tauri::command]
+#[specta::specta]
+pub fn change_insertion_method_setting(app: AppHandle, method: String) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    let parsed = match method.as_str() {
+        "auto" => InsertionMethod::Auto,
+        "paste" => InsertionMethod::Paste,
+        "paste_shift_insert" => InsertionMethod::PasteShiftInsert,
+        "type" => InsertionMethod::Type,
+        "clipboard_only" => InsertionMethod::ClipboardOnly,
+        other => {
+            warn!("Invalid insertion method '{}', defaulting to auto", other);
+            InsertionMethod::Auto
+        }
+    };
+    settings.insertion_method = parsed;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_newline_mode_setting(app: AppHandle, mode: String) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    let parsed = match mode.as_str() {
+        "raw" => NewlineMode::Raw,
+        "shift_enter" => NewlineMode::ShiftEnter,
+        other => {
+            warn!("Invalid newline mode '{}', defaulting to raw", other);
+            NewlineMode::Raw
+        }
+    };
+    settings.newline_mode = parsed;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_type_char_delay_ms_setting(app: AppHandle, ms: u64) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    settings.type_char_delay_ms = ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_clipboard_only_on_window_change_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    settings.clipboard_only_on_window_change = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }
