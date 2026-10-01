@@ -2,6 +2,7 @@ pub mod audio;
 pub mod error;
 pub mod flowbar;
 pub mod history;
+pub mod llm;
 pub mod models;
 pub mod secrets;
 pub mod text_pipeline;

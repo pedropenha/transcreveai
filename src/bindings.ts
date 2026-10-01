@@ -332,6 +332,33 @@ async secretHint(providerId: string) : Promise<Result<string | null, CommandErro
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Validate the configured provider's vault key with a cheap health check
+ * (`GET /models` where available, else a 1-token completion). Never returns
+ * the key; failures come back as `ok:false` + a classified `kind` rather
+ * than a command error, since "the test failed" is a normal outcome.
+ */
+async testLlmConnection(providerId: string) : Promise<Result<LlmConnectionReport, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_llm_connection", { providerId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Gating query for the meeting window (FR-009-21): `enabled == false` means
+ * the Resumo tab stays disabled with a hint to configure a BYOK key — while
+ * transcription and "Minhas notas" keep working regardless.
+ */
+async llmSummaryStatus() : Promise<Result<LlmSummaryStatus, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("llm_summary_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePostProcessModelSetting(providerId: string, model: string) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_post_process_model_setting", { providerId, model }) };
@@ -1303,7 +1330,16 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
+/**
+ * Optional stronger model for cost-aware escalation of long meeting
+ * summaries (`llm::router::select_model`, `cost-aware-llm-pipeline`):
+ * when set, `Summary` requests past `SUMMARY_ESCALATION_CHARS` route to
+ * this model on the same provider. No dedicated UI in v1 — settable via
+ * the settings patch API; `None` keeps every purpose on the configured
+ * model.
+ */
+llm_escalation_model?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Receipt-sequenced paste: restore the clipboard only after the target
  * app actually reads the transcript, instead of after a fixed delay —
@@ -1662,6 +1698,31 @@ export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
+/**
+ * Result of `test_llm_connection`. `detail` is a short user-facing hint;
+ * secrets and raw URLs never reach it (transport errors are classified, not
+ * stringified).
+ */
+export type LlmConnectionReport = { ok: boolean; provider_id: string; latency_ms: number | null; kind?: LlmErrorKind | null; detail?: string | null }
+/**
+ * Stable, machine-readable failure class for `test_llm_connection` — the
+ * frontend localizes on this; `detail` is only a diagnostic extra.
+ */
+export type LlmErrorKind = "network" | "timeout" | "auth" | "rate_limited" | "unavailable" | "missing_api_key" | "offline" | "unsupported" | "provider"
+/**
+ * Gating state for the meeting summary (FR-009-21). `enabled` is the single
+ * flag the Resumo tab needs; the other fields explain *why* so the UI can
+ * point the user at the fix.
+ */
+export type LlmSummaryStatus = { enabled: boolean; provider_id: string | null; provider_label: string | null; model: string | null; 
+/**
+ * Masked key hint (`••••` + short suffix), `None` when no key is stored.
+ */
+key_hint: string | null; missing_api_key: boolean; missing_model: boolean; 
+/**
+ * Offline mode is on — summaries need the network (FR-011-07).
+ */
+offline: boolean }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }

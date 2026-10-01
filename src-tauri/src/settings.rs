@@ -544,6 +544,14 @@ pub struct AppSettings {
     pub post_process_prompts: Vec<LLMPrompt>,
     #[serde(default)]
     pub post_process_selected_prompt_id: Option<String>,
+    /// Optional stronger model for cost-aware escalation of long meeting
+    /// summaries (`llm::router::select_model`, `cost-aware-llm-pipeline`):
+    /// when set, `Summary` requests past `SUMMARY_ESCALATION_CHARS` route to
+    /// this model on the same provider. No dedicated UI in v1 — settable via
+    /// the settings patch API; `None` keeps every purpose on the configured
+    /// model.
+    #[serde(default)]
+    pub llm_escalation_model: Option<String>,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -1232,6 +1240,7 @@ pub fn get_default_settings() -> AppSettings {
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
+        llm_escalation_model: None,
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),

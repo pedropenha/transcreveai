@@ -12,6 +12,7 @@ pub mod db;
 mod helpers;
 mod input;
 mod insertion;
+mod llm;
 mod llm_client;
 mod managers;
 /// Meeting notetaker domain (F009). `pub` so the capture plumbing T-063 ships
@@ -756,6 +757,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::secrets::secret_set,
             commands::secrets::secret_clear,
             commands::secrets::secret_hint,
+            commands::llm::test_llm_connection,
+            commands::llm::llm_summary_status,
             shortcut::change_post_process_model_setting,
             shortcut::set_post_process_provider,
             shortcut::fetch_post_process_models,
