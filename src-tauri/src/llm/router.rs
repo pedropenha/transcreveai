@@ -36,12 +36,10 @@ use tauri::AppHandle;
 /// when one is configured (`settings.llm_escalation_model`). Sized like the
 /// skill's `_SONNET_TEXT_THRESHOLD` — ~10k chars ≈ a 20–30 min pt-BR
 /// transcript segment.
-#[allow(dead_code)] // consumed by `complete_for_purpose` (T-067 callers)
 pub const SUMMARY_ESCALATION_CHARS: usize = 10_000;
 
 /// Model chosen for a call after routing. `escalated` tells the caller (and
 /// the logs) that the input was large enough to leave the cheap tier.
-#[allow(dead_code)] // consumed by `resolve_route` (T-067 callers)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RouteDecision {
     pub model: String,
@@ -51,7 +49,6 @@ pub struct RouteDecision {
 /// Input-size threshold per purpose. Only `Summary` escalates — the other
 /// purposes are short, latency-bound jobs where a stronger model buys nothing
 /// (`cost-aware-llm-pipeline`: "start with the cheapest model").
-#[allow(dead_code)]
 fn escalation_threshold(purpose: LlmPurpose) -> usize {
     match purpose {
         LlmPurpose::Summary => SUMMARY_ESCALATION_CHARS,
@@ -64,7 +61,6 @@ fn escalation_threshold(purpose: LlmPurpose) -> usize {
 /// Cheap-first model selection. The configured model is always honored when
 /// no escalation model is set; escalation only triggers for `Summary` inputs
 /// past the threshold, and never to a model equal to the configured one.
-#[allow(dead_code)] // pipeline-facing — called by `resolve_route` (T-067)
 pub fn select_model(
     purpose: LlmPurpose,
     input_chars: usize,
@@ -133,7 +129,6 @@ impl fmt::Debug for LlmRoute {
 ///
 /// Order of checks: offline gate first (FR-011-07 — no network at all), then
 /// provider, key (FR-009-21), model.
-#[allow(dead_code)] // called by `complete_for_purpose` (T-067 callers)
 pub fn resolve_route(
     settings: &AppSettings,
     api_key: Option<String>,
@@ -256,7 +251,6 @@ pub fn build_provider(route: &LlmRoute) -> Result<Box<dyn LlmProvider>, LlmError
 /// Bounded retry policy (`cost-aware-llm-pipeline` §3). Only
 /// [`LlmError::is_transient`] errors consume attempts; the wait is the
 /// provider's `Retry-After` when present, else exponential backoff.
-#[allow(dead_code)] // constructed by callers wanting non-default retry tuning
 #[derive(Clone, Copy, Debug)]
 pub struct RetryPolicy {
     pub max_attempts: u32,
@@ -279,7 +273,6 @@ impl Default for RetryPolicy {
 
 /// `complete` with narrow retry — see the module docs. `req` is cheap to
 /// clone per attempt.
-#[allow(dead_code)] // exercised by wire tests; callers land with T-067
 pub async fn complete_with_policy(
     provider: &dyn LlmProvider,
     req: &LlmRequest,
@@ -307,7 +300,6 @@ pub async fn complete_with_policy(
     }
 }
 
-#[allow(dead_code)] // callers land with T-067
 pub async fn complete_with_retry(
     provider: &dyn LlmProvider,
     req: &LlmRequest,
@@ -318,7 +310,6 @@ pub async fn complete_with_retry(
 /// The meeting-summary entry point (T-067): resolve provider/model/key from
 /// settings + the OS vault, then call with retry. `api_key` is read via
 /// `secrets::provider_api_key` — it never touches settings or logs.
-#[allow(dead_code)] // the entry point T-067 calls; no v1 caller before it
 pub async fn complete_for_purpose(
     app: &AppHandle,
     req: LlmRequest,
