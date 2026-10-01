@@ -110,6 +110,7 @@ fn route(provider_id: &str, base_url: &str, model: &str) -> LlmRoute {
         model: model.to_string(),
         api_key: "test-key-material".to_string(),
         escalated: false,
+        cli_agent: None,
     }
 }
 

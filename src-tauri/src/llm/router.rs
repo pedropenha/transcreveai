@@ -21,10 +21,13 @@
 //! LLM account.
 
 use super::anthropic::AnthropicProvider;
+use super::cli_agent::{self, CliAgentProvider};
 use super::openai_compat::OpenAiCompatibleProvider;
 use super::provider::LlmProvider;
 use super::types::{LlmError, LlmPurpose, LlmRequest, LlmResponse};
-use crate::settings::{AppSettings, PostProcessProvider, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    AppSettings, CliAgentConfig, PostProcessProvider, APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use std::fmt;
 use std::time::Duration;
 use tauri::AppHandle;
@@ -33,12 +36,10 @@ use tauri::AppHandle;
 /// when one is configured (`settings.llm_escalation_model`). Sized like the
 /// skill's `_SONNET_TEXT_THRESHOLD` — ~10k chars ≈ a 20–30 min pt-BR
 /// transcript segment.
-#[allow(dead_code)] // consumed by `complete_for_purpose` (T-067 callers)
 pub const SUMMARY_ESCALATION_CHARS: usize = 10_000;
 
 /// Model chosen for a call after routing. `escalated` tells the caller (and
 /// the logs) that the input was large enough to leave the cheap tier.
-#[allow(dead_code)] // consumed by `resolve_route` (T-067 callers)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RouteDecision {
     pub model: String,
@@ -48,18 +49,18 @@ pub struct RouteDecision {
 /// Input-size threshold per purpose. Only `Summary` escalates — the other
 /// purposes are short, latency-bound jobs where a stronger model buys nothing
 /// (`cost-aware-llm-pipeline`: "start with the cheapest model").
-#[allow(dead_code)]
 fn escalation_threshold(purpose: LlmPurpose) -> usize {
     match purpose {
         LlmPurpose::Summary => SUMMARY_ESCALATION_CHARS,
-        LlmPurpose::Cleanup | LlmPurpose::Command | LlmPurpose::Title => usize::MAX,
+        LlmPurpose::Cleanup | LlmPurpose::Command | LlmPurpose::Title | LlmPurpose::Assistant => {
+            usize::MAX
+        }
     }
 }
 
 /// Cheap-first model selection. The configured model is always honored when
 /// no escalation model is set; escalation only triggers for `Summary` inputs
 /// past the threshold, and never to a model equal to the configured one.
-#[allow(dead_code)] // pipeline-facing — called by `resolve_route` (T-067)
 pub fn select_model(
     purpose: LlmPurpose,
     input_chars: usize,
@@ -91,8 +92,12 @@ pub fn select_model(
 /// Whether this provider needs a BYOK key at all. `custom` covers self-hosted
 /// endpoints (Ollama, LM Studio) that typically have none — same rule the
 /// model-list command already applies. Apple Intelligence is a native API.
+/// `cli_agent/*` providers authenticate through the CLI's own session — no
+/// key is ever read or stored for them (FR-012-03).
 pub fn requires_api_key(provider: &PostProcessProvider) -> bool {
-    provider.id != "custom" && provider.id != APPLE_INTELLIGENCE_PROVIDER_ID
+    provider.id != "custom"
+        && provider.id != APPLE_INTELLIGENCE_PROVIDER_ID
+        && !cli_agent::is_cli_agent(&provider.id)
 }
 
 /// A fully routed call: provider config, chosen model and the vault key.
@@ -102,6 +107,9 @@ pub struct LlmRoute {
     pub model: String,
     pub api_key: String,
     pub escalated: bool,
+    /// `cli_agent/*` per-provider config (FR-012-05) — `None` for HTTP
+    /// providers.
+    pub cli_agent: Option<CliAgentConfig>,
 }
 
 impl fmt::Debug for LlmRoute {
@@ -121,7 +129,6 @@ impl fmt::Debug for LlmRoute {
 ///
 /// Order of checks: offline gate first (FR-011-07 — no network at all), then
 /// provider, key (FR-009-21), model.
-#[allow(dead_code)] // called by `complete_for_purpose` (T-067 callers)
 pub fn resolve_route(
     settings: &AppSettings,
     api_key: Option<String>,
@@ -135,8 +142,51 @@ pub fn resolve_route(
         .active_post_process_provider()
         .cloned()
         .ok_or_else(|| LlmError::Provider("no LLM provider configured".to_string()))?;
+    resolve_route_for_provider(settings, provider, api_key, purpose, input_chars)
+}
+
+/// `resolve_route` for callers that pick the provider themselves — the voice
+/// assistant resolves `assistant_provider_id` (FR-012-04) rather than the
+/// post-processing selection. The same gating applies: offline → provider →
+/// key → model.
+pub fn resolve_route_for_provider(
+    settings: &AppSettings,
+    provider: PostProcessProvider,
+    api_key: Option<String>,
+    purpose: LlmPurpose,
+    input_chars: usize,
+) -> Result<LlmRoute, LlmError> {
+    if settings.offline_mode {
+        return Err(LlmError::Offline);
+    }
     if provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
         return Err(LlmError::Unsupported);
+    }
+    if cli_agent::is_cli_agent(&provider.id) {
+        // FR-012-04: CLI agents ride the user's subscription — cost zero, so
+        // no escalation tier applies. An empty model means the CLI's own
+        // default; the per-provider config carries enabled/timeout/extras
+        // (FR-012-05). Detection is re-checked at spawn time by
+        // `CliAgentProvider` itself.
+        let cli_config = settings.cli_agent_config(&provider.id);
+        if !cli_config.enabled {
+            return Err(LlmError::Provider(format!(
+                "CLI agent provider '{}' is disabled",
+                provider.id
+            )));
+        }
+        let model = settings
+            .post_process_models
+            .get(&provider.id)
+            .cloned()
+            .unwrap_or_default();
+        return Ok(LlmRoute {
+            provider,
+            model,
+            api_key: String::new(),
+            escalated: false,
+            cli_agent: Some(cli_config),
+        });
     }
     let api_key = api_key.unwrap_or_default();
     if requires_api_key(&provider) && api_key.trim().is_empty() {
@@ -164,13 +214,22 @@ pub fn resolve_route(
         model: decision.model,
         api_key,
         escalated: decision.escalated,
+        cli_agent: None,
     })
 }
 
-/// Build the `LlmProvider` impl for a routed call. Anything that is not
-/// `anthropic` speaks the OpenAI-compatible wire format (contracts §4);
-/// Apple Intelligence is native-only and rejected in `resolve_route` already.
+/// Build the `LlmProvider` impl for a routed call. `cli_agent/*` ids get the
+/// headless-CLI provider; anything else that is not `anthropic` speaks the
+/// OpenAI-compatible wire format (contracts §4). Apple Intelligence is
+/// native-only and rejected in `resolve_route` already.
 pub fn build_provider(route: &LlmRoute) -> Result<Box<dyn LlmProvider>, LlmError> {
+    if let Some(spec) = cli_agent::adapter_for(&route.provider.id) {
+        return Ok(Box::new(CliAgentProvider::new(
+            spec,
+            route.cli_agent.clone().unwrap_or_default(),
+            route.model.clone(),
+        )));
+    }
     if route.provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
         return Err(LlmError::Unsupported);
     }
@@ -192,7 +251,6 @@ pub fn build_provider(route: &LlmRoute) -> Result<Box<dyn LlmProvider>, LlmError
 /// Bounded retry policy (`cost-aware-llm-pipeline` §3). Only
 /// [`LlmError::is_transient`] errors consume attempts; the wait is the
 /// provider's `Retry-After` when present, else exponential backoff.
-#[allow(dead_code)] // constructed by callers wanting non-default retry tuning
 #[derive(Clone, Copy, Debug)]
 pub struct RetryPolicy {
     pub max_attempts: u32,
@@ -215,7 +273,6 @@ impl Default for RetryPolicy {
 
 /// `complete` with narrow retry — see the module docs. `req` is cheap to
 /// clone per attempt.
-#[allow(dead_code)] // exercised by wire tests; callers land with T-067
 pub async fn complete_with_policy(
     provider: &dyn LlmProvider,
     req: &LlmRequest,
@@ -243,7 +300,6 @@ pub async fn complete_with_policy(
     }
 }
 
-#[allow(dead_code)] // callers land with T-067
 pub async fn complete_with_retry(
     provider: &dyn LlmProvider,
     req: &LlmRequest,
@@ -254,7 +310,6 @@ pub async fn complete_with_retry(
 /// The meeting-summary entry point (T-067): resolve provider/model/key from
 /// settings + the OS vault, then call with retry. `api_key` is read via
 /// `secrets::provider_api_key` — it never touches settings or logs.
-#[allow(dead_code)] // the entry point T-067 calls; no v1 caller before it
 pub async fn complete_for_purpose(
     app: &AppHandle,
     req: LlmRequest,
@@ -397,10 +452,66 @@ mod tests {
             model: "m".to_string(),
             api_key: "sk-super-secret".to_string(),
             escalated: false,
+            cli_agent: None,
         };
         let rendered = format!("{route:?}");
         assert!(!rendered.contains("sk-super-secret"));
         assert!(rendered.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn cli_agent_needs_no_key_and_no_model() {
+        // FR-012-03/04: subscription auth, cost zero — no vault key, no
+        // required model, never escalated.
+        let mut settings = AppSettings {
+            post_process_provider_id: "cli_agent/codex".to_string(),
+            ..Default::default()
+        };
+
+        let route = resolve_route(&settings, None, LlmPurpose::Summary, 10).expect("route");
+        assert_eq!(route.provider.id, "cli_agent/codex");
+        assert!(route.api_key.is_empty());
+        assert!(!route.escalated);
+        assert_eq!(route.model, "");
+        assert!(route.cli_agent.is_some());
+        assert!(!requires_api_key(&route.provider));
+
+        // A configured model is an optional CLI flag, not a requirement.
+        settings
+            .post_process_models
+            .insert("cli_agent/codex".to_string(), "gpt-5.1".to_string());
+        let route = resolve_route(&settings, None, LlmPurpose::Summary, 10).expect("route");
+        assert_eq!(route.model, "gpt-5.1");
+    }
+
+    #[test]
+    fn cli_agent_disabled_fails_fast() {
+        let mut settings = AppSettings {
+            post_process_provider_id: "cli_agent/codex".to_string(),
+            ..Default::default()
+        };
+        settings.cli_agent_configs.insert(
+            "cli_agent/codex".to_string(),
+            CliAgentConfig {
+                enabled: false,
+                ..CliAgentConfig::default()
+            },
+        );
+        assert!(matches!(
+            resolve_route(&settings, None, LlmPurpose::Summary, 10),
+            Err(LlmError::Provider(_))
+        ));
+    }
+
+    #[test]
+    fn cli_agent_builds_cli_provider() {
+        let settings = AppSettings {
+            post_process_provider_id: "cli_agent/claude".to_string(),
+            ..Default::default()
+        };
+        let route = resolve_route(&settings, None, LlmPurpose::Cleanup, 10).expect("route");
+        let provider = build_provider(&route).expect("provider");
+        assert_eq!(provider.id().to_string(), "cli_agent/claude");
     }
 
     #[test]

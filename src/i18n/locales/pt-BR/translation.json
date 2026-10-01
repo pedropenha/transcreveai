@@ -188,6 +188,10 @@
           "transcribe_with_post_process": {
             "name": "Tecla de Pós-Processamento",
             "description": "Opcional: Uma tecla de atalho dedicada que sempre aplica pós-processamento com IA à sua transcrição."
+          },
+          "assistant": {
+            "name": "Tecla do Assistente",
+            "description": "Abre o assistente flutuante. Pressione de novo com o painel aberto para enviar o que você escreveu ou ditou."
           }
         },
         "errors": {
@@ -437,6 +441,40 @@
       "hotkey": {
         "title": "Tecla de atalho"
       },
+      "cliAgent": {
+        "status": {
+          "detected": "Detectado",
+          "missing": "Ausente",
+          "disabled": "Desabilitado",
+          "experimental": "Experimental",
+          "detectedDetail": "Detectado em {{path}}. Usa o login do próprio CLI — não precisa de chave de API."
+        },
+        "missingHint": "Não encontrado no PATH. Instale com: {{command}}",
+        "enabled": {
+          "title": "Habilitado",
+          "description": "Permite que este agente CLI responda a pedidos de IA (resumos de reunião, assistente)."
+        },
+        "binaryPath": {
+          "title": "Caminho do binário",
+          "description": "Caminho absoluto para substituir a detecção. Vazio = procurar '{{binary}}' no PATH.",
+          "placeholder": "Detectar no PATH"
+        },
+        "extraArgs": {
+          "title": "Argumentos extras",
+          "description": "Argumentos adicionais (separados por espaço) anexados à chamada headless.",
+          "placeholder": "ex.: --flag valor"
+        },
+        "timeout": {
+          "title": "Tempo limite (segundos)",
+          "description": "Tempo limite por chamada. Vazio usa o padrão da tarefa (60 s assistente / 180 s resumo).",
+          "placeholder": "60"
+        },
+        "modelOverride": {
+          "title": "Substituir modelo",
+          "description": "Nome de modelo opcional passado ao CLI. Vazio usa o padrão do CLI.",
+          "placeholder": "Padrão do CLI"
+        }
+      },
       "api": {
         "title": "API (Compatível com OpenAI)",
         "provider": {
@@ -538,7 +576,8 @@
         "copied": "Copiado",
         "failed": "Falhou",
         "cancelled": "Cancelado",
-        "saved_note": "Nota salva"
+        "saved_note": "Nota salva",
+        "routed": "Assistente"
       },
       "periods": {
         "day": "Últimas 24 horas",
@@ -834,6 +873,7 @@
     "nothingHeard": "Nada ouvido",
     "dictate": "Ditar",
     "notetaker": "Notetaker",
+    "assistant": "Assistente",
     "cancel": "Cancelar",
     "stop": "Parar",
     "inserting": "Inserindo...",
@@ -854,6 +894,47 @@
     "openMeeting": "Abrir janela da reunião",
     "openMeetingAt": "Abrir janela da reunião, tempo decorrido {{time}}",
     "openMeetingTranscript": "Abrir transcrição da reunião"
+  },
+  "assistant": {
+    "title": "Assistente",
+    "provider": "Provedor: {{label}}",
+    "inputPlaceholder": "Pergunte ou dite…",
+    "send": "Enviar",
+    "sendHint": "Enter envia · Shift+Enter quebra linha",
+    "cancel": "Cancelar",
+    "close": "Fechar",
+    "pin": "Fixar",
+    "unpin": "Desafixar",
+    "retry": "Tentar novamente",
+    "newConversation": "Nova conversa",
+    "thinking": "Pensando…",
+    "cancelled": "Cancelado",
+    "listening": "Ouvindo…",
+    "empty": "Dite ou digite uma pergunta para começar.",
+    "privacyHint": "O áudio é transcrito neste dispositivo — nada é enviado até você enviar.",
+    "errorTitle": "O assistente não conseguiu responder.",
+    "error": {
+      "provider": "O assistente não conseguiu responder.",
+      "network": "Não foi possível alcançar o provedor.",
+      "timeout": "O provedor não respondeu a tempo.",
+      "auth": "O provedor recusou a chave de API.",
+      "rateLimited": "O provedor está limitando requisições.",
+      "unavailable": "O provedor retornou um erro de servidor.",
+      "missingApiKey": "Este provedor precisa de uma chave de API.",
+      "offline": "O modo offline está ativo — o assistente não alcança nenhum provedor.",
+      "unsupported": "Este provedor não pode responder ao assistente."
+    },
+    "noProvider": "O assistente precisa de um provedor de IA para responder.",
+    "hint": {
+      "noProvider": "Ative um agente CLI local (Codex, Claude Code…) ou configure um provedor de API nas Configurações.",
+      "offline": "O modo offline está ativo — o assistente não alcança nenhum provedor.",
+      "missingApiKey": "Este provedor precisa de uma chave de API.",
+      "missingModel": "Escolha um modelo para este provedor nas Configurações.",
+      "cliAgentDisabled": "Este agente CLI está desativado nas Configurações.",
+      "cliAgentNotDetected": "Este agente CLI não foi encontrado no PATH.",
+      "cliAgentExperimental": "Este agente CLI é experimental e ainda não pode responder."
+    },
+    "openSettings": "Abrir configurações"
   },
   "toast": {
     "meetingDetected": "Reunião detectada",
@@ -982,7 +1063,15 @@
       "clipboard": "Área de transferência",
       "insertion": "Inserção de texto",
       "performance": "Desempenho",
+      "assistant": "Assistente",
       "diagnostics": "Diagnóstico e dados"
+    },
+    "assistant": {
+      "provider": {
+        "title": "Provedor",
+        "description": "Qual provedor de IA responde ao assistente flutuante. Automático prefere o provedor configurado e cai para um agente CLI detectado.",
+        "auto": "Automático (recomendado)"
+      }
     },
     "limits": {
       "duration": {

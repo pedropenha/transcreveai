@@ -26,6 +26,9 @@ export const GeneralSettings: React.FC = () => {
         <ShortcutActivationSetting descriptionMode="tooltip" grouped={true} />
         {/* Cancel shortcut remains hidden on Linux because of dynamic shortcut instability. */}
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped={true} />}
+        {/* F012/T-091: assistant overlay hotkey — same capture UI as the
+            other bindings (FR-012-10). */}
+        <ShortcutInput shortcutId="assistant" grouped={true} />
       </SettingsGroup>
       <SettingsGroup title={t("settings.general.language.title")}>
         <LanguageSelector descriptionMode="tooltip" grouped />

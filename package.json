@@ -15,7 +15,7 @@
     "format:frontend": "prettier --write .",
     "format:backend": "cd src-tauri && cargo fmt",
     "test:keyboard": "bun src/lib/utils/keyboard.test.ts",
-    "test:unit": "bun src/lib/utils/keyboard.test.ts && bun src/components/icons/soundBars.test.ts && bun src/components/update-checker/portableInstaller.test.ts && bun src/components/settings/history/clipboard.test.ts && bun src/components/settings/history/historyView.test.ts && bun src/components/settings/meetings/meetingsView.test.ts && bun src/components/settings/PostProcessingSettingsApi/apiKeyEdit.test.ts && bun src/i18n/locales.test.ts && bun src/overlay/flowbarView.test.ts && bun src/lib/providers.test.ts && bun src/meeting/meetingView.test.ts && bun src/toast/toastView.test.ts",
+    "test:unit": "bun src/lib/utils/keyboard.test.ts && bun src/components/icons/soundBars.test.ts && bun src/components/update-checker/portableInstaller.test.ts && bun src/components/settings/history/clipboard.test.ts && bun src/components/settings/history/historyView.test.ts && bun src/components/settings/meetings/meetingsView.test.ts && bun src/components/settings/PostProcessingSettingsApi/apiKeyEdit.test.ts && bun src/i18n/locales.test.ts && bun src/overlay/flowbarView.test.ts && bun src/lib/providers.test.ts && bun src/meeting/meetingView.test.ts && bun src/toast/toastView.test.ts && bun src/assistant/assistantView.test.ts && bun src/components/settings/hub/pendingSettingsTab.test.ts",
     "test:coverage": "bun test --coverage ./scripts/unit-coverage.test.ts",
     "test:e2e": "playwright test",
     "test:playwright": "playwright test",

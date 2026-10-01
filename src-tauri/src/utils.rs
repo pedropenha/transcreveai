@@ -177,6 +177,10 @@ pub fn cancel_current_operation(app: &AppHandle) {
     let tm = app.state::<Arc<TranscriptionManager>>();
     tm.cancel_stream();
 
+    // F012: a dictation claimed by the assistant panel is dropped with the
+    // session — never delivered to the input nor pasted anywhere.
+    crate::assistant::note_dictation_cancelled(app);
+
     // Update tray icon and hide overlay
     set_tray_state(app, crate::tray::TrayIconState::Idle);
     hide_recording_overlay(app);

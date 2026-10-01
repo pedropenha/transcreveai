@@ -9,6 +9,9 @@
 //! * [`anthropic`] — `POST {base}/messages` (`x-api-key` + prompt caching).
 //! * [`router`] — cost-aware model routing + narrow retry +
 //!   `complete_for_purpose`, the entry point T-067 consumes.
+//! * [`cli_agent`] — `cli_agent/*` providers driving installed agent CLIs
+//!   (codex, claude, cursor-agent, devin) headlessly — subscription auth,
+//!   no API key, cost zero (F012, FR-012-01..05).
 //!
 //! v1 scope (T-050): only the meeting summary calls this (BYOK). Keys come
 //! from the OS credential vault via `secrets::provider_api_key` — never from
@@ -16,6 +19,7 @@
 //! disabled; transcription and notes never touch this module (FR-009-21).
 
 mod anthropic;
+pub mod cli_agent;
 mod http;
 mod openai_compat;
 mod provider;

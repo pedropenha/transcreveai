@@ -25,6 +25,7 @@ export default defineConfig(async () => ({
         overlay: resolve(__dirname, "src/overlay/index.html"),
         toast: resolve(__dirname, "src/toast/index.html"),
         meeting: resolve(__dirname, "src/meeting/index.html"),
+        assistant: resolve(__dirname, "src/assistant/index.html"),
       },
     },
   },

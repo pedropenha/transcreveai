@@ -32,7 +32,8 @@ pub(crate) use positioning::get_monitor_for_rect;
 pub(crate) use positioning::{get_flowbar_monitor, get_monitor_with_cursor};
 #[cfg(target_os = "windows")]
 pub(crate) use win32::{
-    apply_overlay_extended_styles, set_window_bounds_physical, windows_text_scale_factor,
+    apply_overlay_extended_styles, force_overlay_topmost, set_window_bounds_physical,
+    windows_text_scale_factor,
 };
 
 #[cfg(target_os = "macos")]

@@ -375,6 +375,32 @@ async llmSummaryStatus() : Promise<Result<LlmSummaryStatus, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * FR-012-02: which agent CLIs are installed. Pure PATH/PATHEXT file checks —
+ * no process is spawned, so this is safe to call on every render of the
+ * providers screen.
+ */
+async cliAgentsStatus() : Promise<Result<CliAgentStatus[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cli_agents_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-05: persist a `cli_agent/*` provider's config (enabled flag,
+ * binary path override, extra args, timeout). Only adapter-backed provider
+ * ids are accepted — HTTP providers have no cli config.
+ */
+async cliAgentUpdateConfig(providerId: string, config: CliAgentConfig) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cli_agent_update_config", { providerId, config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePostProcessModelSetting(providerId: string, model: string) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_post_process_model_setting", { providerId, model }) };
@@ -1284,9 +1310,170 @@ async flowbarStartNotetaker() : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * FR-012-10: the ✦ button — opens the assistant overlay. Clicking the Flow
+ * Bar is explicit intent, so the panel may take focus (FR-012-11).
+ */
+async flowbarOpenAssistant() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_open_assistant") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("flowbar_retry_last_failed") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Full snapshot for the panel — also consumes the `pending_hotkey` flag so
+ * a press that arrived while the webview was booting isn't lost.
+ */
+async assistantGetState() : Promise<Result<AssistantStateEvent, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_get_state") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-13: send the (edited) prompt. Explicit user action only — dictation
+ * alone never submits.
+ */
+async assistantSend(text: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_send", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Re-run the last failed call (the failed user message stays last).
+ */
+async assistantRetry() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_retry") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel the in-flight call (AC-012-05) — the provider future is aborted;
+ * for `cli_agent/*` the subprocess dies with it.
+ */
+async assistantCancel() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_cancel") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Esc from the panel: cancel while thinking, close otherwise.
+ */
+async assistantDismiss() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_dismiss") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * × button — hides the panel; the session is kept in memory.
+ */
+async assistantClose() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_close") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Nova conversa" (FR-012-15) — aborts any in-flight call and clears the
+ * in-memory history.
+ */
+async assistantNewConversation() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_new_conversation") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The panel was clicked — take keyboard focus on the OS side
+ * (FR-012-11: the panel only ever focuses on explicit intent).
+ */
+async assistantFocus() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_focus") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-16: live title-strip drag — repositions the panel clamped onto
+ * the monitor under the cursor. Fires at pointer-move rate and persists
+ * nothing; drag end goes through `assistant_save_panel_position`.
+ * `grab_*` are the `clientX/Y` captured where the drag started (the
+ * pointer's offset inside the window, constant while the window tracks
+ * the cursor); the cursor itself is read OS-side in physical px — a
+ * webview `screenX/Y` is DIP and ambiguous on mixed-DPI layouts.
+ */
+async assistantMovePanel(grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_move_panel", { grabX, grabY }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-16 / AC-012-04: drag end — applies the final position once and
+ * persists it (with monitor context) so the panel reopens where it was
+ * left. A pinned panel ignores the drop.
+ */
+async assistantSavePanelPosition(grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_save_panel_position", { grabX, grabY }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-16: the "Fixar" toggle — persisted alongside the position; while
+ * on, the panel stays visible but immovable.
+ */
+async assistantSetPanelPinned(pinned: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_set_panel_pinned", { pinned }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-04: persist the assistant provider choice (`None` resets to auto).
+ * Accepts any known `post_process_providers` id, including `cli_agent/*` —
+ * except experimental adapters, which have no verified non-mutating mode
+ * and are refused outright (NFR-012-02).
+ */
+async setAssistantProvider(providerId: string | null) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_assistant_provider", { providerId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1771,6 +1958,18 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  */
 selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
 /**
+ * Per-`cli_agent/*` provider configuration (FR-012-05: enabled flag,
+ * binary path override, extra args, timeout). Missing entries default
+ * to enabled with PATH detection.
+ */
+cli_agent_configs?: Partial<{ [key in string]: CliAgentConfig }>; 
+/**
+ * The provider that answers the voice assistant overlay (F012, FR-012-04).
+ * `None` = auto: the first provider that is configured/detected (a detected
+ * `cli_agent/*` first, then the selected BYOK provider).
+ */
+assistant_provider_id?: string | null; 
+/**
  * Optional stronger model for cost-aware escalation of long meeting
  * summaries (`llm::router::select_model`, `cost-aware-llm-pipeline`):
  * when set, `Summary` requests past `SUMMARY_ESCALATION_CHARS` route to
@@ -1992,7 +2191,115 @@ meeting_toast_sound?: boolean;
  * still records the blocks — they stay pending in `meeting_blocks` for
  * T-067's post-processing pass.
  */
-meeting_live_transcript_enabled?: boolean }
+meeting_live_transcript_enabled?: boolean; 
+/**
+ * FR-012-16 / AC-012-04: the assistant panel's dragged position
+ * (physical px + monitor context). `None` → the default dock position
+ * on the cursor's monitor is used on every open.
+ */
+assistant_panel_position?: AssistantPanelPosition | null; 
+/**
+ * FR-012-16: the "Fixar" toggle — the panel stays visible but ignores
+ * drags. Persisted with the position.
+ */
+assistant_panel_pinned?: boolean }
+/**
+ * One conversation turn as kept in memory and rendered by the panel.
+ */
+export type AssistantMessage = { 
+/**
+ * `"user"` | `"assistant"` — role strings, not the `LlmRole` enum, so the
+ * payload stays a plain string union in TypeScript.
+ */
+role: string; content: string }
+/**
+ * Persisted assistant-panel placement (F012/T-092, FR-012-16 / AC-012-04):
+ * the window origin in **physical** pixels plus enough monitor context to
+ * land on the primary monitor's "same relative spot" when the saved monitor
+ * is gone. Per-field defaults keep a partially-stored object deserializable.
+ */
+export type AssistantPanelPosition = { 
+/**
+ * Window top-left corner in physical px at save time.
+ */
+x: number; y: number; 
+/**
+ * `x`/`y` as fractions of the containing monitor's work area (0–1) —
+ * the fallback anchor used when that monitor no longer exists.
+ */
+rel_x: number; rel_y: number; 
+/**
+ * The monitor the panel was on, when the OS reports a name.
+ */
+monitor_name: string | null }
+/**
+ * Panel lifecycle phase. `cancelled` is a resting state (the last in-flight
+ * call was aborted); the next send/dictation moves on.
+ */
+export type AssistantPhase = "idle" | "thinking" | "error" | "cancelled"
+/**
+ * Why `provider_ready` is false — stable snake_case tags the panel
+ * localizes on (AC-012-06).
+ */
+export type AssistantProviderHint = 
+/**
+ * No provider id could be resolved at all (no BYOK entry, no detected
+ * CLI agent).
+ */
+"no_provider" | 
+/**
+ * `settings.offline_mode` — no provider call is allowed.
+ */
+"offline" | 
+/**
+ * BYOK provider without a vaulted key.
+ */
+"missing_api_key" | 
+/**
+ * HTTP provider selected but no model configured.
+ */
+"missing_model" | 
+/**
+ * `cli_agent/*` provider with `enabled: false`.
+ */
+"cli_agent_disabled" | 
+/**
+ * `cli_agent/*` provider enabled but the binary is not on PATH.
+ */
+"cli_agent_not_detected" | 
+/**
+ * `cli_agent/*` adapter without a verified non-mutating headless mode —
+ * refused outright (NFR-012-02), no matter its config or detection.
+ */
+"cli_agent_experimental"
+/**
+ * Snapshot pushed to the panel on every transition.
+ */
+export type AssistantStateEvent = { open: boolean; phase: AssistantPhase; 
+/**
+ * A dictation session is currently routed to the panel — the panel
+ * shows the live STT preview (from `StreamTextEvent`) in the input.
+ */
+dictating: boolean; 
+/**
+ * A hotkey press arrived while the webview wasn't listening yet —
+ * consumed by `assistant_get_state`.
+ */
+pendingHotkey: boolean; providerId: string | null; providerLabel: string | null; 
+/**
+ * The provider is usable right now — gates dictation claims *and* the
+ * send button (AC-012-06).
+ */
+providerReady: boolean; providerHint: AssistantProviderHint | null; 
+/**
+ * Last provider failure, classified for localization.
+ */
+errorKind: LlmErrorKind | null; errorDetail: string | null; messages: AssistantMessage[]; 
+/**
+ * FR-012-16: the persisted "Fixar" toggle — while true the title strip
+ * shows the pinned state and drags are ignored.
+ */
+pinned: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -2022,6 +2329,63 @@ export type CleanupLevel =
  * Reescrita para clareza no estilo do perfil — v1.1+ (LLM).
  */
 "high"
+/**
+ * Per-provider knobs for `cli_agent/*` providers (FR-012-05). Keyed by
+ * provider id in `AppSettings::cli_agent_configs`; a missing entry means
+ * the defaults below (enabled, PATH lookup, no extra args, caller timeout).
+ */
+export type CliAgentConfig = { 
+/**
+ * Off = provider stays listed but is disabled/unroutable.
+ */
+enabled: boolean; 
+/**
+ * Absolute path override; when set it must exist — a stale override is
+ * reported as "not detected" rather than falling back to PATH.
+ */
+binary_path: string | null; 
+/**
+ * Extra argv appended after the adapter's own flags (FR-012-05).
+ */
+extra_args: string[]; 
+/**
+ * Per-provider timeout in seconds; `None`/`0` = the caller's
+ * `LlmRequest::timeout` (60 s assistant / 180 s summary default).
+ */
+timeout_secs: number | null }
+/**
+ * Detection status of one `cli_agent/*` provider (FR-012-02): the settings
+ * UI renders `detected`/`ausente` rows and the install hint from this.
+ */
+export type CliAgentStatus = { provider_id: string; label: string; 
+/**
+ * Bare binary name searched on PATH (`codex`, `claude`, …).
+ */
+binary: string; 
+/**
+ * The binary resolved — to an explicit `binary_path` override or a
+ * spawnable PATHEXT match.
+ */
+detected: boolean; 
+/**
+ * Per-provider enable flag (FR-012-05); always `false` while
+ * `experimental` is set.
+ */
+enabled: boolean; 
+/**
+ * File name of the resolved binary (`codex.cmd`, …) when detected —
+ * never the full path, which would leak the user's home dir/username.
+ */
+binary_name?: string | null; 
+/**
+ * No verified non-mutating headless mode — the UI should keep this
+ * adapter listed but disabled/experimental.
+ */
+experimental: boolean; 
+/**
+ * Literal install command the UI shows when `detected` is false.
+ */
+install_hint: string }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 /**
  * The error half of the IPC envelope — a stable `code` plus a

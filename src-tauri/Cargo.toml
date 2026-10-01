@@ -62,7 +62,9 @@ rubato = "0.16.2"
 hound = "3.5.1"
 log = "0.4.25"
 env_filter = "0.1.0"
-tokio = "1.43.0"
+# `process` for the headless `cli_agent` LLM providers (F012); `time`/
+# `io-util` are already pulled in transitively but declared for clarity.
+tokio = { version = "1.43.0", features = ["process", "io-util", "time"] }
 vad-rs = { git = "https://github.com/cjpais/vad-rs", rev = "2a412ed858695b9251f3f5a1a20d95b59fa7c498", default-features = false }
 earshot = "1.2.2"
 enigo = "0.6.1"

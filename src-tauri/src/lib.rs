@@ -1,6 +1,7 @@
 mod actions;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
+mod assistant;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
@@ -565,6 +566,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // up front (WebView2 cold start is too slow to launch per detection),
     // driven by `detector://meeting` / `toast://show` events.
     toast::init(app_handle);
+
+    // F012/T-091: the voice-assistant overlay — hidden window created up
+    // front for the same cold-start reason, driven by the `assistant`
+    // binding, the Flow Bar ✦ button and the `assistant_*` commands.
+    assistant::init(app_handle);
 }
 
 /// Meeting starts that arrive outside the `meeting_start` command — the
@@ -943,6 +949,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::secrets::secret_hint,
             commands::llm::test_llm_connection,
             commands::llm::llm_summary_status,
+            commands::llm::cli_agents_status,
+            commands::llm::cli_agent_update_config,
             shortcut::change_post_process_model_setting,
             shortcut::set_post_process_provider,
             shortcut::fetch_post_process_models,
@@ -1044,7 +1052,20 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::flowbar::flowbar_set_hover,
             commands::flowbar::flowbar_toggle_dictation,
             commands::flowbar::flowbar_start_notetaker,
+            commands::flowbar::flowbar_open_assistant,
             commands::flowbar::flowbar_retry_last_failed,
+            commands::assistant::assistant_get_state,
+            commands::assistant::assistant_send,
+            commands::assistant::assistant_retry,
+            commands::assistant::assistant_cancel,
+            commands::assistant::assistant_dismiss,
+            commands::assistant::assistant_close,
+            commands::assistant::assistant_new_conversation,
+            commands::assistant::assistant_focus,
+            commands::assistant::assistant_move_panel,
+            commands::assistant::assistant_save_panel_position,
+            commands::assistant::assistant_set_panel_pinned,
+            commands::assistant::set_assistant_provider,
             commands::meeting::meeting_start,
             commands::meeting::meeting_pause,
             commands::meeting::meeting_resume,
@@ -1434,6 +1455,13 @@ pub fn run(cli_args: CliArgs) {
 
                 api.prevent_close();
                 let _res = window.hide();
+
+                // F012: the assistant panel tracks its own `open` flag for
+                // the hotkey's open-vs-send decision — an OS close (Alt+F4)
+                // must flip it too.
+                if window.label() == window_labels::ASSISTANT {
+                    assistant::note_panel_hidden(window.app_handle());
+                }
 
                 #[cfg(target_os = "macos")]
                 {

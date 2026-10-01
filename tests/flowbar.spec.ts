@@ -43,6 +43,13 @@ const ALWAYS_ON_SETTINGS = {
       default_binding: "ctrl+win",
       current_binding: "ctrl+win",
     },
+    assistant: {
+      id: "assistant",
+      name: "Assistant",
+      description: "",
+      default_binding: "ctrl+shift+a",
+      current_binding: "ctrl+shift+a",
+    },
   },
 };
 
@@ -81,7 +88,7 @@ test.describe("Flow Bar — idle slit & hover actions", () => {
       .toBe(true);
   });
 
-  test("hover reveals exactly two actions with the configured shortcut tooltip", async ({
+  test("hover reveals the three actions with the configured shortcut tooltip", async ({
     page,
   }) => {
     const mock = await openFlowbar(page);
@@ -92,9 +99,11 @@ test.describe("Flow Bar — idle slit & hover actions", () => {
     // FR-001-02: 120 ms enter delay before the card opens.
     const dictate = page.getByRole("button", { name: /Dictate/i });
     const notetaker = page.getByRole("button", { name: /Notetaker/i });
+    const assistant = page.getByRole("button", { name: /Assistant/i });
     await expect(dictate).toBeVisible();
     await expect(notetaker).toBeVisible();
-    await expect(page.getByRole("button")).toHaveCount(2);
+    await expect(assistant).toBeVisible();
+    await expect(page.getByRole("button")).toHaveCount(3);
 
     // FR-001-03: the tooltip shows the configured shortcut, not a hardcoded one.
     await dictate.hover();
@@ -111,6 +120,14 @@ test.describe("Flow Bar — idle slit & hover actions", () => {
     await expect(notetaker).toBeVisible();
     await notetaker.click();
     expect(mock.calls.map((c) => c.cmd)).toContain("flowbar_start_notetaker");
+
+    // FR-012-10: the third action opens the assistant overlay; its tooltip
+    // advertises the configured `assistant` binding.
+    await assistant.hover();
+    await expect(page.locator(".fbar-tip")).toContainText("Assistant");
+    await expect(page.locator(".fbar-tip")).toContainText("Ctrl + Shift + A");
+    await assistant.click();
+    expect(mock.calls.map((c) => c.cmd)).toContain("flowbar_open_assistant");
   });
 
   test("session-only mode renders nothing until a session shows", async ({
