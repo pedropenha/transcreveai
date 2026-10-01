@@ -125,6 +125,35 @@ pub struct PostProcessProvider {
     pub supports_structured_output: bool,
 }
 
+/// Per-provider knobs for `cli_agent/*` providers (FR-012-05). Keyed by
+/// provider id in `AppSettings::cli_agent_configs`; a missing entry means
+/// the defaults below (enabled, PATH lookup, no extra args, caller timeout).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+#[serde(default)]
+pub struct CliAgentConfig {
+    /// Off = provider stays listed but is disabled/unroutable.
+    pub enabled: bool,
+    /// Absolute path override; when set it must exist — a stale override is
+    /// reported as "not detected" rather than falling back to PATH.
+    pub binary_path: Option<String>,
+    /// Extra argv appended after the adapter's own flags (FR-012-05).
+    pub extra_args: Vec<String>,
+    /// Per-provider timeout in seconds; `None`/`0` = the caller's
+    /// `LlmRequest::timeout` (60 s assistant / 180 s summary default).
+    pub timeout_secs: Option<u64>,
+}
+
+impl Default for CliAgentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            binary_path: None,
+            extra_args: Vec::new(),
+            timeout_secs: None,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum OverlayPosition {
@@ -556,6 +585,11 @@ pub struct AppSettings {
     pub post_process_prompts: Vec<LLMPrompt>,
     #[serde(default)]
     pub post_process_selected_prompt_id: Option<String>,
+    /// Per-`cli_agent/*` provider configuration (FR-012-05: enabled flag,
+    /// binary path override, extra args, timeout). Missing entries default
+    /// to enabled with PATH detection.
+    #[serde(default)]
+    pub cli_agent_configs: HashMap<String, CliAgentConfig>,
     /// Optional stronger model for cost-aware escalation of long meeting
     /// summaries (`llm::router::select_model`, `cost-aware-llm-pipeline`):
     /// when set, `Summary` requests past `SUMMARY_ESCALATION_CHARS` route to
@@ -1080,6 +1114,21 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         supports_structured_output: true,
     });
 
+    // CLI agent providers (F012, FR-012-01..05): local agent CLIs driven
+    // headlessly behind `LlmProvider` — auth is the CLI's own session, no
+    // API key. `base_url` is a `cli-agent://` marker, never dialed; the
+    // router detects these ids and builds `CliAgentProvider` instead.
+    for spec in crate::llm::cli_agent::ADAPTERS {
+        providers.push(PostProcessProvider {
+            id: spec.provider_id.to_string(),
+            label: spec.label.to_string(),
+            base_url: format!("cli-agent://{}", spec.binary),
+            allow_base_url_edit: false,
+            models_endpoint: None,
+            supports_structured_output: false,
+        });
+    }
+
     // Custom provider always comes last
     providers.push(PostProcessProvider {
         id: "custom".to_string(),
@@ -1338,6 +1387,7 @@ pub fn get_default_settings() -> AppSettings {
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
+        cli_agent_configs: HashMap::new(),
         llm_escalation_model: None,
         mute_while_recording: false,
         append_trailing_space: false,
@@ -1423,6 +1473,15 @@ impl AppSettings {
         self.post_process_providers
             .iter_mut()
             .find(|provider| provider.id == provider_id)
+    }
+
+    /// Per-provider `cli_agent/*` configuration; absent entries mean the
+    /// defaults (enabled, PATH detection, no extra args — FR-012-05).
+    pub fn cli_agent_config(&self, provider_id: &str) -> CliAgentConfig {
+        self.cli_agent_configs
+            .get(provider_id)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 

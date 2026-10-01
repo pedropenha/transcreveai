@@ -437,6 +437,39 @@
       "hotkey": {
         "title": "Hotkey"
       },
+      "cliAgent": {
+        "status": {
+          "detected": "Detected",
+          "missing": "Absent",
+          "disabled": "Disabled",
+          "detectedDetail": "Detected at {{path}}. Uses the CLI's own sign-in — no API key needed."
+        },
+        "missingHint": "Not found on PATH. Install with: {{command}}",
+        "enabled": {
+          "title": "Enabled",
+          "description": "Allow this CLI agent to answer AI requests (meeting summaries, assistant)."
+        },
+        "binaryPath": {
+          "title": "Binary path",
+          "description": "Absolute path override. Leave empty to auto-detect '{{binary}}' on PATH.",
+          "placeholder": "Auto-detect on PATH"
+        },
+        "extraArgs": {
+          "title": "Extra arguments",
+          "description": "Additional space-separated arguments appended to the headless invocation.",
+          "placeholder": "e.g. --flag value"
+        },
+        "timeout": {
+          "title": "Timeout (seconds)",
+          "description": "Per-call timeout. Empty uses the task default (60 s assistant / 180 s summary).",
+          "placeholder": "60"
+        },
+        "modelOverride": {
+          "title": "Model override",
+          "description": "Optional model name passed to the CLI. Empty uses the CLI's default.",
+          "placeholder": "CLI default"
+        }
+      },
       "api": {
         "title": "API (OpenAI Compatible)",
         "provider": {

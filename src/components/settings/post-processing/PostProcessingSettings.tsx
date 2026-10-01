@@ -17,6 +17,7 @@ import { Input } from "../../ui/Input";
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
 import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
 import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
+import { CliAgentFields } from "../PostProcessingSettingsApi/CliAgentFields";
 import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { usePostProcessProviderState } from "../PostProcessingSettingsApi/usePostProcessProviderState";
 import { ShortcutInput } from "../ShortcutInput";
@@ -44,7 +45,20 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
         </div>
       </SettingContainer>
 
-      {state.isAppleProvider ? (
+      {state.isCliAgentProvider ? (
+        // cli_agent/* providers: subscription auth via the CLI session —
+        // no API key or base URL; per-provider knobs live in CliAgentFields
+        // (FR-012-02/05).
+        <CliAgentFields
+          status={state.cliAgentStatus}
+          config={state.cliAgentConfig}
+          updating={state.isCliAgentUpdating}
+          onConfigChange={state.updateCliAgentConfig}
+          model={state.model}
+          onModelChange={state.handleModelChange}
+          modelUpdating={state.isModelUpdating}
+        />
+      ) : state.isAppleProvider ? (
         state.appleIntelligenceUnavailable ? (
           <Alert variant="error" contained>
             {t("settings.postProcessing.api.appleIntelligence.unavailable")}
@@ -96,7 +110,7 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
         </>
       )}
 
-      {!state.isAppleProvider && (
+      {!state.isAppleProvider && !state.isCliAgentProvider && (
         <SettingContainer
           title={t("settings.postProcessing.api.model.title")}
           description={

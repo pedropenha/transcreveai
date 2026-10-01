@@ -375,6 +375,32 @@ async llmSummaryStatus() : Promise<Result<LlmSummaryStatus, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * FR-012-02: which agent CLIs are installed. Pure PATH/PATHEXT file checks —
+ * no process is spawned, so this is safe to call on every render of the
+ * providers screen.
+ */
+async cliAgentsStatus() : Promise<Result<CliAgentStatus[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cli_agents_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-05: persist a `cli_agent/*` provider's config (enabled flag,
+ * binary path override, extra args, timeout). Only adapter-backed provider
+ * ids are accepted — HTTP providers have no cli config.
+ */
+async cliAgentUpdateConfig(providerId: string, config: CliAgentConfig) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cli_agent_update_config", { providerId, config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePostProcessModelSetting(providerId: string, model: string) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_post_process_model_setting", { providerId, model }) };
@@ -1771,6 +1797,12 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  */
 selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
 /**
+ * Per-`cli_agent/*` provider configuration (FR-012-05: enabled flag,
+ * binary path override, extra args, timeout). Missing entries default
+ * to enabled with PATH detection.
+ */
+cli_agent_configs?: Partial<{ [key in string]: CliAgentConfig }>; 
+/**
  * Optional stronger model for cost-aware escalation of long meeting
  * summaries (`llm::router::select_model`, `cost-aware-llm-pipeline`):
  * when set, `Summary` requests past `SUMMARY_ESCALATION_CHARS` route to
@@ -2022,6 +2054,56 @@ export type CleanupLevel =
  * Reescrita para clareza no estilo do perfil — v1.1+ (LLM).
  */
 "high"
+/**
+ * Per-provider knobs for `cli_agent/*` providers (FR-012-05). Keyed by
+ * provider id in `AppSettings::cli_agent_configs`; a missing entry means
+ * the defaults below (enabled, PATH lookup, no extra args, caller timeout).
+ */
+export type CliAgentConfig = { 
+/**
+ * Off = provider stays listed but is disabled/unroutable.
+ */
+enabled: boolean; 
+/**
+ * Absolute path override; when set it must exist — a stale override is
+ * reported as "not detected" rather than falling back to PATH.
+ */
+binary_path: string | null; 
+/**
+ * Extra argv appended after the adapter's own flags (FR-012-05).
+ */
+extra_args: string[]; 
+/**
+ * Per-provider timeout in seconds; `None`/`0` = the caller's
+ * `LlmRequest::timeout` (60 s assistant / 180 s summary default).
+ */
+timeout_secs: number | null }
+/**
+ * Detection status of one `cli_agent/*` provider (FR-012-02): the settings
+ * UI renders `detected`/`ausente` rows and the install hint from this.
+ */
+export type CliAgentStatus = { provider_id: string; label: string; 
+/**
+ * Bare binary name searched on PATH (`codex`, `claude`, …).
+ */
+binary: string; 
+/**
+ * The binary resolved — to an explicit `binary_path` override or a
+ * spawnable PATHEXT match.
+ */
+detected: boolean; 
+/**
+ * Per-provider enable flag (FR-012-05).
+ */
+enabled: boolean; 
+/**
+ * Resolved absolute path when detected — shown as a hint, never logged.
+ */
+binary_path?: string | null; 
+/**
+ * Literal install command the UI shows when `detected` is false.
+ */
+install_hint: string }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 /**
  * The error half of the IPC envelope — a stable `code` plus a

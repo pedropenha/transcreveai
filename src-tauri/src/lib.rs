@@ -943,6 +943,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::secrets::secret_hint,
             commands::llm::test_llm_connection,
             commands::llm::llm_summary_status,
+            commands::llm::cli_agents_status,
+            commands::llm::cli_agent_update_config,
             shortcut::change_post_process_model_setting,
             shortcut::set_post_process_provider,
             shortcut::fetch_post_process_models,

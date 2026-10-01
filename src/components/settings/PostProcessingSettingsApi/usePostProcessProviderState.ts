@@ -1,6 +1,12 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSettings } from "../../../hooks/useSettings";
-import { commands, type PostProcessProvider } from "@/bindings";
+import {
+  commands,
+  type CliAgentConfig,
+  type CliAgentStatus,
+  type PostProcessProvider,
+} from "@/bindings";
 import type { ModelOption } from "./types";
 import type { DropdownOption } from "../../ui/Dropdown";
 
@@ -27,11 +33,27 @@ type PostProcessProviderState = {
   handleModelSelect: (value: string) => void;
   handleModelCreate: (value: string) => void;
   handleRefreshModels: () => void;
+  // cli_agent/* providers (F012): PATH detection status, per-provider config.
+  isCliAgentProvider: boolean;
+  cliAgentStatus: CliAgentStatus | undefined;
+  cliAgentConfig: CliAgentConfig;
+  isCliAgentUpdating: boolean;
+  updateCliAgentConfig: (patch: Partial<CliAgentConfig>) => Promise<void>;
+  refreshCliAgents: () => Promise<void>;
 };
 
 const APPLE_PROVIDER_ID = "apple_intelligence";
+const CLI_AGENT_PREFIX = "cli_agent/";
+
+const DEFAULT_CLI_AGENT_CONFIG: CliAgentConfig = {
+  enabled: true,
+  binary_path: null,
+  extra_args: [],
+  timeout_secs: null,
+};
 
 export const usePostProcessProviderState = (): PostProcessProviderState => {
+  const { t } = useTranslation();
   const {
     settings,
     isUpdating,
@@ -42,10 +64,32 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     fetchPostProcessModels,
     postProcessModelOptions,
     apiKeyHints,
+    refreshSettings,
   } = useSettings();
 
   // Settings are guaranteed to have providers after migration
   const providers = settings?.post_process_providers || [];
+
+  // FR-012-02: PATH detection for `cli_agent/*` providers — pure file
+  // checks on the backend, safe to poll on mount.
+  const [cliAgents, setCliAgents] = useState<Record<string, CliAgentStatus>>(
+    {},
+  );
+  const refreshCliAgents = useCallback(async () => {
+    try {
+      const result = await commands.cliAgentsStatus();
+      if (result.status === "ok") {
+        setCliAgents(
+          Object.fromEntries(result.data.map((s) => [s.provider_id, s])),
+        );
+      }
+    } catch (error) {
+      console.error("Failed to detect CLI agents:", error);
+    }
+  }, []);
+  useEffect(() => {
+    void refreshCliAgents();
+  }, [refreshCliAgents]);
 
   const selectedProviderId = useMemo(() => {
     return settings?.post_process_provider_id || providers[0]?.id || "openai";
@@ -69,11 +113,38 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   const model = settings?.post_process_models?.[selectedProviderId] ?? "";
 
   const providerOptions = useMemo<DropdownOption[]>(() => {
-    return providers.map((provider) => ({
-      value: provider.id,
-      label: provider.label,
-    }));
-  }, [providers]);
+    return providers.map((provider) => {
+      if (!provider.id.startsWith(CLI_AGENT_PREFIX)) {
+        return { value: provider.id, label: provider.label };
+      }
+      // FR-012-02 / AC-012-02: absent CLI agents stay listed but disabled,
+      // with the install command as the hint.
+      const status = cliAgents[provider.id];
+      if (status && !status.detected) {
+        return {
+          value: provider.id,
+          label: `${provider.label} — ${t("settings.postProcessing.cliAgent.status.missing")}`,
+          description: t("settings.postProcessing.cliAgent.missingHint", {
+            command: status.install_hint,
+          }),
+          disabled: true,
+        };
+      }
+      if (status && !status.enabled) {
+        return {
+          value: provider.id,
+          label: `${provider.label} — ${t("settings.postProcessing.cliAgent.status.disabled")}`,
+          disabled: true,
+        };
+      }
+      return {
+        value: provider.id,
+        label: provider.label,
+        // While detection is still loading, leave the option enabled — a
+        // spawned call fails cleanly if the binary turns out missing.
+      };
+    });
+  }, [providers, cliAgents, t]);
 
   const handleProviderSelect = useCallback(
     async (providerId: string) => {
@@ -93,6 +164,10 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       }
 
       await setPostProcessProvider(providerId);
+
+      // cli_agent/* providers have no model endpoint and no API key —
+      // selecting them only flips `post_process_provider_id`.
+      if (providerId.startsWith(CLI_AGENT_PREFIX)) return;
 
       // Auto-fetch available models for the new provider so the model dropdown
       // reflects what's actually valid. Without this, a stale model value from
@@ -210,6 +285,34 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   );
 
   const isCustomProvider = selectedProvider?.id === "custom";
+  const isCliAgentProvider = selectedProviderId.startsWith(CLI_AGENT_PREFIX);
+  const cliAgentStatus = cliAgents[selectedProviderId];
+  const cliAgentConfig: CliAgentConfig =
+    settings?.cli_agent_configs?.[selectedProviderId] ??
+    DEFAULT_CLI_AGENT_CONFIG;
+
+  const updateCliAgentConfig = useCallback(
+    async (patch: Partial<CliAgentConfig>) => {
+      const current =
+        settings?.cli_agent_configs?.[selectedProviderId] ??
+        DEFAULT_CLI_AGENT_CONFIG;
+      const result = await commands.cliAgentUpdateConfig(selectedProviderId, {
+        ...current,
+        ...patch,
+      });
+      if (result.status === "ok") {
+        await refreshSettings();
+        // A binary-path override can flip detection — re-poll.
+        void refreshCliAgents();
+      } else {
+        console.error(
+          "Failed to update CLI agent config:",
+          result.error.message,
+        );
+      }
+    },
+    [settings, selectedProviderId, refreshSettings, refreshCliAgents],
+  );
 
   // No automatic fetching - user must click refresh button
 
@@ -235,5 +338,11 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     handleModelSelect,
     handleModelCreate,
     handleRefreshModels,
+    isCliAgentProvider,
+    cliAgentStatus,
+    cliAgentConfig,
+    isCliAgentUpdating: isUpdating(`cli_agent_config:${selectedProviderId}`),
+    updateCliAgentConfig,
+    refreshCliAgents,
   };
 };

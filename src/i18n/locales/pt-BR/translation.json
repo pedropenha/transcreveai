@@ -437,6 +437,39 @@
       "hotkey": {
         "title": "Tecla de atalho"
       },
+      "cliAgent": {
+        "status": {
+          "detected": "Detectado",
+          "missing": "Ausente",
+          "disabled": "Desabilitado",
+          "detectedDetail": "Detectado em {{path}}. Usa o login do próprio CLI — não precisa de chave de API."
+        },
+        "missingHint": "Não encontrado no PATH. Instale com: {{command}}",
+        "enabled": {
+          "title": "Habilitado",
+          "description": "Permite que este agente CLI responda a pedidos de IA (resumos de reunião, assistente)."
+        },
+        "binaryPath": {
+          "title": "Caminho do binário",
+          "description": "Caminho absoluto para substituir a detecção. Vazio = procurar '{{binary}}' no PATH.",
+          "placeholder": "Detectar no PATH"
+        },
+        "extraArgs": {
+          "title": "Argumentos extras",
+          "description": "Argumentos adicionais (separados por espaço) anexados à chamada headless.",
+          "placeholder": "ex.: --flag valor"
+        },
+        "timeout": {
+          "title": "Tempo limite (segundos)",
+          "description": "Tempo limite por chamada. Vazio usa o padrão da tarefa (60 s assistente / 180 s resumo).",
+          "placeholder": "60"
+        },
+        "modelOverride": {
+          "title": "Substituir modelo",
+          "description": "Nome de modelo opcional passado ao CLI. Vazio usa o padrão do CLI.",
+          "placeholder": "Padrão do CLI"
+        }
+      },
       "api": {
         "title": "API (Compatível com OpenAI)",
         "provider": {
