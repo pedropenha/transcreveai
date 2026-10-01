@@ -793,7 +793,9 @@
     "ignoreMeeting": "Ignorar esta reunião",
     "dismiss": "Dispensar",
     "recording": "Gravando · {{app}}",
-    "meetingPending": "Reunião detectada — passe o mouse para reabrir o toast"
+    "meetingPending": "Reunião detectada — passe o mouse para reabrir o toast",
+    "keepRecording": "Continuar gravando",
+    "extend30": "Estender 30 min"
   },
   "whatsNew": {
     "title": "Novidades no Transcreve.ai v{{version}}"

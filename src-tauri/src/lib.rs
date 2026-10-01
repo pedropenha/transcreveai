@@ -481,23 +481,32 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         app_handle.listen(
             meeting::session::DETECTOR_START_REQUESTED_EVENT,
             move |event| {
-                // `{ detection_id, app_label, exe, mic_only }` (T-061/T-062
-                // contract). `detection_id` correlates the detector's own
-                // bookkeeping; the meeting row only needs the app fields.
+                // `{ detection_id, app_label, exe, mic_only, auto }`
+                // (T-061/T-069 contract): `auto` marks FR-008-13 auto-starts
+                // vs. toast-clicked `auto_prompt`s; `detection_id` links the
+                // meeting to its detection so a `meeting_ended` event can
+                // auto-stop it (FR-008-14).
                 #[derive(serde::Deserialize)]
                 struct DetectorStartPayload {
+                    detection_id: Option<String>,
                     app_label: Option<String>,
                     exe: Option<String>,
                     mic_only: Option<bool>,
+                    auto: Option<bool>,
                 }
                 match serde_json::from_str::<DetectorStartPayload>(event.payload()) {
                     Ok(payload) => start_meeting_from_surface(
                         &app,
                         meeting::session::StartRequest {
-                            detection: "auto_prompt".to_string(),
+                            detection: if payload.auto.unwrap_or(false) {
+                                "auto_start".to_string()
+                            } else {
+                                "auto_prompt".to_string()
+                            },
                             app_label: payload.app_label,
                             app_exe: payload.exe,
                             mic_only: payload.mic_only.unwrap_or(false),
+                            detection_id: payload.detection_id,
                         },
                     ),
                     Err(e) => log::warn!(
@@ -514,6 +523,37 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 start_meeting_from_surface(&app, meeting::session::StartRequest::manual());
             },
         );
+        // F008/T-069 (FR-008-14): a *real* meeting end (`meeting_ended`,
+        // FR-008-04) arms the session's 15 s auto-stop when it is linked to
+        // the active meeting. Lifecycle ends (detector reset on
+        // pause/offline, user dismissal) carry `meeting_ended: false` and
+        // never stop a recording.
+        let app = app_handle.clone();
+        app_handle.listen(meeting::DETECTOR_MEETING_EVENT, move |event| {
+            #[derive(serde::Deserialize)]
+            struct DetectorEndPayload {
+                detection_id: Option<String>,
+                #[serde(default)]
+                ended: bool,
+                meeting_ended: Option<bool>,
+            }
+            let Ok(parsed) = serde_json::from_str::<DetectorEndPayload>(event.payload()) else {
+                log::warn!(
+                    "Ignoring malformed {} payload",
+                    meeting::DETECTOR_MEETING_EVENT
+                );
+                return;
+            };
+            if !(parsed.ended && parsed.meeting_ended == Some(true)) {
+                return;
+            }
+            let Some(detection_id) = parsed.detection_id.filter(|id| !id.is_empty()) else {
+                return;
+            };
+            if let Some(manager) = app.try_state::<meeting::session::MeetingSessionManager>() {
+                manager.detection_ended(detection_id);
+            }
+        });
     }
 
     // F009/T-067: post-processing — a worker thread listens for the session's
@@ -540,8 +580,15 @@ fn start_meeting_from_surface(app: &AppHandle, req: meeting::session::StartReque
         log::warn!("Meeting start requested before the session manager is up");
         return;
     };
+    // A machine-initiated start (FR-008-13) that loses to an already-active
+    // meeting has nobody to report to — warn and drop it instead of flashing
+    // a "busy" error toast while the user is in a call (T-069).
+    let machine_initiated = req.detection == "auto_start";
     if let Err(e) = manager.request_start(req) {
         log::warn!("Meeting start refused ({:?}): {}", e.code, e.message);
+        if e.code == CommandErrorCode::Busy && machine_initiated {
+            return;
+        }
         let (kind, action) = if e.code == CommandErrorCode::ConsentRequired {
             ("meeting_consent", Some("open_consent"))
         } else {
@@ -996,6 +1043,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_stop,
             commands::meeting::meeting_extend_30,
             commands::meeting::meeting_checkin_respond,
+            commands::meeting::meeting_continue_recording,
             commands::meeting::meeting_current,
             commands::meeting::meeting_get,
             commands::meeting::meeting_rename,

@@ -99,6 +99,15 @@ pub fn meeting_checkin_respond(app: AppHandle, keep_recording: bool) -> CommandR
     manager(&app)?.request_checkin_respond(keep_recording)
 }
 
+/// FR-008-14 (T-069): "Continuar gravando" on the auto-stop toast — cancels
+/// the pending 15 s auto-stop; the meeting keeps recording until the user
+/// stops it (or another rule fires). Idempotent while a meeting is active.
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_continue_recording(app: AppHandle) -> CommandResult<()> {
+    manager(&app)?.request_continue_recording()
+}
+
 /// Latest `meeting://state` snapshot — lets a freshly mounted frontend catch
 /// up without waiting for the next tick.
 #[tauri::command]

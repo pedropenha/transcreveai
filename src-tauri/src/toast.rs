@@ -586,6 +586,31 @@ pub fn dismiss(app: &AppHandle) {
     hide_toast_window(app);
 }
 
+/// T-069: clear a pending notice only when it still is the given `kind`
+/// (e.g. `meeting_auto_stop`). A lapse/user-stop racing a fresh detection
+/// must not wipe the toast that replaced the notice.
+pub fn dismiss_notice_if_kind(app: &AppHandle, kind: &str) {
+    let cleared = {
+        let Some(mut state) = lock_state(app) else {
+            return;
+        };
+        if !state.notice.as_ref().is_some_and(|n| n.kind == kind) {
+            return;
+        }
+        state.notice = None;
+        state.collapsed = false;
+        emit_state(app, &state);
+        true
+    };
+    if cleared
+        && lock_state(app)
+            .map(|s| s.detection.is_none() && s.notice.is_none())
+            .unwrap_or(true)
+    {
+        hide_toast_window(app);
+    }
+}
+
 /// `toast_set_content_height` — the webview reports its rendered height (CSS
 /// px) so the native window is only ever as tall as the toast card; the
 /// bottom edge stays anchored (the card grows upward).

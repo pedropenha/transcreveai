@@ -39,6 +39,10 @@ pub const CHECKIN_RESPONSE_WINDOW: Duration = Duration::from_secs(2 * 60);
 /// Consecutive block-write failures before the session stops with `error`
 /// (disk-full edge case — sealed blocks stay valid).
 pub const WRITE_FAILURE_LIMIT: u32 = 3;
+/// FR-008-14 (T-069): when the linked detection reports the meeting over,
+/// the "Continuar gravando" affordance gets this long before the session
+/// stops on its own.
+pub const AUTO_STOP_GRACE: Duration = Duration::from_secs(15);
 /// FR-009-08 options: 30 min / 1 h / 2 h / 3 h / 4 h.
 pub const MEETING_LIMIT_OPTIONS_MIN: [u64; 5] = [30, 60, 120, 180, 240];
 pub const DEFAULT_MEETING_LIMIT_MIN: u64 = 120;
@@ -80,6 +84,9 @@ pub enum ToastKind {
     SilenceCheckin,
     /// Repeated block-write failures — meeting stopped with `error`.
     WriteFailed,
+    /// FR-008-14 (T-069) "A reunião terminou — finalizando em 15 s" —
+    /// `action: "continue_recording"`.
+    AutoStop,
 }
 
 impl ToastKind {
@@ -91,6 +98,7 @@ impl ToastKind {
             }
             ToastKind::LimitWarning => "meeting_limit",
             ToastKind::SilenceCheckin => "meeting_checkin",
+            ToastKind::AutoStop => "meeting_auto_stop",
         }
     }
 
@@ -99,6 +107,7 @@ impl ToastKind {
         match self {
             ToastKind::LimitWarning => Some("extend_30"),
             ToastKind::SilenceCheckin => Some("checkin"),
+            ToastKind::AutoStop => Some("continue_recording"),
             _ => None,
         }
     }
@@ -117,6 +126,9 @@ pub enum StopReason {
     CheckinDeclined,
     /// Consecutive block-write failures — likely a full disk.
     WriteFailures,
+    /// FR-008-14 (T-069): the linked detection's meeting ended and the
+    /// 15 s "Continuar gravando" window lapsed unanswered.
+    MeetingEnded,
 }
 
 /// Side effects the worker performs for the machine.
@@ -142,6 +154,10 @@ pub enum Effect {
     },
     /// Emit `toast://show` for this kind (the worker localizes the message).
     Toast(ToastKind),
+    /// Close whatever the toast shows — journaled when a meeting stops while
+    /// its auto-stop prompt was pending, so the stale "finalizando em 15 s"
+    /// notice does not linger after the meeting is already processing.
+    DismissToast,
     /// Emit `meeting://process-requested` for T-067's post-processing.
     RequestProcessing,
     /// Recording indicator on/off (tray icon, "Stop Meeting" row, Flow Bar
@@ -155,6 +171,9 @@ pub enum Effect {
 pub struct MeetingPolicy {
     pub max_duration: Duration,
     pub silence_checkin: bool,
+    /// `meeting_auto_stop` (FR-008-14, default on) — snapshotted at start,
+    /// like the rest of the policy.
+    pub auto_stop: bool,
 }
 
 impl MeetingPolicy {
@@ -164,6 +183,7 @@ impl MeetingPolicy {
                 clamp_meeting_max_minutes(settings.meeting_max_minutes) * 60,
             ),
             silence_checkin: settings.meeting_silence_checkin_enabled,
+            auto_stop: settings.meeting_auto_stop,
         }
     }
 }
@@ -197,6 +217,9 @@ fn slot(track: Track) -> usize {
 /// single-meeting gate; dropped on `stop`.
 pub struct SessionMachine {
     meeting_id: String,
+    /// The `detection_id` that triggered this start (FR-008-14 linkage) —
+    /// `None` for manual/Hub starts, which can never auto-stop.
+    detection_id: Option<String>,
     /// Meeting start — `elapsed_ms` and segment offsets are relative to it.
     t0: Instant,
     status: Status,
@@ -216,6 +239,10 @@ pub struct SessionMachine {
     detached_since: Option<Instant>,
     /// Consecutive `WriteFailed` events; reset by every sealed block.
     write_failures: u32,
+    /// FR-008-14: the detection reported the meeting over at this instant —
+    /// stop when the grace lapses. Unlike the silence clock this runs on
+    /// wall time: pausing does not extend the user's window to answer.
+    auto_stop_since: Option<Instant>,
     /// Next `meeting://state` tick.
     tick_at: Instant,
     effects: Vec<Effect>,
@@ -224,16 +251,19 @@ pub struct SessionMachine {
 
 impl SessionMachine {
     /// `mic_live`/`system_live` tell the silence check-in which tracks can
-    /// carry speech at all.
+    /// carry speech at all. `detection_id` links the meeting to the
+    /// `detector://meeting` detection that started it (FR-008-14).
     pub fn new(
         meeting_id: String,
         now: Instant,
         policy: MeetingPolicy,
         mic_live: bool,
         system_live: bool,
+        detection_id: Option<String>,
     ) -> Self {
         let mut machine = Self {
             meeting_id,
+            detection_id,
             t0: now,
             status: Status::Recording,
             policy,
@@ -244,6 +274,7 @@ impl SessionMachine {
             pause_since: None,
             detached_since: None,
             write_failures: 0,
+            auto_stop_since: None,
             tick_at: now + STATE_TICK,
             effects: vec![Effect::Indicator(true)],
             events: Vec::new(),
@@ -301,6 +332,10 @@ impl SessionMachine {
             return;
         }
         self.status = Status::Done;
+        // Whatever ended it, a pending auto-stop prompt is now stale.
+        if self.auto_stop_since.take().is_some() {
+            self.effects.push(Effect::DismissToast);
+        }
         self.effects.push(Effect::StopCapture);
         match reason {
             StopReason::WriteFailures => {
@@ -401,6 +436,36 @@ impl SessionMachine {
         }
     }
 
+    /// FR-008-14 / AC-008-05 (T-069): `detector://meeting` reported
+    /// `meeting_ended` for the linked detection. Arms the 15 s "Continuar
+    /// gravando" window via `toast://show`; `tick` stops the meeting when it
+    /// lapses. A `detection_id` that is not this meeting's link — or no link
+    /// at all (manual starts) — is a plain no-op, no toast.
+    pub fn detection_ended(&mut self, detection_id: &str, now: Instant) {
+        if self.status == Status::Done || !self.policy.auto_stop {
+            return;
+        }
+        if self.detection_id.as_deref() != Some(detection_id) {
+            return;
+        }
+        if self.auto_stop_since.is_some() {
+            return; // already armed — the countdown is not re-extendable
+        }
+        self.auto_stop_since = Some(now);
+        self.effects.push(Effect::Toast(ToastKind::AutoStop));
+    }
+
+    /// `meeting_continue_recording` — the "Continuar gravando" affordance
+    /// (FR-008-14): cancels a pending auto-stop. Idempotent.
+    pub fn continue_recording(&mut self) {
+        self.auto_stop_since = None;
+    }
+
+    /// True while the 15 s auto-stop window is awaiting an answer.
+    pub fn auto_stop_pending(&self) -> bool {
+        self.auto_stop_since.is_some()
+    }
+
     /// Periodic evaluation — the worker calls this whenever `next_deadline`
     /// lapses (and at least every `STATE_TICK` while recording).
     pub fn tick(&mut self, now: Instant) {
@@ -428,6 +493,17 @@ impl SessionMachine {
             return;
         }
 
+        // FR-008-14: the auto-stop grace runs on wall time — a paused
+        // meeting whose linked call ended still stops (FR-009-06's frozen
+        // silence clock does not apply here).
+        if self
+            .auto_stop_since
+            .is_some_and(|since| now.saturating_duration_since(since) >= AUTO_STOP_GRACE)
+        {
+            self.stop(now, StopReason::MeetingEnded);
+            return;
+        }
+
         // FR-009-09: the silence clock freezes while paused, so neither the
         // check-in nor its answer window is evaluated in `Paused`.
         if self.status != Status::Recording {
@@ -452,6 +528,9 @@ impl SessionMachine {
             return None;
         }
         let mut deadlines = vec![self.tick_at, self.limit_at];
+        if let Some(since) = self.auto_stop_since {
+            deadlines.push(since + AUTO_STOP_GRACE);
+        }
         if !self.limit_warned {
             if let Some(warn_at) = self.limit_at.checked_sub(LIMIT_WARNING_LEAD) {
                 deadlines.push(warn_at);
@@ -544,11 +623,25 @@ mod tests {
         MeetingPolicy {
             max_duration: 2 * 60 * MIN,
             silence_checkin: true,
+            auto_stop: true,
         }
     }
 
     fn machine(t0: Instant) -> SessionMachine {
-        SessionMachine::new("m-1".to_string(), t0, policy(), true, true)
+        SessionMachine::new("m-1".to_string(), t0, policy(), true, true, None)
+    }
+
+    /// A meeting linked to `detector://meeting` detection `d-1` — what every
+    /// detector-initiated start (prompt or auto) produces (FR-008-14).
+    fn detected_machine(t0: Instant) -> SessionMachine {
+        SessionMachine::new(
+            "m-1".to_string(),
+            t0,
+            policy(),
+            true,
+            true,
+            Some("d-1".to_string()),
+        )
     }
 
     fn effects(m: &mut SessionMachine) -> Vec<Effect> {
@@ -694,9 +787,11 @@ mod tests {
             MeetingPolicy {
                 max_duration: 2 * 60 * MIN,
                 silence_checkin: false,
+                auto_stop: true,
             },
             true,
             true,
+            None,
         );
         m.tick(t0 + SILENCE_CHECKIN_AFTER + Duration::from_secs(1));
         assert!(m.checkin_since.is_none());
@@ -804,5 +899,155 @@ mod tests {
         );
         m.stop(t0, StopReason::User);
         assert_eq!(m.next_deadline(), None);
+    }
+
+    // -- FR-008-14 auto-stop (T-069) ----------------------------------------
+
+    #[test]
+    fn detection_end_arms_auto_stop_and_lapse_stops() {
+        let t0 = Instant::now();
+        let mut m = detected_machine(t0);
+        m.detection_ended("d-1", t0 + MIN);
+        assert!(m.auto_stop_pending());
+        assert!(effects(&mut m).contains(&Effect::Toast(ToastKind::AutoStop)));
+        assert!(m.is_active());
+        // 1 s before the grace lapses — still recording.
+        m.tick(t0 + MIN + AUTO_STOP_GRACE - Duration::from_secs(1));
+        assert!(m.is_active());
+        // Grace lapsed → stop into processing like any graceful stop.
+        m.tick(t0 + MIN + AUTO_STOP_GRACE);
+        assert!(!m.is_active());
+        let e = effects(&mut m);
+        assert!(e.contains(&Effect::PersistStatus {
+            status: "processing",
+            error_code: None
+        }));
+        assert!(e.contains(&Effect::RequestProcessing));
+        assert!(e.contains(&Effect::Indicator(false)));
+        // The pending "finalizando em 15 s" notice must be closed with it.
+        assert!(e.contains(&Effect::DismissToast));
+        assert_eq!(m.take_events().last().unwrap().status, "processing");
+    }
+
+    #[test]
+    fn detection_end_toast_carries_the_continue_recording_action() {
+        let t0 = Instant::now();
+        let mut m = detected_machine(t0);
+        m.detection_ended("d-1", t0);
+        assert_eq!(
+            effects(&mut m).last(),
+            Some(&Effect::Toast(ToastKind::AutoStop))
+        );
+        assert_eq!(ToastKind::AutoStop.kind(), "meeting_auto_stop");
+        assert_eq!(ToastKind::AutoStop.action(), Some("continue_recording"));
+    }
+
+    #[test]
+    fn detection_end_arms_a_wake_deadline_for_the_worker() {
+        let t0 = Instant::now();
+        let mut m = detected_machine(t0);
+        m.detection_ended("d-1", t0 + MIN);
+        // Tick to inside the last second of the grace: the 1 s state tick
+        // would wake at t0+MIN+15.5s, so the lapse at +15s must win.
+        m.tick(t0 + MIN + AUTO_STOP_GRACE - Duration::from_millis(500));
+        let _ = effects(&mut m);
+        assert!(m.is_active());
+        assert_eq!(m.next_deadline(), Some(t0 + MIN + AUTO_STOP_GRACE));
+    }
+
+    #[test]
+    fn continue_recording_cancels_the_pending_auto_stop() {
+        let t0 = Instant::now();
+        let mut m = detected_machine(t0);
+        m.detection_ended("d-1", t0 + MIN);
+        m.continue_recording();
+        assert!(!m.auto_stop_pending());
+        // Idempotent; meeting keeps recording well past the lapse.
+        m.continue_recording();
+        m.tick(t0 + MIN + AUTO_STOP_GRACE + Duration::from_secs(30));
+        assert!(m.is_active());
+        assert_eq!(m.status(), "recording");
+    }
+
+    #[test]
+    fn auto_stop_only_arms_for_the_linked_detection() {
+        let t0 = Instant::now();
+        let mut m = detected_machine(t0);
+        // A different detection ending is a no-op — no toast, no timer.
+        m.detection_ended("d-OTHER", t0 + MIN);
+        assert!(!m.auto_stop_pending());
+        assert!(!effects(&mut m)
+            .iter()
+            .any(|e| matches!(e, Effect::Toast(_))));
+        m.tick(t0 + MIN + AUTO_STOP_GRACE + MIN);
+        assert!(m.is_active());
+    }
+
+    #[test]
+    fn manual_meetings_never_auto_stop() {
+        let t0 = Instant::now();
+        let mut m = machine(t0); // detection_id: None
+        m.detection_ended("d-1", t0 + MIN);
+        assert!(!m.auto_stop_pending());
+        assert!(!effects(&mut m)
+            .iter()
+            .any(|e| matches!(e, Effect::Toast(_))));
+        m.tick(t0 + MIN + AUTO_STOP_GRACE + MIN);
+        assert!(m.is_active());
+    }
+
+    #[test]
+    fn auto_stop_setting_off_keeps_recording() {
+        let t0 = Instant::now();
+        let mut m = SessionMachine::new(
+            "m".to_string(),
+            t0,
+            MeetingPolicy {
+                auto_stop: false,
+                ..policy()
+            },
+            true,
+            true,
+            Some("d-1".to_string()),
+        );
+        m.detection_ended("d-1", t0 + MIN);
+        assert!(!m.auto_stop_pending());
+        assert!(!effects(&mut m)
+            .iter()
+            .any(|e| matches!(e, Effect::Toast(_))));
+        m.tick(t0 + MIN + AUTO_STOP_GRACE + MIN);
+        assert!(m.is_active());
+    }
+
+    #[test]
+    fn auto_stop_also_applies_while_paused() {
+        let t0 = Instant::now();
+        let mut m = detected_machine(t0);
+        m.pause(t0 + MIN);
+        m.detection_ended("d-1", t0 + 2 * MIN);
+        assert!(m.auto_stop_pending());
+        let _ = effects(&mut m);
+        m.tick(t0 + 2 * MIN + AUTO_STOP_GRACE);
+        assert!(!m.is_active());
+    }
+
+    #[test]
+    fn detection_end_is_idempotent_and_noop_after_stop() {
+        let t0 = Instant::now();
+        let mut m = detected_machine(t0);
+        m.detection_ended("d-1", t0 + MIN);
+        assert!(effects(&mut m).contains(&Effect::Toast(ToastKind::AutoStop)));
+        // A re-emitted end for the same detection does not re-arm or re-toast.
+        m.detection_ended("d-1", t0 + 2 * MIN);
+        assert!(!effects(&mut m)
+            .iter()
+            .any(|e| matches!(e, Effect::Toast(_))));
+        m.tick(t0 + MIN + AUTO_STOP_GRACE);
+        assert!(!m.is_active());
+        // And after the stop the input is a full no-op.
+        m.detection_ended("d-1", t0 + 3 * MIN);
+        assert!(!effects(&mut m)
+            .iter()
+            .any(|e| matches!(e, Effect::Toast(_))));
     }
 }

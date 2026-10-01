@@ -121,7 +121,21 @@ fn ended_ids(outputs: &[DetectorOutput]) -> Vec<String> {
     outputs
         .iter()
         .filter_map(|o| match o {
-            DetectorOutput::Ended { detection_id } => Some(detection_id.clone()),
+            DetectorOutput::Ended { detection_id, .. } => Some(detection_id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// (detection_id, meeting_over) pairs — T-069's auto-stop keys on the flag.
+fn ended_marks(outputs: &[DetectorOutput]) -> Vec<(String, bool)> {
+    outputs
+        .iter()
+        .filter_map(|o| match o {
+            DetectorOutput::Ended {
+                detection_id,
+                meeting_over,
+            } => Some((detection_id.clone(), *meeting_over)),
             _ => None,
         })
         .collect()
@@ -645,6 +659,39 @@ fn disabling_any_call_ends_its_live_detection() {
     assert_eq!(ended_ids(&outputs).len(), 1);
 }
 
+#[test]
+fn only_real_meeting_ends_carry_meeting_over() {
+    // T-069 / FR-008-14: the auto-stop keys on `meeting_over`. A real
+    // FR-008-04 end flags it; a lifecycle end (detector reset on
+    // pause/offline, `detect_any_call` toggle-off) must not — pausing
+    // detection mid-meeting can never kill a recording.
+    let mut d = detector();
+    let id = detected_zoom(&mut d);
+    let windows = vec![window("Zoom.exe", "Zoom")];
+    let rules = vec![rule("Zoom.exe", "Zoom", None, "ask")];
+    for s in 10..25 {
+        tick_at(&mut d, at(s), &[], &[], &windows, &rules, false);
+    }
+    let outputs = tick_at(&mut d, at(25), &[], &[], &windows, &rules, false);
+    assert_eq!(ended_marks(&outputs), vec![(id, true)]);
+
+    // Suppression reset → same detection closed, but meeting_over: false.
+    let mut d = detector();
+    let id = detected_zoom(&mut d);
+    let outputs = d.reset();
+    assert_eq!(ended_marks(&outputs), vec![(id, false)]);
+
+    // Any-call toggle-off → lifecycle end, meeting_over: false.
+    let mut d = detector();
+    let usages = vec![usage("audacity.exe")];
+    for s in 0..=10 {
+        tick_at(&mut d, at(s), &[], &usages, &[], &[], true);
+    }
+    let outputs = tick_at(&mut d, at(11), &[], &usages, &[], &[], false);
+    assert_eq!(ended_marks(&outputs).len(), 1);
+    assert!(ended_marks(&outputs).iter().all(|(_, over)| !over));
+}
+
 // -- respond bookkeeping ------------------------------------------------------
 
 #[test]
@@ -716,11 +763,35 @@ fn payload_shapes_match_the_contract() {
             "started_at": T0_MS,
         })
     );
-    let end = serde_json::to_value(DetectorMeetingEvent::ended("x")).unwrap();
-    assert_eq!(end, serde_json::json!({"detection_id": "x", "ended": true}));
+    let end = serde_json::to_value(DetectorMeetingEvent::ended("x", true)).unwrap();
+    assert_eq!(
+        end,
+        serde_json::json!({"detection_id": "x", "ended": true, "meeting_ended": true})
+    );
+    // A lifecycle end (reset / toggle-off) is flagged so T-069's auto-stop
+    // ignores it; dismissal serializes the same way.
+    let end = serde_json::to_value(DetectorMeetingEvent::ended("x", false)).unwrap();
+    assert_eq!(
+        end,
+        serde_json::json!({"detection_id": "x", "ended": true, "meeting_ended": false})
+    );
     let dis = serde_json::to_value(DetectorMeetingEvent::dismissed("x")).unwrap();
     assert_eq!(
         dis,
-        serde_json::json!({"detection_id": "x", "ended": true, "dismissed": true})
+        serde_json::json!({"detection_id": "x", "ended": true, "meeting_ended": false, "dismissed": true})
     );
+}
+
+#[test]
+fn auto_start_is_rule_or_global() {
+    // FR-008-13: `auto_start` rules always auto-start; `ask` rules only when
+    // the global toggle is on. `ignore` never reaches promotion.
+    assert!(wants_auto_start(RuleAction::AutoStart, false));
+    assert!(wants_auto_start(RuleAction::AutoStart, true));
+    assert!(!wants_auto_start(RuleAction::Ask, false));
+    assert!(wants_auto_start(RuleAction::Ask, true));
+    assert!(!wants_auto_start(RuleAction::Ignore, false));
+    // The global toggle must not resurrect an `ignore` verdict — Ignore
+    // candidates are dropped upstream anyway (belt-and-braces).
+    assert!(!wants_auto_start(RuleAction::Ignore, true));
 }

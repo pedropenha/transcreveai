@@ -1315,6 +1315,19 @@ async meetingCheckinRespond(keepRecording: boolean) : Promise<Result<null, Comma
 }
 },
 /**
+ * FR-008-14 (T-069): "Continuar gravando" on the auto-stop toast — cancels
+ * the pending 15 s auto-stop; the meeting keeps recording until the user
+ * stops it (or another rule fires). Idempotent while a meeting is active.
+ */
+async meetingContinueRecording() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_continue_recording") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Latest `meeting://state` snapshot — lets a freshly mounted frontend catch
  * up without waiting for the next tick.
  */

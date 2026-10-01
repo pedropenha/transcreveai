@@ -90,6 +90,10 @@ pub struct StartRequest {
     /// `true` = mic only ("Presencial" / detector `mic_only`) — the system
     /// track stays off.
     pub mic_only: bool,
+    /// The `detector://meeting` id this start answers (FR-008-14 linkage):
+    /// a `meeting_ended` event for it auto-stops the session. `None` for
+    /// manual starts — they are never auto-stopped.
+    pub detection_id: Option<String>,
 }
 
 impl StartRequest {
@@ -101,6 +105,7 @@ impl StartRequest {
             app_label: None,
             app_exe: None,
             mic_only: false,
+            detection_id: None,
         }
     }
 }
@@ -148,6 +153,15 @@ pub(crate) enum Command {
     /// the single source of timestamp truth.
     Dictation {
         capturing: bool,
+    /// `detector://meeting` reported `meeting_ended` for this id — the
+    /// machine decides whether it owns the link (FR-008-14, T-069).
+    DetectionEnded {
+        detection_id: String,
+    },
+    /// "Continuar gravando" on the auto-stop toast — cancels the pending
+    /// 15 s stop (FR-008-14).
+    ContinueRecording {
+        reply: Sender<CommandResult<()>>,
     },
 }
 
@@ -244,6 +258,20 @@ impl MeetingSessionManager {
             keep_recording,
             reply,
         })?
+    }
+
+    /// FR-008-14 (T-069): a `detector://meeting {ended, meeting_ended: true}`
+    /// for the session's linked detection arms the 15 s auto-stop toast.
+    /// Fire-and-forget — an idle session is a no-op by design.
+    pub fn detection_ended(&self, detection_id: String) {
+        if let Err(e) = self.tx.send(Command::DetectionEnded { detection_id }) {
+            log::warn!("Meeting session unavailable for detection end: {e}");
+        }
+    }
+
+    /// FR-008-14: "Continuar gravando" on the auto-stop toast.
+    pub fn request_continue_recording(&self) -> CommandResult<()> {
+        self.call(|reply| Command::ContinueRecording { reply })?
     }
 
     /// A meeting is recording or paused (the worker owns the truth).
@@ -353,6 +381,13 @@ pub(crate) fn toast_message(kind: ToastKind, lang: &str) -> String {
                 "Falha ao gravar o áudio da reunião — o disco pode estar cheio."
             } else {
                 "Failed to write meeting audio — the disk may be full."
+            }
+        }
+        ToastKind::AutoStop => {
+            if pt {
+                "A reunião terminou — finalizando em 15 s"
+            } else {
+                "The meeting ended — finishing in 15 s"
             }
         }
     };
@@ -469,6 +504,15 @@ mod tests {
     fn toast_kinds_carry_contract_action_names() {
         assert_eq!(ToastKind::LimitWarning.action(), Some("extend_30"));
         assert_eq!(ToastKind::SilenceCheckin.action(), Some("checkin"));
+        assert_eq!(ToastKind::AutoStop.action(), Some("continue_recording"));
+        assert_eq!(ToastKind::AutoStop.kind(), "meeting_auto_stop");
         assert_eq!(ToastKind::MicUnavailable.action(), None);
+    }
+
+    #[test]
+    fn auto_stop_toast_is_localized() {
+        // FR-008-14 copy (spec wording), pt-BR first.
+        assert!(toast_message(ToastKind::AutoStop, "pt-BR").contains("15 s"));
+        assert!(toast_message(ToastKind::AutoStop, "en").contains("15 s"));
     }
 }

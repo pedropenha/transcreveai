@@ -62,10 +62,12 @@ pub const ANY_CALL_HOLD: Duration = Duration::from_secs(10);
 
 /// `detector://meeting` — contracts.md §5. Payloads:
 /// `{detection_id, app_label, exe, icon, pid, action, started_at}` on start,
-/// `{detection_id, ended: true}` on meeting end and
-/// `{detection_id, ended: true, dismissed: true}` on user dismissal (the
-/// `ended` flag rides along so the toast layer can treat dismissal as a plain
-/// close; `dismissed` marks it as user-initiated).
+/// `{detection_id, ended: true, meeting_ended}` on meeting end and
+/// `{detection_id, ended: true, meeting_ended: false, dismissed: true}` on
+/// user dismissal (the `ended` flag rides along so the toast layer can treat
+/// dismissal as a plain close; `dismissed` marks it as user-initiated;
+/// `meeting_ended` tells T-069's auto-stop a real FR-008-04 end apart from a
+/// detector-lifecycle end).
 pub const DETECTOR_MEETING_EVENT: &str = "detector://meeting";
 
 /// `detector://start-requested` — emitted by `detector_respond` for
@@ -111,8 +113,16 @@ pub struct Detection {
 pub enum DetectorOutput {
     /// A new meeting became a detection (debounce passed).
     Started(Detection),
-    /// A live detection's meeting ended (FR-008-04) or was reset away.
-    Ended { detection_id: String },
+    /// A live detection ended. `meeting_over` distinguishes a real
+    /// FR-008-04 meeting end from a *lifecycle* end (detector `reset` on
+    /// pause/offline/disable, `detect_any_call` toggle-off): the toast
+    /// closes on either, but only a real end may trigger the T-069
+    /// auto-stop affordance (FR-008-14) — pausing detection mid-meeting
+    /// must not kill a recording.
+    Ended {
+        detection_id: String,
+        meeting_over: bool,
+    },
 }
 
 /// Everything the machine needs for one tick — all inputs are plain data so
@@ -162,6 +172,11 @@ pub struct DetectorMeetingEvent {
     pub started_at: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ended: Option<bool>,
+    /// Present on `ended` events only: `true` when the meeting itself is
+    /// over (FR-008-04), `false` when the detection ended by lifecycle
+    /// (reset/dismissal). T-069's auto-stop honors `true` only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_ended: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dismissed: Option<bool>,
 }
@@ -179,12 +194,15 @@ impl DetectorMeetingEvent {
             action: Some(detection.action.as_str().to_string()),
             started_at: Some(detection.started_at_ms),
             ended: None,
+            meeting_ended: None,
             dismissed: None,
         }
     }
 
-    /// End variant: `{detection_id, ended: true}`.
-    pub fn ended(detection_id: &str) -> Self {
+    /// End variant: `{detection_id, ended: true, meeting_ended}` —
+    /// `meeting_over` rides along so consumers can tell a real meeting end
+    /// (FR-008-04, T-069 auto-stop) from a detector-lifecycle end.
+    pub fn ended(detection_id: &str, meeting_over: bool) -> Self {
         Self {
             detection_id: detection_id.to_string(),
             app_label: None,
@@ -194,6 +212,7 @@ impl DetectorMeetingEvent {
             action: None,
             started_at: None,
             ended: Some(true),
+            meeting_ended: Some(meeting_over),
             dismissed: None,
         }
     }
@@ -201,11 +220,12 @@ impl DetectorMeetingEvent {
     /// Dismissal variant: `{detection_id, ended: true, dismissed: true}` —
     /// emitted by `detector_respond` for `dismiss`/`ignore_meeting`/`never`.
     /// `ended` rides along so the toast layer can treat dismissal as a plain
-    /// close; `dismissed` marks it as user-initiated.
+    /// close; `dismissed` marks it as user-initiated. `meeting_ended` stays
+    /// `false`: dismissal is not the meeting ending.
     pub fn dismissed(detection_id: &str) -> Self {
         Self {
             dismissed: Some(true),
-            ..Self::ended(detection_id)
+            ..Self::ended(detection_id, false)
         }
     }
 }
@@ -218,6 +238,24 @@ pub struct DetectorStartRequest {
     pub exe: String,
     /// `start_mic_only` → mic track only; `start`/`always` → full capture.
     pub mic_only: bool,
+    /// `true` when the request came from FR-008-13 auto-start (a rule
+    /// `auto_start` or the global `meeting_auto_start`), `false` when the
+    /// user clicked a toast action — recorded on `meetings.detection` as
+    /// `auto_start`/`auto_prompt`.
+    pub auto: bool,
+}
+
+/// FR-008-13: a detection starts recording without asking when its rule's
+/// action is `auto_start` **or** the global `meeting_auto_start` toggle is
+/// on. `ignore` answers `false` unconditionally — ignored matches never
+/// promote to detections upstream, but the predicate still refuses them so
+/// the global toggle can never resurrect one.
+pub fn wants_auto_start(action: RuleAction, global_auto_start: bool) -> bool {
+    match action {
+        RuleAction::AutoStart => true,
+        RuleAction::Ask => global_auto_start,
+        RuleAction::Ignore => false,
+    }
 }
 
 /// Identity of a tracked candidate: same app label behind the same process.
@@ -422,8 +460,11 @@ impl Detector {
                 if tracked.source == DetectionSource::AnyCall {
                     if let Some(live) = &tracked.live {
                         if !live.dismissed {
+                            // Toggled off, not an FR-008-04 meeting end —
+                            // lifecycle end: no auto-stop.
                             outputs.push(DetectorOutput::Ended {
                                 detection_id: live.detection.detection_id.clone(),
+                                meeting_over: false,
                             });
                         }
                     }
@@ -516,8 +557,11 @@ impl Detector {
                     if let Some(tracked) = self.tracked.remove(&key) {
                         if let Some(live) = tracked.live {
                             if !live.dismissed {
+                                // A real FR-008-04 end — this is the only
+                                // `meeting_over: true` source (T-069).
                                 outputs.push(DetectorOutput::Ended {
                                     detection_id: live.detection.detection_id,
+                                    meeting_over: true,
                                 });
                             }
                         }
@@ -593,8 +637,12 @@ impl Detector {
         for (_, tracked) in self.tracked.drain() {
             if let Some(live) = tracked.live {
                 if !live.dismissed {
+                    // Suppression (pause/offline/disabled), not the meeting
+                    // ending — `meeting_over: false` keeps T-069's auto-stop
+                    // from killing a recording when detection is paused.
                     outputs.push(DetectorOutput::Ended {
                         detection_id: live.detection.detection_id,
+                        meeting_over: false,
                     });
                 }
             }
