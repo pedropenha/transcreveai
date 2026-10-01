@@ -471,6 +471,36 @@ pub enum VadBackend {
     Earshot,
 }
 
+/// Persisted assistant-panel placement (F012/T-092, FR-012-16 / AC-012-04):
+/// the window origin in **physical** pixels plus enough monitor context to
+/// land on the primary monitor's "same relative spot" when the saved monitor
+/// is gone. Per-field defaults keep a partially-stored object deserializable.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct AssistantPanelPosition {
+    /// Window top-left corner in physical px at save time.
+    pub x: i32,
+    pub y: i32,
+    /// `x`/`y` as fractions of the containing monitor's work area (0–1) —
+    /// the fallback anchor used when that monitor no longer exists.
+    pub rel_x: f64,
+    pub rel_y: f64,
+    /// The monitor the panel was on, when the OS reports a name.
+    pub monitor_name: Option<String>,
+}
+
+impl Default for AssistantPanelPosition {
+    fn default() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            rel_x: 0.0,
+            rel_y: 0.0,
+            monitor_name: None,
+        }
+    }
+}
+
 /* still handy for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -822,6 +852,15 @@ pub struct AppSettings {
     /// T-067's post-processing pass.
     #[serde(default = "default_meeting_live_transcript_enabled")]
     pub meeting_live_transcript_enabled: bool,
+    /// FR-012-16 / AC-012-04: the assistant panel's dragged position
+    /// (physical px + monitor context). `None` → the default dock position
+    /// on the cursor's monitor is used on every open.
+    #[serde(default)]
+    pub assistant_panel_position: Option<AssistantPanelPosition>,
+    /// FR-012-16: the "Fixar" toggle — the panel stays visible but ignores
+    /// drags. Persisted with the position.
+    #[serde(default)]
+    pub assistant_panel_pinned: bool,
 }
 
 fn default_model() -> String {
@@ -1469,6 +1508,8 @@ pub fn get_default_settings() -> AppSettings {
         meeting_toast_position: ToastPosition::default(),
         meeting_toast_sound: false,
         meeting_live_transcript_enabled: default_meeting_live_transcript_enabled(),
+        assistant_panel_position: None,
+        assistant_panel_pinned: false,
     }
 }
 

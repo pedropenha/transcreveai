@@ -3,7 +3,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
-import { Sparkles, X } from "lucide-react";
+import { Pin, PinOff, Sparkles, X } from "lucide-react";
 import "./AssistantPanel.css";
 import { commands, events } from "@/bindings";
 import type { AssistantStateEvent, StreamTextEvent } from "@/bindings";
@@ -11,11 +11,15 @@ import i18n from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import {
   appendDictated,
+  canDragPanel,
   canSend,
   composerValue,
   hotkeyIntent,
+  isPanelDragging,
+  pinToggleKey,
   providerHintKey,
   type AssistantViewState,
+  type PanelGrab,
 } from "./assistantView";
 
 /** `assistant://dictated` payload — the finalized text of a routed
@@ -39,6 +43,11 @@ const AssistantPanel: React.FC = () => {
   const [live, setLive] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Title-strip drag (T-092): the grab offset captured at pointerdown plus
+  // an rAF ticket so moves land at most once per frame — the store is only
+  // written once, on pointerup (`assistant_save_panel_position`).
+  const grabRef = useRef<PanelGrab | null>(null);
+  const dragFrameRef = useRef(0);
   // The view-model decisions read the freshest state inside event handlers.
   const stateRef = useRef<AssistantStateEvent | null>(null);
   stateRef.current = state;
@@ -141,6 +150,10 @@ const AssistantPanel: React.FC = () => {
     void setup();
     return () => {
       cancelled = true;
+      if (dragFrameRef.current !== 0) {
+        cancelAnimationFrame(dragFrameRef.current);
+        dragFrameRef.current = 0;
+      }
       unlisteners.forEach((fn) => fn());
     };
     // Mount-once: handlers read via refs, so no listener ever goes stale.
@@ -191,6 +204,55 @@ const AssistantPanel: React.FC = () => {
     void commands.assistantFocus();
   };
 
+  // ---- Drag & pin (T-092, FR-012-16) ------------------------------------
+  // Pointer-based drag → commands: each move reports screenX/Y plus the
+  // grab offset (clientX/Y at pointerdown — constant while the window
+  // tracks the cursor); the backend owns unit conversion and monitor
+  // clamping. Persistence happens once on drag end, not at move rate.
+
+  const onTitlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    if (!canDragPanel(stateRef.current?.pinned ?? false)) return;
+    // The pin/close buttons inside the strip are not drag handles.
+    if ((e.target as HTMLElement).closest("button")) return;
+    grabRef.current = { clientX: e.clientX, clientY: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onTitlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    const grab = grabRef.current;
+    if (!isPanelDragging(grab) || !grab) return;
+    if (dragFrameRef.current !== 0) return;
+    const { screenX, screenY } = e;
+    const { clientX, clientY } = grab;
+    dragFrameRef.current = requestAnimationFrame(() => {
+      dragFrameRef.current = 0;
+      void commands.assistantMovePanel(screenX, screenY, clientX, clientY);
+    });
+  };
+
+  const endTitleDrag = (e: React.PointerEvent<HTMLElement>) => {
+    const grab = grabRef.current;
+    if (!isPanelDragging(grab) || !grab) return;
+    grabRef.current = null;
+    if (dragFrameRef.current !== 0) {
+      cancelAnimationFrame(dragFrameRef.current);
+      dragFrameRef.current = 0;
+    }
+    void commands.assistantSavePanelPosition(
+      e.screenX,
+      e.screenY,
+      grab.clientX,
+      grab.clientY,
+    );
+  };
+
+  // FR-012-16 "Fixar": the toggle persists; while pinned every drag is
+  // ignored (canDragPanel gate above + a backend check on the command).
+  const togglePin = () => {
+    void commands.assistantSetPanelPinned(!(stateRef.current?.pinned ?? false));
+  };
+
   const close = () => void commands.assistantClose();
   const cancel = () => void commands.assistantCancel();
   const retry = () => void commands.assistantRetry();
@@ -213,6 +275,7 @@ const AssistantPanel: React.FC = () => {
   // ---- Render -------------------------------------------------------------
 
   const dictating = state?.dictating ?? false;
+  const pinned = state?.pinned ?? false;
   const phase = state?.phase ?? "idle";
   const messages = state?.messages ?? [];
   const sendable = canSend(draft, viewState);
@@ -227,9 +290,16 @@ const AssistantPanel: React.FC = () => {
       onKeyDown={onStageKeyDown}
     >
       <div className="as-panel" role="dialog" aria-label={t("assistant.title")}>
-        {/* Title strip — T-092 hangs drag/pin off `.as-title`; keep it the
-            full-width top row so the affordance lands without a relayout. */}
-        <header className="as-title">
+        {/* Title strip — T-092's drag handle + Fixar toggle (FR-012-16):
+            pointer events on the strip move the window; the buttons are
+            excluded from the drag so they still click. */}
+        <header
+          className={`as-title${pinned ? " as-title--pinned" : ""}`}
+          onPointerDown={onTitlePointerDown}
+          onPointerMove={onTitlePointerMove}
+          onPointerUp={endTitleDrag}
+          onPointerCancel={endTitleDrag}
+        >
           <Sparkles size={13} className="as-title-icon" aria-hidden="true" />
           <span className="as-title-text">{t("assistant.title")}</span>
           {state?.providerLabel && (
@@ -238,6 +308,20 @@ const AssistantPanel: React.FC = () => {
             </span>
           )}
           <span className="as-title-spacer" />
+          <button
+            type="button"
+            className={`as-pin${pinned ? " as-pin--on" : ""}`}
+            aria-label={t(pinToggleKey(pinned))}
+            aria-pressed={pinned}
+            title={t(pinToggleKey(pinned))}
+            onClick={togglePin}
+          >
+            {pinned ? (
+              <PinOff size={12} aria-hidden="true" />
+            ) : (
+              <Pin size={12} aria-hidden="true" />
+            )}
+          </button>
           <button
             type="button"
             className="as-x"

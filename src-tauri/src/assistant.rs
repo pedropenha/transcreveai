@@ -14,8 +14,10 @@
 //! * keeps the multi-turn conversation in memory only (FR-012-15): nothing is
 //!   persisted and nothing leaves the machine before an explicit send
 //!   (FR-012-18);
-//! * reserves a title-bar strip in the webview for T-092's drag/pin work —
-//!   the window itself only needs to be (re)positioned on open here.
+//! * is draggable by its title strip and pinnable (T-092, FR-012-16): the
+//!   webview reports pointer positions, this module clamps them onto the
+//!   monitor under the cursor, and the position/pin land in settings so the
+//!   panel reopens where it was left (AC-012-04).
 //!
 //! Dictation routing (FR-012-12): a `transcribe*` press claims the session's
 //! output for the panel while it is open (`dictation_routed`);
@@ -40,7 +42,7 @@ use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::llm::cli_agent;
 use crate::llm::router;
 use crate::llm::types::{LlmMessage, LlmPurpose, LlmRequest, LlmResponse};
-use crate::settings::{self, AppSettings, PostProcessProvider};
+use crate::settings::{self, AppSettings, AssistantPanelPosition, PostProcessProvider};
 use crate::window_labels::ASSISTANT;
 
 // ---------------------------------------------------------------------------
@@ -69,8 +71,8 @@ const PENDING_HOTKEY_TTL: Duration = Duration::from_secs(3);
 // ---------------------------------------------------------------------------
 
 /// Floating-panel footprint — generous enough for a chat exchange, compact
-/// enough to read as an overlay. T-092 persists a dragged position; until
-/// then every open recenters on the cursor's monitor.
+/// enough to read as an overlay. Without a persisted position every open
+/// recenters on the cursor's monitor (T-092 restores the dragged one).
 pub(crate) const PANEL_WIDTH: f64 = 420.0;
 pub(crate) const PANEL_HEIGHT: f64 = 560.0;
 /// Bottom margin above the taskbar edge of the work area.
@@ -211,6 +213,9 @@ pub struct AssistantStateEvent {
     pub error_kind: Option<LlmErrorKind>,
     pub error_detail: Option<String>,
     pub messages: Vec<AssistantMessage>,
+    /// FR-012-16: the persisted "Fixar" toggle — while true the title strip
+    /// shows the pinned state and drags are ignored.
+    pub pinned: bool,
 }
 
 #[derive(Default)]
@@ -400,6 +405,7 @@ pub fn state_event(app: &AppHandle, consume_pending_hotkey: bool) -> AssistantSt
         error_kind: None,
         error_detail: None,
         messages: Vec::new(),
+        pinned: settings.assistant_panel_pinned,
     };
     if let Some(mut session) = lock_session(app) {
         // Expire a press nobody consumed — it belonged to a webview that was
@@ -448,9 +454,14 @@ fn panel_origin(work_area: (i32, i32, u32, u32), scale: f64) -> (f64, f64) {
 }
 
 /// Logical-point origin for the platforms where Tauri positions windows in
-/// logical coordinates (macOS, Linux).
+/// logical coordinates (macOS, Linux). A persisted drag position (T-092)
+/// wins over the default dock.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn panel_logical_origin(app: &AppHandle) -> Option<(f64, f64)> {
+    if let Some((x, y, content_scale)) = restored_panel_position(app) {
+        // Off Windows `content_scale` is just the monitor's scale factor.
+        return Some((x as f64 / content_scale, y as f64 / content_scale));
+    }
     let monitor = crate::overlay::get_monitor_with_cursor(app)?;
     let wa = monitor.work_area();
     let scale = monitor.scale_factor();
@@ -459,6 +470,296 @@ fn panel_logical_origin(app: &AppHandle) -> Option<(f64, f64)> {
         scale,
     );
     Some((x / scale, y / scale))
+}
+
+// ---------------------------------------------------------------------------
+// Drag & pin (T-092, FR-012-16 / AC-012-04)
+// ---------------------------------------------------------------------------
+
+/// The text-size zoom WebView2 applies on top of DPI scaling on Windows —
+/// the same convention the window-bounds path uses
+/// (`overlay::windows_text_scale_factor`). Webview screen coordinates
+/// (`PointerEvent.screenX/Y`) arrive in DIP (physical / DPI scale); client
+/// coordinates (`clientX/Y`) arrive in CSS px, so a grab offset must be
+/// multiplied by this zoom before it can leave CSS space. `1.0` elsewhere.
+#[cfg(target_os = "windows")]
+fn panel_text_zoom() -> f64 {
+    crate::overlay::windows_text_scale_factor()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn panel_text_zoom() -> f64 {
+    1.0
+}
+
+/// Work-area view of one monitor — the pure-data stand-in for
+/// `tauri::Monitor` that keeps the placement math unit-testable.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PanelMonitor {
+    /// OS monitor name when reported — secondary identity that finds a
+    /// monitor whose coordinates moved (resolution/DPI change).
+    pub name: Option<String>,
+    /// Work area in physical px: `(x, y, width, height)`.
+    pub work_area: (i32, i32, i32, i32),
+    /// CSS-px → physical-px factor on this monitor (DPI scale × text zoom);
+    /// the persisted footprint converts through it.
+    pub content_scale: f64,
+}
+
+fn panel_monitor(monitor: &tauri::Monitor, text_zoom: f64) -> PanelMonitor {
+    let wa = monitor.work_area();
+    PanelMonitor {
+        name: monitor.name().cloned(),
+        work_area: (
+            wa.position.x,
+            wa.position.y,
+            wa.size.width as i32,
+            wa.size.height as i32,
+        ),
+        content_scale: monitor.scale_factor() * text_zoom,
+    }
+}
+
+/// Two `tauri::Monitor`s describing the same display — position+size+name,
+/// the full identity the OS reports.
+fn same_monitor(a: &tauri::Monitor, b: &tauri::Monitor) -> bool {
+    a.position() == b.position() && a.size() == b.size() && a.name() == b.name()
+}
+
+/// Clamp a rect's top-left so the whole `w`×`h` rect fits inside `area`
+/// (`(x, y, width, height)`); a rect larger than the area pins to its
+/// origin.
+fn clamp_origin_to_area(x: i32, y: i32, w: i32, h: i32, area: (i32, i32, i32, i32)) -> (i32, i32) {
+    let (ax, ay, aw, ah) = area;
+    let max_x = ax + (aw - w).max(0);
+    let max_y = ay + (ah - h).max(0);
+    (x.clamp(ax, max_x), y.clamp(ay, max_y))
+}
+
+/// Half-open point-in-rect test in physical px — same convention as
+/// `overlay::positioning::is_mouse_within_monitor`.
+fn area_contains(area: (i32, i32, i32, i32), px: i32, py: i32) -> bool {
+    let (ax, ay, aw, ah) = area;
+    px >= ax && px < ax + aw && py >= ay && py < ay + ah
+}
+
+/// Where a persisted panel position lands on the live monitor layout —
+/// returns `(x, y, monitor_index)` in physical px, or `None` when nothing
+/// was saved / no monitor exists (callers then use the default dock).
+/// `panel` is the CSS-px footprint (`PANEL_WIDTH`/`PANEL_HEIGHT`); each
+/// monitor's `content_scale` converts it.
+///
+/// Resolution order (FR-012-16 "respeita bordas e multi-monitor"):
+/// 1. the monitor whose work area still contains the saved rect's center —
+///    the panel stays where the user left it, clamped fully inside;
+/// 2. the monitor with the saved name — survives resolution/DPI changes;
+///    the saved point is simply clamped back inside;
+/// 3. the primary monitor at the same *relative* spot in its work area —
+///    the "monitor sumiu" fallback (AC-012-04).
+fn resolve_panel_position(
+    saved: Option<&AssistantPanelPosition>,
+    monitors: &[PanelMonitor],
+    primary_index: usize,
+    panel: (f64, f64),
+) -> Option<(i32, i32, usize)> {
+    let saved = saved?;
+    if monitors.is_empty() {
+        return None;
+    }
+    let primary_index = primary_index.min(monitors.len() - 1);
+    let size_on = |m: &PanelMonitor| {
+        (
+            (panel.0 * m.content_scale).round().max(1.0) as i32,
+            (panel.1 * m.content_scale).round().max(1.0) as i32,
+        )
+    };
+    let target = monitors
+        .iter()
+        .enumerate()
+        .find(|(_, m)| {
+            let (w, h) = size_on(m);
+            area_contains(m.work_area, saved.x + w / 2, saved.y + h / 2)
+        })
+        .or_else(|| {
+            saved.monitor_name.as_deref().and_then(|name| {
+                monitors
+                    .iter()
+                    .enumerate()
+                    .find(|(_, m)| m.name.as_deref() == Some(name))
+            })
+        });
+    let (index, monitor) = target.unwrap_or((primary_index, &monitors[primary_index]));
+    let (w, h) = size_on(monitor);
+    let (x, y) = if target.is_some() {
+        (saved.x, saved.y)
+    } else {
+        // Monitor gone → the same relative spot in the primary work area.
+        let (ax, ay, aw, ah) = monitor.work_area;
+        (
+            ax + (saved.rel_x.clamp(0.0, 1.0) * aw as f64).round() as i32,
+            ay + (saved.rel_y.clamp(0.0, 1.0) * ah as f64).round() as i32,
+        )
+    };
+    let (x, y) = clamp_origin_to_area(x, y, w, h, monitor.work_area);
+    Some((x, y, index))
+}
+
+/// The persisted position resolved against the current monitors:
+/// `(x, y, content_scale)` in physical px — `None` falls back to the
+/// default dock on the cursor's monitor.
+fn restored_panel_position(app: &AppHandle) -> Option<(i32, i32, f64)> {
+    let saved = settings::get_settings(app).assistant_panel_position?;
+    let monitors = app.available_monitors().ok()?;
+    if monitors.is_empty() {
+        return None;
+    }
+    let text_zoom = panel_text_zoom();
+    let areas: Vec<PanelMonitor> = monitors
+        .iter()
+        .map(|m| panel_monitor(m, text_zoom))
+        .collect();
+    let primary_index = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .and_then(|primary| monitors.iter().position(|m| same_monitor(m, &primary)))
+        .unwrap_or(0);
+    let (x, y, index) = resolve_panel_position(
+        Some(&saved),
+        &areas,
+        primary_index,
+        (PANEL_WIDTH, PANEL_HEIGHT),
+    )?;
+    Some((x, y, areas[index].content_scale))
+}
+
+/// A drag-resolved placement: physical bounds plus the target monitor (for
+/// the relative-position bookkeeping persisted on drag end).
+struct PanelPlacement {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    monitor: PanelMonitor,
+}
+
+/// Turn a pointer event into physical bounds on the monitor under the
+/// cursor. `screen_*` are the event's `screenX/Y` (DIP); `grab_*` the
+/// `clientX/Y` captured where the drag started (CSS px — the pointer's
+/// offset inside the window stays constant while the window tracks the
+/// cursor). The result is clamped into the monitor's work area.
+fn drag_placement(
+    app: &AppHandle,
+    screen_x: f64,
+    screen_y: f64,
+    grab_x: f64,
+    grab_y: f64,
+) -> Option<PanelPlacement> {
+    let monitors = app.available_monitors().ok()?;
+    let zoom = panel_text_zoom();
+    // The webview reports screen coordinates in DIP — compare against
+    // monitor bounds scaled down into the same space.
+    let cursor = (screen_x.round() as i32, screen_y.round() as i32);
+    let target = monitors
+        .iter()
+        .find(|m| {
+            let s = m.scale_factor();
+            area_contains(
+                (
+                    (m.position().x as f64 / s).round() as i32,
+                    (m.position().y as f64 / s).round() as i32,
+                    (m.size().width as f64 / s).round() as i32,
+                    (m.size().height as f64 / s).round() as i32,
+                ),
+                cursor.0,
+                cursor.1,
+            )
+        })
+        .cloned()
+        .or_else(|| app.primary_monitor().ok().flatten())?;
+    let monitor = panel_monitor(&target, zoom);
+    let scale = target.scale_factor();
+    let x = ((screen_x - grab_x * zoom) * scale).round() as i32;
+    let y = ((screen_y - grab_y * zoom) * scale).round() as i32;
+    let w = (PANEL_WIDTH * monitor.content_scale).round().max(1.0) as i32;
+    let h = (PANEL_HEIGHT * monitor.content_scale).round().max(1.0) as i32;
+    let (x, y) = clamp_origin_to_area(x, y, w, h, monitor.work_area);
+    Some(PanelPlacement {
+        x,
+        y,
+        w,
+        h,
+        monitor,
+    })
+}
+
+fn apply_panel_placement(app: &AppHandle, placement: &PanelPlacement) {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(window) = app.get_webview_window(ASSISTANT) {
+            // Physical-px SetWindowPos — no activation, no Z-order change
+            // (same convention as the show path).
+            let _ = crate::overlay::set_window_bounds_physical(
+                &window,
+                placement.x,
+                placement.y,
+                placement.w,
+                placement.h,
+            );
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        macos::move_panel(
+            app,
+            placement.x as f64 / placement.monitor.content_scale,
+            placement.y as f64 / placement.monitor.content_scale,
+        );
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(window) = app.get_webview_window(ASSISTANT) {
+            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
+                x: placement.x as f64 / placement.monitor.content_scale,
+                y: placement.y as f64 / placement.monitor.content_scale,
+            }));
+        }
+    }
+}
+
+/// `assistant_move_panel` / `assistant_save_panel_position` shared body
+/// (FR-012-16): clamp the drag point onto the monitor under the cursor and
+/// move the window. `persist` — only true on drag end, so the settings
+/// store is written once per drag, not at pointer-move rate. A pinned
+/// panel ignores every drag (visible but immovable).
+pub fn move_panel(
+    app: &AppHandle,
+    screen_x: f64,
+    screen_y: f64,
+    grab_x: f64,
+    grab_y: f64,
+    persist: bool,
+) {
+    let mut settings = settings::get_settings(app);
+    if settings.assistant_panel_pinned {
+        return;
+    }
+    let Some(placement) = drag_placement(app, screen_x, screen_y, grab_x, grab_y) else {
+        return;
+    };
+    if persist {
+        let (ax, ay, aw, ah) = placement.monitor.work_area;
+        settings.assistant_panel_position = Some(AssistantPanelPosition {
+            x: placement.x,
+            y: placement.y,
+            rel_x: ((placement.x - ax) as f64 / aw.max(1) as f64).clamp(0.0, 1.0),
+            rel_y: ((placement.y - ay) as f64 / ah.max(1) as f64).clamp(0.0, 1.0),
+            monitor_name: placement.monitor.name.clone(),
+        });
+        settings::write_settings(app, settings);
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || apply_panel_placement(&handle, &placement));
 }
 
 #[cfg(target_os = "macos")]
@@ -530,6 +831,17 @@ mod macos {
         }
     }
 
+    /// T-092 drag: reposition the panel (logical points — off Windows the
+    /// placement math already resolved monitor + clamp).
+    pub(super) fn move_panel(app: &AppHandle, x: f64, y: f64) {
+        if let Ok(panel) = app.get_webview_panel(crate::window_labels::ASSISTANT) {
+            if let Some(window) = panel.to_window() {
+                let _ =
+                    window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
+            }
+        }
+    }
+
     pub(super) fn hide(app: &AppHandle) {
         if let Ok(panel) = app.get_webview_panel(crate::window_labels::ASSISTANT) {
             panel.hide();
@@ -592,7 +904,16 @@ fn show_native(app: &AppHandle) {
     let Some(window) = app.get_webview_window(ASSISTANT) else {
         return;
     };
-    if let Some(monitor) = crate::overlay::get_monitor_with_cursor(app) {
+    if let Some((x, y, content_scale)) = restored_panel_position(app) {
+        // AC-012-04: a dragged+persisted position wins — already resolved
+        // against the live monitors (clamp / named-monitor / primary
+        // fallback all happened inside).
+        let width = (PANEL_WIDTH * content_scale).round().max(1.0) as i32;
+        let height = (PANEL_HEIGHT * content_scale).round().max(1.0) as i32;
+        if let Err(e) = crate::overlay::set_window_bounds_physical(&window, x, y, width, height) {
+            log::warn!("assistant: failed to restore panel position: {e}");
+        }
+    } else if let Some(monitor) = crate::overlay::get_monitor_with_cursor(app) {
         let wa = monitor.work_area();
         // Same WebView2 text-zoom convention as the Flow Bar (win32.rs).
         let scale = monitor.scale_factor() * crate::overlay::windows_text_scale_factor();
@@ -1207,5 +1528,157 @@ mod tests {
         // Short work areas clamp at the top edge.
         let (_x, y3) = panel_origin((0, 0, 800, 400), 1.0);
         assert_eq!(y3, 0.0);
+    }
+
+    // ── T-092: drag/pin placement (FR-012-16, AC-012-04) ──────────────────
+
+    const PANEL: (f64, f64) = (PANEL_WIDTH, PANEL_HEIGHT);
+
+    fn monitor(name: Option<&str>, area: (i32, i32, i32, i32), content_scale: f64) -> PanelMonitor {
+        PanelMonitor {
+            name: name.map(str::to_string),
+            work_area: area,
+            content_scale,
+        }
+    }
+
+    fn saved_pos(
+        x: i32,
+        y: i32,
+        rel_x: f64,
+        rel_y: f64,
+        monitor_name: Option<&str>,
+    ) -> AssistantPanelPosition {
+        AssistantPanelPosition {
+            x,
+            y,
+            rel_x,
+            rel_y,
+            monitor_name: monitor_name.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn clamp_origin_pulls_the_rect_inside_the_area() {
+        // Fully inside stays put.
+        assert_eq!(
+            clamp_origin_to_area(100, 50, 420, 560, (0, 0, 1920, 1080)),
+            (100, 50)
+        );
+        // Hanging off the right/bottom edge gets pulled back.
+        assert_eq!(
+            clamp_origin_to_area(1700, 900, 420, 560, (0, 0, 1920, 1080)),
+            (1500, 520)
+        );
+        // Negative origins clamp to the area's origin.
+        assert_eq!(
+            clamp_origin_to_area(-40, -10, 420, 560, (0, 0, 1920, 1080)),
+            (0, 0)
+        );
+        // A rect larger than the area pins to its origin.
+        assert_eq!(
+            clamp_origin_to_area(300, 300, 4000, 2000, (0, 0, 1920, 1080)),
+            (0, 0)
+        );
+        // Negative-coordinate monitor (secondary left of the primary).
+        assert_eq!(
+            clamp_origin_to_area(-2600, 400, 420, 560, (-2560, -200, 2560, 1440)),
+            (-2560, 400)
+        );
+    }
+
+    #[test]
+    fn resolve_position_returns_none_without_saved_position_or_monitors() {
+        let monitors = vec![monitor(Some("A"), (0, 0, 1920, 1080), 1.0)];
+        assert_eq!(resolve_panel_position(None, &monitors, 0, PANEL), None);
+        let saved = saved_pos(100, 100, 0.5, 0.5, Some("A"));
+        assert_eq!(resolve_panel_position(Some(&saved), &[], 0, PANEL), None);
+    }
+
+    #[test]
+    fn resolve_position_restores_the_saved_spot_when_the_monitor_is_unchanged() {
+        let monitors = vec![monitor(Some("A"), (0, 0, 1920, 1040), 1.0)];
+        let saved = saved_pos(1500, 480, 1500.0 / 1920.0, 480.0 / 1040.0, Some("A"));
+        assert_eq!(
+            resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
+            Some((1500, 480, 0))
+        );
+    }
+
+    #[test]
+    fn resolve_position_clamps_a_partially_offscreen_rect_back_inside() {
+        let monitors = vec![monitor(Some("A"), (0, 0, 1920, 1040), 1.0)];
+        // The saved point fell off every work area (e.g. the taskbar grew);
+        // the named monitor still exists, so it is clamped back inside —
+        // FR-012-16 "respeita bordas".
+        let saved = saved_pos(1900, 200, 1900.0 / 1920.0, 200.0 / 1040.0, Some("A"));
+        assert_eq!(
+            resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
+            Some((1500, 200, 0))
+        );
+    }
+
+    #[test]
+    fn resolve_position_uses_the_named_monitor_when_its_bounds_moved() {
+        // Monitor "B" kept its name but now spans 1920..4480; the saved
+        // point (4500) falls off every work area → clamp into B anyway.
+        let monitors = vec![
+            monitor(Some("A"), (0, 0, 1920, 1040), 1.0),
+            monitor(Some("B"), (1920, 0, 2560, 1440), 1.0),
+        ];
+        let saved = saved_pos(4500, 300, 0.9, 0.2, Some("B"));
+        assert_eq!(
+            resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
+            Some((4060, 300, 1))
+        );
+    }
+
+    #[test]
+    fn resolve_position_falls_back_to_primary_at_the_relative_spot() {
+        // The saved monitor is gone entirely (laptop undocked) — AC-012-04:
+        // land on the primary at the same work-area fraction, clamped.
+        let monitors = vec![monitor(Some("PRIMARY"), (0, 0, 1920, 1040), 1.0)];
+        let saved = saved_pos(6000, 800, 0.9, 0.6, Some("GONE"));
+        // x = 0.9 * 1920 = 1728 → clamped to 1920 - 420 = 1500.
+        // y = 0.6 * 1040 = 624 → 624 + 560 overflows → 1040 - 560 = 480.
+        assert_eq!(
+            resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
+            Some((1500, 480, 0))
+        );
+    }
+
+    #[test]
+    fn resolve_position_scales_the_panel_by_the_target_monitor() {
+        // 2x monitor: the 420x560 CSS footprint is 840x1120 physical —
+        // containment and clamping use the scaled size.
+        let monitors = vec![monitor(Some("A"), (0, 0, 3840, 2080), 2.0)];
+        let saved = saved_pos(3600, 1800, 0.9, 0.9, Some("A"));
+        assert_eq!(
+            resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
+            Some((3840 - 840, 2080 - 1120, 0))
+        );
+    }
+
+    #[test]
+    fn panel_position_and_pin_roundtrip_through_settings() {
+        // Fresh defaults: nothing saved, not pinned.
+        let settings = AppSettings::default();
+        assert_eq!(settings.assistant_panel_position, None);
+        assert!(!settings.assistant_panel_pinned);
+
+        // A partial stored object still deserializes — per-field defaults
+        // keep a hand-edited or forward-written store loadable.
+        let value = serde_json::json!({
+            "assistant_panel_position": { "x": 100, "y": 200 },
+            "assistant_panel_pinned": true
+        });
+        let settings: AppSettings = serde_json::from_value(value)
+            .unwrap_or_else(|e| panic!("partial assistant settings must load: {e}"));
+        assert!(settings.assistant_panel_pinned);
+        let Some(pos) = settings.assistant_panel_position else {
+            panic!("position must survive the roundtrip");
+        };
+        assert_eq!((pos.x, pos.y), (100, 200));
+        assert_eq!(pos.monitor_name, None);
     }
 }

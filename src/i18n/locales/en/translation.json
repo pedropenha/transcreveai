@@ -970,6 +970,8 @@
     "sendHint": "Enter to send · Shift+Enter for a new line",
     "cancel": "Cancel",
     "close": "Close",
+    "pin": "Pin",
+    "unpin": "Unpin",
     "retry": "Try again",
     "newConversation": "New conversation",
     "thinking": "Thinking…",

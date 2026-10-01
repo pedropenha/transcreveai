@@ -56,6 +56,34 @@ export function hotkeyIntent(
   return "send";
 }
 
+/** Whether the title strip can start a window drag (FR-012-16): the
+ * "Fixar" toggle locks the panel — visible but immovable. */
+export function canDragPanel(pinned: boolean): boolean {
+  return !pinned;
+}
+
+/** Which i18n key the pin toggle advertises (the action it will take, not
+ * the current state). */
+export function pinToggleKey(
+  pinned: boolean,
+): "assistant.pin" | "assistant.unpin" {
+  return pinned ? "assistant.unpin" : "assistant.pin";
+}
+
+/** Pointer snapshot where a title-strip drag starts — `clientX/Y` is the
+ * pointer's offset inside the window, which stays constant while the
+ * window tracks the cursor (the backend subtracts it from `screenX/Y`). */
+export interface PanelGrab {
+  clientX: number;
+  clientY: number;
+}
+
+/** True while `event` continues an active drag — guards every pointermove
+ * without the component needing to keep the check inline. */
+export function isPanelDragging(grab: PanelGrab | null): boolean {
+  return grab !== null;
+}
+
 /** snake_case `AssistantProviderHint` → the camelCase i18n key under
  * `assistant.hint.*`. `null`/unknown falls back to the generic line. */
 export function providerHintKey(hint: string | null | undefined): string {

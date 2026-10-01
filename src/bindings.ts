@@ -1424,6 +1424,47 @@ async assistantFocus() : Promise<Result<null, CommandError>> {
 }
 },
 /**
+ * FR-012-16: live title-strip drag — repositions the panel clamped onto
+ * the monitor under the cursor. Fires at pointer-move rate and persists
+ * nothing; drag end goes through `assistant_save_panel_position`.
+ * `screen_*` are the event's `screenX/Y`, `grab_*` the `clientX/Y`
+ * captured where the drag started (the pointer's offset inside the
+ * window, constant while the window tracks the cursor).
+ */
+async assistantMovePanel(screenX: number, screenY: number, grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_move_panel", { screenX, screenY, grabX, grabY }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-16 / AC-012-04: drag end — applies the final position once and
+ * persists it (with monitor context) so the panel reopens where it was
+ * left. A pinned panel ignores the drop.
+ */
+async assistantSavePanelPosition(screenX: number, screenY: number, grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_save_panel_position", { screenX, screenY, grabX, grabY }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-012-16: the "Fixar" toggle — persisted alongside the position; while
+ * on, the panel stays visible but immovable.
+ */
+async assistantSetPanelPinned(pinned: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_set_panel_pinned", { pinned }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * FR-012-04: persist the assistant provider choice (`None` resets to auto).
  * Accepts any known `post_process_providers` id, including `cli_agent/*`.
  */
@@ -2245,7 +2286,12 @@ providerReady: boolean; providerHint: AssistantProviderHint | null;
 /**
  * Last provider failure, classified for localization.
  */
-errorKind: LlmErrorKind | null; errorDetail: string | null; messages: AssistantMessage[] }
+errorKind: LlmErrorKind | null; errorDetail: string | null; messages: AssistantMessage[]; 
+/**
+ * FR-012-16: the persisted "Fixar" toggle — while true the title strip
+ * shows the pinned state and drags are ignored.
+ */
+pinned: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }

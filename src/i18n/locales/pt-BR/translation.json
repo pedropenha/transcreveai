@@ -896,6 +896,8 @@
     "sendHint": "Enter envia · Shift+Enter quebra linha",
     "cancel": "Cancelar",
     "close": "Fechar",
+    "pin": "Fixar",
+    "unpin": "Desafixar",
     "retry": "Tentar novamente",
     "newConversation": "Nova conversa",
     "thinking": "Pensando…",

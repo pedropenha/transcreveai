@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import {
   appendDictated,
+  canDragPanel,
   canSend,
   composerValue,
   hotkeyIntent,
+  isPanelDragging,
+  pinToggleKey,
   providerHintKey,
 } from "./assistantView";
 
@@ -64,5 +67,14 @@ assert.equal(
 );
 assert.equal(providerHintKey(null), "assistant.hint.noProvider");
 assert.equal(providerHintKey("bogus"), "assistant.hint.noProvider");
+
+// --- T-092 drag/pin (FR-012-16): Fixar locks the panel ------------------
+assert.equal(canDragPanel(false), true);
+assert.equal(canDragPanel(true), false);
+assert.equal(pinToggleKey(false), "assistant.pin");
+assert.equal(pinToggleKey(true), "assistant.unpin");
+// The pointer-move handler only fires while a grab is active.
+assert.equal(isPanelDragging(null), false);
+assert.equal(isPanelDragging({ clientX: 10, clientY: 8 }), true);
 
 console.log("assistantView: all assertions passed");

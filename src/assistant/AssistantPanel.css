@@ -41,7 +41,7 @@
   }
 }
 
-/* Title strip — T-092 turns this row into the drag handle + pin toggle. */
+/* Title strip — T-092's drag handle + Fixar toggle (FR-012-16). */
 .as-title {
   display: flex;
   align-items: center;
@@ -52,6 +52,19 @@
   font-weight: var(--font-weight-semibold);
   color: var(--flowbar-text);
   user-select: none;
+  cursor: grab;
+  /* Pointer events drive the drag — never let the touch layer eat them. */
+  touch-action: none;
+}
+
+.as-title:active {
+  cursor: grabbing;
+}
+
+/* Fixar on: the panel is visible but immovable — no grab affordance. */
+.as-title--pinned,
+.as-title--pinned:active {
+  cursor: default;
 }
 
 .as-title-icon {
@@ -77,7 +90,8 @@
   flex: 1;
 }
 
-.as-x {
+.as-x,
+.as-pin {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -90,9 +104,16 @@
   cursor: pointer;
 }
 
-.as-x:hover {
+.as-x:hover,
+.as-pin:hover {
   background: var(--flowbar-surface-raised);
   color: var(--flowbar-text);
+}
+
+/* Pinned: the toggle stays lit so the locked state reads at a glance. */
+.as-pin--on {
+  color: var(--flowbar-accent);
+  background: color-mix(in srgb, var(--flowbar-accent) 14%, transparent);
 }
 
 /* No-provider banner (FR-012-17). */
