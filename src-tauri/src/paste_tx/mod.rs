@@ -168,7 +168,10 @@ pub(crate) fn evaluate(state: &TxState, now: Instant) -> WaitDecision {
 /// ~110ms to ~20ms) can be tried as its own experiment later.
 const CHORD_HOLD_MS: u64 = 100;
 
-/// Sends the platform paste chord for the configured method.
+/// Sends the platform paste chord for the configured method. The
+/// `input::send_paste_*` functions first wait for the physical release of
+/// any shortcut modifier the user still holds (FR-005-01), so a held `Win`
+/// or `Alt` cannot turn the chord into `Win+V`/`Ctrl+Alt+V` (AC-005-08).
 pub(crate) fn send_chord(
     enigo: &mut enigo::Enigo,
     paste_method: &crate::settings::PasteMethod,

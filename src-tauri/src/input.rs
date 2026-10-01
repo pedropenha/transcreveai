@@ -1,7 +1,14 @@
 use enigo::{Enigo, Key, Keyboard, Mouse, Settings};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
+
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
+    VK_RWIN,
+};
 
 /// Depth of in-flight keystroke injections below (paste chords, direct
 /// typing, auto-submit). The injected events carry no marker a low-level
@@ -32,6 +39,159 @@ impl InjectionGuard {
 impl Drop for InjectionGuard {
     fn drop(&mut self) {
         INJECTION_DEPTH.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FR-005-01 — physical modifier release before injection
+//
+// A paste/type chord must not blend with a shortcut key the user has not
+// physically released yet: still-held `Win` would turn our `Ctrl+V` into
+// `Win+V` (clipboard history popup) and still-held `Ctrl+Alt` into
+// `Ctrl+Alt+V` (AC-005-08). So every injection entry point waits — up to
+// 500 ms, polling `GetAsyncKeyState` — for the chord-changing modifiers to
+// come up, then forces synthetic key-ups for any still held.
+//
+// Only modifiers are waited on: a held non-modifier key cannot change what
+// an injected chord means. The wait must run *before* `InjectionGuard`
+// begins, otherwise the user's own (real) releases would be dropped by the
+// hook filter for the whole wait window.
+// ---------------------------------------------------------------------------
+
+/// `dwExtraInfo` marker ("TCMK" in ASCII) tagging input we synthesize so it
+/// stays attributable in hook logs. The low-level hook cannot read
+/// `LLKHF_INJECTED` through handy-keys, so [`is_injection_active`] remains
+/// the actual self-filter.
+#[cfg(target_os = "windows")]
+const INJECTION_EXTRA_INFO: usize = 0x5443_4D4B;
+
+/// How long [`await_shortcut_modifier_release`] waits for the user to lift
+/// the shortcut modifiers before forcing synthetic key-ups (FR-005-01).
+#[cfg(target_os = "windows")]
+const MODIFIER_RELEASE_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Poll interval for the physical-release wait.
+#[cfg(target_os = "windows")]
+const MODIFIER_RELEASE_POLL: Duration = Duration::from_millis(10);
+
+/// Virtual keys whose held state changes the meaning of an injected chord:
+/// both sides of Shift, Ctrl, Alt (`VK_MENU`) and Win.
+#[cfg(target_os = "windows")]
+const CHORD_MODIFIER_VKS: &[u16] = &[
+    VK_LSHIFT.0,
+    VK_RSHIFT.0,
+    VK_LCONTROL.0,
+    VK_RCONTROL.0,
+    VK_LMENU.0,
+    VK_RMENU.0,
+    VK_LWIN.0,
+    VK_RWIN.0,
+];
+
+/// Pure decision loop behind [`await_shortcut_modifier_release`]: polls
+/// `is_down` over `vks` until all are released or `timeout` elapses, then
+/// returns the VKs still held (in input order). Clock and sleep are
+/// injected so tests can drive it with canned state.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn poll_until_released(
+    vks: &[u16],
+    timeout: Duration,
+    poll_interval: Duration,
+    mut is_down: impl FnMut(u16) -> bool,
+    mut sleep: impl FnMut(Duration),
+    mut now: impl FnMut() -> Instant,
+) -> Vec<u16> {
+    let started = now();
+    loop {
+        let held: Vec<u16> = vks.iter().copied().filter(|&vk| is_down(vk)).collect();
+        if held.is_empty() || now().saturating_duration_since(started) >= timeout {
+            return held;
+        }
+        sleep(poll_interval);
+    }
+}
+
+/// Whether `vk` is physically held right now. `GetAsyncKeyState` reports a
+/// negative value (bit 15 set) while the key is down.
+#[cfg(target_os = "windows")]
+fn vk_physically_down(vk: u16) -> bool {
+    // SAFETY: GetAsyncKeyState accepts any virtual-key value and has no
+    // preconditions.
+    let state = unsafe { GetAsyncKeyState(i32::from(vk)) };
+    state < 0
+}
+
+/// Injects a key-up for every VK in `held` so a physical hold stops
+/// contributing to the modifiers the focused app sees. The user's eventual
+/// real key-up then just repeats an already-released edge — harmless.
+/// Events carry [`INJECTION_EXTRA_INFO`] and are sent under an
+/// [`InjectionGuard`] so our own hook drops them.
+#[cfg(target_os = "windows")]
+fn send_modifier_key_ups(held: &[u16]) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+    };
+
+    let _guard = InjectionGuard::begin();
+    let inputs: Vec<INPUT> = held
+        .iter()
+        .map(|&vk| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(vk),
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: INJECTION_EXTRA_INFO,
+                },
+            },
+        })
+        .collect();
+    if inputs.is_empty() {
+        return;
+    }
+    // SAFETY: `inputs` is a valid slice that outlives the call.
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        // Rare (e.g. UIPI filtering): the injection proceeds anyway; worst
+        // case is the pre-FR-005-01 behavior of the modifier blending in.
+        log::warn!(
+            "modifier key-up injection incomplete ({}/{} sent)",
+            sent,
+            inputs.len()
+        );
+    }
+}
+
+/// FR-005-01: wait for the physical release of every chord-modifier the
+/// user may still be holding from the shortcut that fired (up to
+/// [`MODIFIER_RELEASE_TIMEOUT`], polling `GetAsyncKeyState`), then inject
+/// synthetic key-ups for any still held. Call immediately before
+/// synthesizing keystrokes — after it returns, no held modifier can turn
+/// `Ctrl+V` into `Win+V`/`Ctrl+Alt+V` (AC-005-08) or typed characters into
+/// shortcuts.
+///
+/// No-op on other platforms: v1 is Windows-first and neither enigo backend
+/// there exposes an async key-state query.
+pub(crate) fn await_shortcut_modifier_release() {
+    #[cfg(target_os = "windows")]
+    {
+        let still_held = poll_until_released(
+            CHORD_MODIFIER_VKS,
+            MODIFIER_RELEASE_TIMEOUT,
+            MODIFIER_RELEASE_POLL,
+            vk_physically_down,
+            std::thread::sleep,
+            Instant::now,
+        );
+        if still_held.is_empty() {
+            return;
+        }
+        log::warn!(
+            "forcing synthetic key-up for still-held modifier VK(s) {still_held:02X?} before injection"
+        );
+        send_modifier_key_ups(&still_held);
     }
 }
 
@@ -206,6 +366,9 @@ pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
 /// against those. Callers that can detect a failed chord (e.g. the
 /// receipt-sequenced paste path) may use a much shorter hold.
 pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    // FR-005-01: must precede the guard — the wait depends on seeing the
+    // user's own key releases.
+    await_shortcut_modifier_release();
     let _guard = InjectionGuard::begin();
     // Platform-specific key definitions
     #[cfg(target_os = "macos")]
@@ -236,6 +399,7 @@ pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> 
 /// This is commonly used in terminal applications on Linux to paste without formatting.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
 pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    await_shortcut_modifier_release();
     let _guard = InjectionGuard::begin();
     // Platform-specific key definitions
     #[cfg(target_os = "macos")]
@@ -272,6 +436,7 @@ pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), St
 /// This is more universal for terminal applications and legacy software.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
 pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    await_shortcut_modifier_release();
     let _guard = InjectionGuard::begin();
     #[cfg(target_os = "windows")]
     let insert_key_code = Key::Other(0x2D); // VK_INSERT
@@ -298,6 +463,9 @@ pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), St
 /// Pastes text directly using the enigo text method.
 /// This tries to use system input methods if possible, otherwise simulates keystrokes one by one.
 pub fn paste_text_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
+    // FR-005-01 also guards direct typing: a held Ctrl would turn typed
+    // characters into shortcuts (e.g. "x" becoming Ctrl+X).
+    await_shortcut_modifier_release();
     let _guard = InjectionGuard::begin();
     enigo
         .text(text)
@@ -327,9 +495,6 @@ pub fn send_menu_mask_key() {
 
     /// Unassigned VK; the same value AutoHotkey and handy-keys mask with.
     const MENU_MASK_VK: u16 = 0xE8;
-    /// `dwExtraInfo` marker ("TCMK" in ASCII), distinct from handy-keys'
-    /// own so our injections stay attributable in hook logs.
-    const MENU_MASK_EXTRA_INFO: usize = 0x5443_4D4B;
 
     let input = |flags: KEYBD_EVENT_FLAGS| INPUT {
         r#type: INPUT_KEYBOARD,
@@ -339,7 +504,7 @@ pub fn send_menu_mask_key() {
                 wScan: 0,
                 dwFlags: flags,
                 time: 0,
-                dwExtraInfo: MENU_MASK_EXTRA_INFO,
+                dwExtraInfo: INJECTION_EXTRA_INFO,
             },
         },
     };
@@ -350,5 +515,144 @@ pub fn send_menu_mask_key() {
         // Rare (e.g. UIPI filtering); the cost is the pre-mask behavior:
         // the shell may open its menu when the modifier is released.
         log::warn!("menu mask key injection failed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+    use std::collections::HashSet;
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    /// FR-005-01: with nothing held the wait must be free — one poll, no
+    /// sleep — so it never delays the common injection path.
+    #[test]
+    fn modifier_wait_returns_immediately_when_nothing_held() {
+        let polls = Cell::new(0u32);
+        let sleeps = Cell::new(0u32);
+        let held: HashSet<u16> = HashSet::new();
+
+        let still_held = poll_until_released(
+            &[0xA2, 0x5B],
+            ms(500),
+            ms(10),
+            |vk| {
+                polls.set(polls.get() + 1);
+                held.contains(&vk)
+            },
+            |_| sleeps.set(sleeps.get() + 1),
+            Instant::now,
+        );
+
+        assert!(still_held.is_empty());
+        assert_eq!(polls.get(), 2);
+        assert_eq!(sleeps.get(), 0);
+    }
+
+    /// FR-005-01 / AC-005-08: a modifier the user is still holding is
+    /// polled until its physical release, then the injection may proceed.
+    #[test]
+    fn modifier_wait_polls_until_physical_release() {
+        const VK_LCONTROL_TEST: u16 = 0xA2;
+        let held = RefCell::new(HashSet::from([VK_LCONTROL_TEST]));
+        let start = Instant::now();
+        let now = Cell::new(start);
+
+        let still_held = poll_until_released(
+            &[VK_LCONTROL_TEST],
+            ms(500),
+            ms(10),
+            |vk| held.borrow().contains(&vk),
+            |d| {
+                now.set(now.get() + d);
+                // The user lets go 120 ms in.
+                if now.get().duration_since(start) >= ms(120) {
+                    held.borrow_mut().clear();
+                }
+            },
+            || now.get(),
+        );
+
+        assert!(still_held.is_empty());
+        let waited = now.get().duration_since(start);
+        assert!(waited >= ms(120) && waited < ms(200), "waited {waited:?}");
+    }
+
+    /// FR-005-01: a modifier never released within 500 ms is reported back
+    /// so the caller can force a synthetic key-up before injecting.
+    #[test]
+    fn modifier_wait_times_out_and_reports_still_held_keys() {
+        const VK_LWIN_TEST: u16 = 0x5B;
+        const VK_RCONTROL_TEST: u16 = 0xA3;
+        let held: HashSet<u16> = HashSet::from([VK_LWIN_TEST, VK_RCONTROL_TEST]);
+        let start = Instant::now();
+        let now = Cell::new(start);
+
+        let still_held = poll_until_released(
+            &[0xA0, VK_LWIN_TEST, VK_RCONTROL_TEST],
+            ms(500),
+            ms(10),
+            |vk| held.contains(&vk),
+            |d| now.set(now.get() + d),
+            || now.get(),
+        );
+
+        assert_eq!(
+            still_held,
+            vec![VK_LWIN_TEST, VK_RCONTROL_TEST],
+            "order must follow the input list so callers can report/inject deterministically"
+        );
+        assert!(now.get().duration_since(start) >= ms(500));
+    }
+
+    /// FR-005-01: a partial release reports only the modifiers the user
+    /// still holds at the deadline.
+    #[test]
+    fn modifier_wait_reports_only_modifiers_held_at_timeout() {
+        let held = RefCell::new(HashSet::from([0xA2u16, 0x5Bu16]));
+        let start = Instant::now();
+        let now = Cell::new(start);
+
+        let still_held = poll_until_released(
+            &[0xA2, 0x5B],
+            ms(500),
+            ms(10),
+            |vk| held.borrow().contains(&vk),
+            |d| {
+                now.set(now.get() + d);
+                // Ctrl released early; Win stays held forever.
+                if now.get().duration_since(start) >= ms(50) {
+                    held.borrow_mut().remove(&0xA2);
+                }
+            },
+            || now.get(),
+        );
+
+        assert_eq!(still_held, vec![0x5B]);
+    }
+
+    /// AC-005-08 (Windows): the wait covers both sides of every modifier
+    /// that can turn an injected `Ctrl+V` into a different chord — Ctrl,
+    /// Shift, Alt and Win.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn modifier_wait_covers_every_chord_modifier_vk() {
+        assert_eq!(
+            CHORD_MODIFIER_VKS,
+            &[
+                VK_LSHIFT.0,
+                VK_RSHIFT.0,
+                VK_LCONTROL.0,
+                VK_RCONTROL.0,
+                VK_LMENU.0,
+                VK_RMENU.0,
+                VK_LWIN.0,
+                VK_RWIN.0,
+            ]
+        );
     }
 }
