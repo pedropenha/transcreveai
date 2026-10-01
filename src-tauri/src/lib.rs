@@ -982,6 +982,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_delete,
             commands::meeting::meeting_consent_accept,
             commands::meeting::meeting_consent_copy,
+            commands::detector::detector_respond,
+            commands::meeting_rules::meeting_rules_list,
+            commands::meeting_rules::meeting_rule_add,
+            commands::meeting_rules::meeting_rule_set_action,
+            commands::meeting_rules::meeting_rule_delete,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

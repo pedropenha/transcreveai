@@ -38,6 +38,16 @@ impl RuleAction {
             _ => Self::Ask,
         }
     }
+
+    /// The `meeting_app_rules.action` string for this action — the inverse of
+    /// [`RuleAction::parse`], used on the `detector://meeting` payload.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::AutoStart => "auto_start",
+            Self::Ignore => "ignore",
+        }
+    }
 }
 
 /// A meeting app identified behind the mic right now.
@@ -80,7 +90,7 @@ pub const BROWSER_EXES: &[&str] = &[
     "iexplore.exe",
 ];
 
-fn is_browser_exe(exe_name: &str) -> bool {
+pub(crate) fn is_browser_exe(exe_name: &str) -> bool {
     BROWSER_EXES
         .iter()
         .any(|browser| exe_name.eq_ignore_ascii_case(browser))

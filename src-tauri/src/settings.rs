@@ -740,6 +740,28 @@ pub struct AppSettings {
     /// "Ainda em reunião?"; unanswered for 2 min stops the meeting.
     #[serde(default = "default_meeting_silence_checkin_enabled")]
     pub meeting_silence_checkin_enabled: bool,
+    /// Master switch for meeting detection (FR-008-15 "Detectar reuniões").
+    /// On by default; consumed by the detector gate (T-061).
+    #[serde(default = "default_meeting_detection_enabled")]
+    pub meeting_detection_enabled: bool,
+    /// "Detectar qualquer chamada" (FR-008-03): an S1 mic-hold ≥ 10 s by a
+    /// non-browser, non-ignored process also fires a detection, labelled with
+    /// the exe file stem. Off by default.
+    #[serde(default)]
+    pub detect_any_call_enabled: bool,
+    /// Global auto-start toggle (FR-008-13): detections start recording
+    /// without asking. Off by default; consumed by T-069 — T-061 only stores
+    /// it and flags `auto_start` on the emitted detection.
+    #[serde(default)]
+    pub meeting_auto_start: bool,
+    /// Auto-stop on meeting end (FR-008-14). On by default; consumed by
+    /// T-069.
+    #[serde(default = "default_meeting_auto_stop")]
+    pub meeting_auto_stop: bool,
+    /// Optional notification sound for the detection toast (FR-008-11). Off
+    /// by default.
+    #[serde(default)]
+    pub meeting_toast_sound: bool,
 }
 
 fn default_model() -> String {
@@ -754,6 +776,16 @@ fn default_settings_schema_version() -> u32 {
 
 fn default_hold_threshold_ms() -> u64 {
     300
+}
+
+/// FR-008-15: "Detectar reuniões" ships on.
+fn default_meeting_detection_enabled() -> bool {
+    true
+}
+
+/// FR-008-14: auto-stop ships on.
+fn default_meeting_auto_stop() -> bool {
+    true
 }
 
 fn default_double_tap_enabled() -> bool {
@@ -1329,6 +1361,11 @@ pub fn get_default_settings() -> AppSettings {
         meeting_consent_text: default_meeting_consent_text(),
         meeting_consent_reminder: default_meeting_consent_reminder(),
         meeting_silence_checkin_enabled: default_meeting_silence_checkin_enabled(),
+        meeting_detection_enabled: default_meeting_detection_enabled(),
+        detect_any_call_enabled: false,
+        meeting_auto_start: false,
+        meeting_auto_stop: default_meeting_auto_stop(),
+        meeting_toast_sound: false,
     }
 }
 

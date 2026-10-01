@@ -1,9 +1,11 @@
 pub mod audio;
+pub mod detector;
 pub mod error;
 pub mod flowbar;
 pub mod history;
 pub mod llm;
 pub mod meeting;
+pub mod meeting_rules;
 pub mod models;
 pub mod secrets;
 pub mod text_pipeline;

@@ -30,6 +30,9 @@ pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// Whether detection runs right now. Built fresh each tick from settings.
 #[derive(Clone, Copy, Debug)]
 pub struct DetectionGate {
+    /// `meeting_detection_enabled` (FR-008-15 "Detectar reuniões") — the
+    /// feature's master switch (T-061).
+    pub enabled: bool,
     /// `meeting_detection_paused_until_ms` (T-007 tray pause, FR-010-14).
     pub paused_until_ms: Option<i64>,
     /// `privacy.offline_mode` (FR-011-08): while on, the detector stays quiet
@@ -41,7 +44,9 @@ pub struct DetectionGate {
 impl DetectionGate {
     /// Current instant in unix-ms is supplied so the gate stays pure/testable.
     pub fn suppressed(&self, now_ms: i64) -> bool {
-        tray::meeting_detection_is_paused(self.paused_until_ms, now_ms) || self.offline_mode
+        !self.enabled
+            || tray::meeting_detection_is_paused(self.paused_until_ms, now_ms)
+            || self.offline_mode
     }
 }
 
@@ -167,18 +172,22 @@ mod tests {
     }
 
     #[test]
-    fn gate_suppressed_when_paused_or_offline() {
+    fn gate_suppressed_when_disabled_paused_or_offline() {
         let now = 1_000_000i64;
-        let gate = |until, offline| DetectionGate {
+        let gate = |enabled, until, offline| DetectionGate {
+            enabled,
             paused_until_ms: until,
             offline_mode: offline,
         };
-        assert!(!gate(None, false).suppressed(now));
-        assert!(!gate(Some(now), false).suppressed(now));
-        assert!(!gate(Some(now - 1), false).suppressed(now));
-        assert!(gate(Some(now + 1), false).suppressed(now));
-        assert!(gate(None, true).suppressed(now));
-        assert!(gate(Some(now + 1), true).suppressed(now));
+        assert!(!gate(true, None, false).suppressed(now));
+        assert!(!gate(true, Some(now), false).suppressed(now));
+        assert!(!gate(true, Some(now - 1), false).suppressed(now));
+        assert!(gate(true, Some(now + 1), false).suppressed(now));
+        assert!(gate(true, None, true).suppressed(now));
+        assert!(gate(true, Some(now + 1), true).suppressed(now));
+        // The FR-008-15 master switch gates everything.
+        assert!(gate(false, None, false).suppressed(now));
+        assert!(gate(false, Some(now - 1), false).suppressed(now));
     }
 
     #[test]
