@@ -123,11 +123,11 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [x] **T-062** Toast não-ativável (compacto/expandido, ▾, recolher). — Refs: FR-008-07..12, AC-008-01..03, AC-008-07
 - [x] **T-063** Captura loopback + troca de dispositivo + gravação em blocos + recuperação. — Refs: FR-009-03..05, AC-009-04..05
 - [x] **T-064** Sessão de reunião: iniciar/pausar/parar, limites, check-in, indicador, consentimento. — Refs: FR-009-01..02, FR-009-06..09, AC-009-08
-- [ ] **T-065** Transcrição ao vivo por trilha + coexistência com ditado. — Refs: FR-009-10, FR-009-15, AC-009-03
-- [ ] **T-066** Janela da reunião (Minhas notas, Transcrição, Resumo). — Refs: FR-009-12..14, AC-009-02
-- [ ] **T-067** Pós-processamento: resumo, map-reduce, título, regenerar. — Refs: FR-009-16..22, AC-009-01, AC-009-06
-- [ ] **T-068** [P] Copiar como Markdown + lista/busca de reuniões. — Refs: FR-009-23, FR-009-25, AC-009-07
-- [ ] **T-069** Auto-start/auto-stop + **roteiro manual parcial** dos apps de reunião (Zoom, Teams, Meet, Webex) — o que não dá para automatizar vira checklist de smoke entregue no fim do loop. — Refs: AC-008-04..06, AC-008-08
+- [x] **T-065** Transcrição ao vivo por trilha + coexistência com ditado. — Refs: FR-009-10, FR-009-15, AC-009-03
+- [x] **T-066** Janela da reunião (Minhas notas, Transcrição, Resumo). — Refs: FR-009-12..14, AC-009-02
+- [x] **T-067** Pós-processamento: resumo, map-reduce, título, regenerar. — Refs: FR-009-16..22, AC-009-01, AC-009-06
+- [x] **T-068** [P] Copiar como Markdown + lista/busca de reuniões. — Refs: FR-009-23, FR-009-25, AC-009-07
+- [x] **T-069** Auto-start/auto-stop + **roteiro manual parcial** dos apps de reunião (Zoom, Teams, Meet, Webex) — o que não dá para automatizar vira checklist de smoke entregue no fim do loop. — Refs: AC-008-04..06, AC-008-08
 
 ## Fase 4 — v1.1+ (pós-v1)
 
