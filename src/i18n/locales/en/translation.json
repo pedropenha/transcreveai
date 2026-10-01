@@ -23,6 +23,7 @@
     "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
+    "meetings": "Meetings",
     "debug": "Debug",
     "about": "About"
   },
@@ -501,6 +502,29 @@
       "retranscribeError": "Failed to re-transcribe. Please try again.",
       "transcribing": "Transcribing...",
       "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon."
+    },
+    "meetings": {
+      "title": "Meetings",
+      "searchPlaceholder": "Search title, notes, summary or transcript...",
+      "loading": "Loading meetings...",
+      "empty": "No meetings yet. Start one from the Flow Bar or with New meeting.",
+      "emptySearch": "No meetings match your search.",
+      "newMeeting": "New meeting",
+      "newMeetingCall": "Computer call",
+      "newMeetingInPerson": "In person",
+      "open": "Open meeting {{title}}",
+      "copyMarkdown": "Copy as Markdown",
+      "copyError": "Could not copy the Markdown export.",
+      "delete": "Delete meeting",
+      "deleteError": "Could not delete the meeting.",
+      "status": {
+        "recording": "Recording",
+        "paused": "Paused",
+        "processing": "Processing",
+        "ready": "Ready",
+        "error": "Error",
+        "recovered": "Recovered"
+      }
     },
     "debug": {
       "title": "Debug",

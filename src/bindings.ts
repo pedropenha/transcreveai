@@ -1349,6 +1349,35 @@ async meetingList() : Promise<Result<Meeting[], CommandError>> {
 }
 },
 /**
+ * FR-009-25 (T-068): full-text search over title, summary, "Minhas notas"
+ * and transcript. `query` is raw user input — `fts_match_query` strips
+ * everything FTS5 would choke on; an empty/unindexable query lists all
+ * meetings (same result as `meeting_list`).
+ */
+async meetingSearch(query: string) : Promise<Result<Meeting[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_search", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-23 / AC-009-07 (T-068): assemble the meeting as a Markdown
+ * document — title, date, duration, app, Minhas notas, Resumo and the
+ * `[mm:ss] Falante: texto` transcript. Section and speaker labels follow
+ * `settings.app_language`; the frontend copies the returned string to the
+ * clipboard.
+ */
+async meetingExportMarkdown(id: string) : Promise<Result<string, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_export_markdown", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Delete a meeting row (segments/notes cascade) plus its audio blocks —
  * the dir is only removed when it sits inside `audio/meetings/`.
  */

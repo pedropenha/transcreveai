@@ -209,5 +209,6 @@ fn open_rules_conn(app: &tauri::AppHandle) -> Option<rusqlite::Connection> {
 
 pub mod blocks;
 pub mod capture;
+pub mod markdown;
 pub mod recovery;
 pub mod session;

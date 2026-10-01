@@ -23,6 +23,7 @@
     "advanced": "Avançado",
     "postProcessing": "Pós-Processamento",
     "history": "Histórico",
+    "meetings": "Reuniões",
     "debug": "Depuração",
     "about": "Sobre"
   },
@@ -501,6 +502,29 @@
       "retranscribeError": "Falha ao re-transcrever. Por favor, tente novamente.",
       "transcribing": "Transcrevendo...",
       "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente."
+    },
+    "meetings": {
+      "title": "Reuniões",
+      "searchPlaceholder": "Buscar título, notas, resumo ou transcrição...",
+      "loading": "Carregando reuniões...",
+      "empty": "Nenhuma reunião ainda. Inicie uma pela Flow Bar ou pelo botão Nova reunião.",
+      "emptySearch": "Nenhuma reunião corresponde à busca.",
+      "newMeeting": "Nova reunião",
+      "newMeetingCall": "Chamada no computador",
+      "newMeetingInPerson": "Presencial",
+      "open": "Abrir reunião {{title}}",
+      "copyMarkdown": "Copiar como Markdown",
+      "copyError": "Não foi possível copiar o Markdown.",
+      "delete": "Excluir reunião",
+      "deleteError": "Não foi possível excluir a reunião.",
+      "status": {
+        "recording": "Gravando",
+        "paused": "Pausada",
+        "processing": "Processando",
+        "ready": "Pronta",
+        "error": "Erro",
+        "recovered": "Recuperada"
+      }
     },
     "debug": {
       "title": "Depuração",

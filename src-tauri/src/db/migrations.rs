@@ -301,4 +301,32 @@ pub(crate) static MIGRATIONS: &[M] = &[
             ('builtin-webex-host',   'CiscoCollabHost.exe', NULL, 'Webex',          'ask', 1),
             ('builtin-webex-mta',    'webexmta.exe',        NULL, 'Webex',          'ask', 1);",
     ),
+    // --- FTS over meeting title + summary (11, T-068) -------------------------
+    // FR-009-25 searches title, notes, summary and transcript. Migration 9
+    // already indexes `meeting_segments.text` (meeting_fts) and `notes`
+    // (notes_fts); `meeting_search` unions the three sources, so this table
+    // only needs to cover what was missing: `meetings.title` and
+    // `meetings.summary_md`. Same external-content + trigger shape as the
+    // existing FTS tables.
+    M::up(
+        "CREATE VIRTUAL TABLE meetings_fts USING fts5(
+            title, summary_md,
+            content='meetings', content_rowid='rowid'
+        );
+        CREATE TRIGGER meetings_fts_ai AFTER INSERT ON meetings BEGIN
+            INSERT INTO meetings_fts(rowid, title, summary_md)
+            VALUES (new.rowid, new.title, new.summary_md);
+        END;
+        CREATE TRIGGER meetings_fts_ad AFTER DELETE ON meetings BEGIN
+            INSERT INTO meetings_fts(meetings_fts, rowid, title, summary_md)
+            VALUES ('delete', old.rowid, old.title, old.summary_md);
+        END;
+        CREATE TRIGGER meetings_fts_au AFTER UPDATE ON meetings BEGIN
+            INSERT INTO meetings_fts(meetings_fts, rowid, title, summary_md)
+            VALUES ('delete', old.rowid, old.title, old.summary_md);
+            INSERT INTO meetings_fts(rowid, title, summary_md)
+            VALUES (new.rowid, new.title, new.summary_md);
+        END;
+        INSERT INTO meetings_fts(meetings_fts) VALUES ('rebuild');",
+    ),
 ];

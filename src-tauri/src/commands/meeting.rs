@@ -12,7 +12,12 @@
 
 use tauri::{AppHandle, Manager};
 
-use crate::db::meetings::{Meeting, MeetingRepository, SqliteMeetingRepository};
+use crate::db::meetings::{
+    Meeting, MeetingRepository, MeetingSegmentRepository, SqliteMeetingRepository,
+    SqliteMeetingSegmentRepository,
+};
+use crate::db::notes::{NoteRepository, SqliteNoteRepository};
+use crate::meeting::markdown::{markdown_labels, render_meeting_markdown};
 use crate::meeting::session::{
     meeting_recording_active, open_session_db, remove_meeting_audio_dir, MeetingSessionManager,
     MeetingStateEvent, StartRequest,
@@ -113,6 +118,79 @@ pub fn meeting_list(app: AppHandle) -> CommandResult<Vec<Meeting>> {
     SqliteMeetingRepository::new(&conn)
         .list()
         .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Failed to list meetings", e))
+}
+
+/// FR-009-25 (T-068): full-text search over title, summary, "Minhas notas"
+/// and transcript. `query` is raw user input — `fts_match_query` strips
+/// everything FTS5 would choke on; an empty/unindexable query lists all
+/// meetings (same result as `meeting_list`).
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_search(app: AppHandle, query: String) -> CommandResult<Vec<Meeting>> {
+    let conn = open_session_db(&app)?;
+    let repo = SqliteMeetingRepository::new(&conn);
+    let fail = |e| CommandError::logged(CommandErrorCode::Internal, "Failed to search meetings", e);
+    match crate::db::fts_match_query(&query) {
+        Some(fts_query) => repo.search(&fts_query).map_err(fail),
+        None => repo.list().map_err(fail),
+    }
+}
+
+/// FR-009-23 / AC-009-07 (T-068): assemble the meeting as a Markdown
+/// document — title, date, duration, app, Minhas notas, Resumo and the
+/// `[mm:ss] Falante: texto` transcript. Section and speaker labels follow
+/// `settings.app_language`; the frontend copies the returned string to the
+/// clipboard.
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_export_markdown(app: AppHandle, id: String) -> CommandResult<String> {
+    let conn = open_session_db(&app)?;
+    let meeting = SqliteMeetingRepository::new(&conn)
+        .get(&id)
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
+        })?
+        .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "Meeting not found"))?;
+    let notes = SqliteNoteRepository::new(&conn)
+        .list_by_meeting(&id)
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Failed to load the notes", e)
+        })?;
+    let segments = SqliteMeetingSegmentRepository::new(&conn)
+        .list_by_meeting(&id)
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to load the transcript",
+                e,
+            )
+        })?;
+
+    // "Minhas notas" = the meeting note bodies concatenated (usually one
+    // row); kept verbatim — FR-009-19 says notes are never rewritten.
+    let notes_md = notes
+        .iter()
+        .map(|n| n.body_md.trim())
+        .filter(|b| !b.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let labels = markdown_labels(&get_settings(&app).app_language);
+    let started_at_label = chrono::DateTime::from_timestamp(meeting.started_at, 0)
+        .map(|dt| {
+            dt.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|| "—".to_string());
+
+    Ok(render_meeting_markdown(
+        &meeting,
+        Some(notes_md.as_str()).filter(|s| !s.is_empty()),
+        &segments,
+        &labels,
+        &started_at_label,
+    ))
 }
 
 /// Delete a meeting row (segments/notes cascade) plus its audio blocks —
