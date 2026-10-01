@@ -36,11 +36,16 @@
 
 ## Em andamento (lanes)
 
-(onda 4 em andamento — 6 lanes)
+- **T-030** `feat/t030` @ `ecc-t030` — inserção paste / espera de modificadores
+- **T-031** `feat/t031` @ `ecc-t031` — métodos de inserção, `auto`, UIPI → clipboard_only
+- **T-035** `feat/t035` @ `ecc-t035` — pipeline/ + limpeza light pt-BR
+- **T-040** `feat/t040` @ `ecc-t040` — Flow Bar (estados, hover, click-through, inferior-centro)
+- **T-043** `feat/t043` @ `ecc-t043` — tela Modelos (só locais na v1)
+- **T-050** `feat/t050` @ `ecc-t050` — LlmProvider BYOK + teste de conexão
 
 ## Próximas na DAG (prontas para lanes)
 
-- **T-040** Flow Bar (dep. T-008 ✔) · **T-043** [P] telas de modelos · **T-044** [P] configurações+dicionário · **T-046** privacidade · **T-050** LLM BYOK (dep. T-016 ✔) · **T-030/T-031** inserção · **T-035** pipeline (dep. T-009 ✔) · **T-045** onboarding · **T-041/T-042** Flow Bar pt2/Hub · **T-061..T-069** reuniões (dep. T-060/T-063 em andamento)
+- **T-044** [P] configurações+dicionário (ideal após T-035) · **T-046** privacidade · **T-045** onboarding · **T-041** Flow Bar pt2 (dep. T-040) · **T-042** Hub · **T-061** detector (dep. T-060 ✔) · **T-062** toast (dep. T-061) · **T-064** sessão de reunião (dep. T-063 ✔, T-061) · **T-065..T-069** transcrição/janela/resumo/export/smoke (dep. T-064, T-050)
 
 ## Merges pendentes
 
