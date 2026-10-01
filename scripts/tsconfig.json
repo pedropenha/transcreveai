@@ -1,0 +1,16 @@
+{
+  // Type-check context for the CI/maintenance scripts in this directory.
+  // They run under Bun (`bun scripts/…`), so they get Bun + Node globals;
+  // the app tsconfig only covers `src/`.
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node", "bun"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true
+  },
+  "include": ["./*.ts"]
+}
