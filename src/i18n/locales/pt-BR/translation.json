@@ -703,7 +703,17 @@
   "overlay": {
     "transcribing": "Transcrevendo...",
     "processing": "Processando...",
-    "nothingHeard": "Nada ouvido"
+    "nothingHeard": "Nada ouvido",
+    "dictate": "Ditar",
+    "notetaker": "Notetaker",
+    "cancel": "Cancelar",
+    "stop": "Parar",
+    "inserting": "Inserindo...",
+    "listening": "Ouvindo",
+    "done": "Concluído",
+    "failed": "Ditado falhou",
+    "retry": "Tentar novamente",
+    "retrying": "Tentando novamente..."
   },
   "whatsNew": {
     "title": "Novidades no Transcreve.ai v{{version}}"

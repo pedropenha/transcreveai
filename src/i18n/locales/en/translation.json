@@ -706,7 +706,17 @@
   "overlay": {
     "transcribing": "Transcribing...",
     "processing": "Processing...",
-    "nothingHeard": "Nothing heard"
+    "nothingHeard": "Nothing heard",
+    "dictate": "Dictate",
+    "notetaker": "Notetaker",
+    "cancel": "Cancel",
+    "stop": "Stop",
+    "inserting": "Inserting...",
+    "listening": "Listening",
+    "done": "Done",
+    "failed": "Dictation failed",
+    "retry": "Try again",
+    "retrying": "Retrying..."
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",

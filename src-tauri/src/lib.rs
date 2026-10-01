@@ -449,6 +449,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
 
+    // FR-001-10: with the default `flowbar_visibility == Always` the bar is
+    // already present as the idle slit, before any session.
+    overlay::apply_flowbar_presence(app_handle);
+
     // F008/T-060: watch the microphone ConsentStore + window titles and log
     // meeting-app detections. T-061 builds the detector state machine
     // (debounce, title memory, `detector://meeting` events) on top of it.
@@ -844,6 +848,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::text_pipeline::reset_filler_words,
             commands::text_pipeline::change_cleanup_level_setting,
             commands::text_pipeline::change_spoken_punctuation_setting,
+            commands::flowbar::flowbar_set_hover,
+            commands::flowbar::flowbar_toggle_dictation,
+            commands::flowbar::flowbar_start_notetaker,
+            commands::flowbar::flowbar_retry_last_failed,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

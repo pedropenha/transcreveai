@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod error;
+pub mod flowbar;
 pub mod history;
 pub mod models;
 pub mod secrets;
