@@ -41,13 +41,18 @@ const PAUSE_ACK_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Atomics shared by the callback and consumer; audio uses a wait-free SPSC ring.
 /// The callback must remain allocation-, lock-, logging-, and blocking-free.
+/// `pub(crate)` so the `audio-fixture` WAV source can share the same contract.
 #[derive(Default)]
-struct CaptureTransportState {
-    pause_requested: AtomicBool,
+pub(crate) struct CaptureTransportState {
+    pub(crate) pause_requested: AtomicBool,
     /// Set after forwarding a pause's boundary block; subsequent callbacks
     /// remain silent until the consumer clears the request.
-    pause_acknowledged: AtomicBool,
-    overrun_samples: AtomicU64,
+    pub(crate) pause_acknowledged: AtomicBool,
+    pub(crate) overrun_samples: AtomicU64,
+    /// Set by the consumer while a dictation session is recording. Only the
+    /// `audio-fixture` WAV source reads it — to (re)start playback exactly on
+    /// `Cmd::Start`; the cpal callback ignores it entirely.
+    pub(crate) session_active: AtomicBool,
 }
 
 /// How 16 kHz mono frames should be filtered for one recording session.
@@ -120,6 +125,57 @@ pub struct FrameSubscriber {
     /// per-session concept and does not run outside a recording.
     pub when_idle: bool,
     pub callback: AudioFrameCallback,
+}
+
+/// Whatever feeds the capture ring for the life of one `run_consumer`. Kept
+/// as an opaque guard: dropping it ends the input (cpal stream teardown, or
+/// the WAV fixture feeder thread joining).
+#[allow(dead_code)] // payloads are Drop-guards only: stream teardown / feeder join
+enum InputSource {
+    Cpal(cpal::Stream),
+    #[cfg(feature = "audio-fixture")]
+    WavFixture(super::fixture::FixtureFeeder),
+}
+
+/// Path of the WAV fixture configured via `TRANSCREVE_AUDIO_FIXTURE`, or None.
+/// Compiles to a constant `None` in builds without the `audio-fixture`
+/// feature so release binaries can never be pointed at a file.
+#[cfg(feature = "audio-fixture")]
+fn wav_fixture_path() -> Option<std::path::PathBuf> {
+    super::fixture::fixture_path_from_env()
+}
+
+/// `audio-fixture` compiled out: no fixture can ever be configured.
+#[cfg(not(feature = "audio-fixture"))]
+fn wav_fixture_path() -> Option<std::path::PathBuf> {
+    None
+}
+
+/// Fixture branch of the worker's init, kept out of `open()`'s cpal plumbing.
+/// Called only when `TRANSCREVE_AUDIO_FIXTURE` names a WAV file. The returned
+/// `Consumer` is the same SPSC ring shape the mic path produces; `in_sample_rate`
+/// is the file's rate so `CaptureProcessor`'s resampler treats it like a device
+/// running at that rate.
+#[cfg(feature = "audio-fixture")]
+fn open_fixture_source(
+    path: &std::path::Path,
+    transport: Arc<CaptureTransportState>,
+    vad: Option<VadConfig>,
+    level_cb: Option<LevelCallback>,
+    subscribers: Vec<FrameSubscriber>,
+) -> Result<(InputSource, CaptureProcessor, Consumer<f32>), String> {
+    let (feeder, sample_consumer, in_sample_rate) =
+        super::fixture::FixtureFeeder::start(path, transport)
+            .map_err(|e| format!("Failed to open WAV fixture {}: {e}", path.display()))?;
+    log::info!(
+        "WAV audio fixture {} feeding the capture pipeline at {} Hz",
+        path.display(),
+        in_sample_rate
+    );
+    let processor =
+        CaptureProcessor::new(in_sample_rate, vad, level_cb, subscribers, Instant::now())
+            .map_err(|e| format!("Failed to initialize the audio pipeline: {e}"))?;
+    Ok((InputSource::WavFixture(feeder), processor, sample_consumer))
 }
 
 pub struct AudioRecorder {
@@ -277,15 +333,27 @@ impl AudioRecorder {
 
         self.stream_error.store(false, Ordering::Relaxed);
 
+        // Test builds only (T-009): TRANSCREVE_AUDIO_FIXTURE replaces the
+        // microphone with a WAV file. `wav_fixture_path()` is a constant `None`
+        // when the `audio-fixture` feature is compiled out, so release
+        // binaries can never be pointed at a file.
+        let wav_fixture = wav_fixture_path();
+
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>();
         let (init_tx, init_rx) = mpsc::sync_channel::<Result<(), String>>(1);
 
         let host = crate::audio_toolkit::get_cpal_host();
-        let device = match device {
-            Some(dev) => dev,
-            None => host
-                .default_input_device()
-                .ok_or_else(|| Error::new(std::io::ErrorKind::NotFound, "No input device found"))?,
+        let device = match device.or_else(|| host.default_input_device()) {
+            Some(dev) => Some(dev),
+            // A WAV fixture can run on machines with no input device at all
+            // (headless E2E runners); the mic path still requires one.
+            None if wav_fixture.is_some() => None,
+            None => {
+                return Err(Box::new(Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "No input device found",
+                )))
+            }
         };
 
         let thread_device = device.clone();
@@ -302,7 +370,20 @@ impl AudioRecorder {
         let worker = std::thread::spawn(move || {
             let transport = Arc::new(CaptureTransportState::default());
             let init_result =
-                (|| -> Result<(cpal::Stream, CaptureProcessor, Consumer<f32>), String> {
+                (|| -> Result<(InputSource, CaptureProcessor, Consumer<f32>), String> {
+                    #[cfg(feature = "audio-fixture")]
+                    if let Some(path) = wav_fixture.as_deref() {
+                        return open_fixture_source(
+                            path,
+                            Arc::clone(&transport),
+                            vad,
+                            level_cb,
+                            subscribers,
+                        );
+                    }
+
+                    let thread_device =
+                        thread_device.ok_or_else(|| "No input device found".to_string())?;
                     let config_started = Instant::now();
                     let device_name = thread_device.name().unwrap_or_default();
                     let cached_config = config_cache
@@ -426,11 +507,11 @@ impl AudioRecorder {
                     )
                     .map_err(|e| format!("Failed to initialize the audio pipeline: {e}"))?;
 
-                    Ok((stream, processor, sample_consumer))
+                    Ok((InputSource::Cpal(stream), processor, sample_consumer))
                 })();
 
             match init_result {
-                Ok((stream, processor, sample_consumer)) => {
+                Ok((source, processor, sample_consumer)) => {
                     let _ = init_tx.send(Ok(()));
                     run_consumer(
                         processor,
@@ -439,7 +520,9 @@ impl AudioRecorder {
                         transport,
                         Arc::clone(&stream_error),
                     );
-                    drop(stream);
+                    // Ending the cpal stream or the fixture feeder happens on
+                    // drop — for the feeder that stops and joins its thread.
+                    drop(source);
                 }
                 Err(error_message) => {
                     // A failed open may mean the cached config went stale
@@ -454,7 +537,7 @@ impl AudioRecorder {
 
         match init_rx.recv() {
             Ok(Ok(())) => {
-                self.device = Some(device);
+                self.device = device;
                 self.cmd_tx = Some(cmd_tx);
                 self.worker_handle = Some(worker);
                 Ok(())
@@ -585,8 +668,9 @@ impl AudioRecorder {
     }
 
     /// Real-time callback body. Keep this allocation-free, wait-free, and free
-    /// of locks, logging, clocks, and system calls.
-    fn write_input_to_ring<T>(
+    /// of locks, logging, clocks, and system calls. `pub(crate)` so the
+    /// `audio-fixture` WAV feeder can push through the identical path.
+    pub(crate) fn write_input_to_ring<T>(
         data: &[T],
         channels: usize,
         use_channel: Option<usize>,
@@ -1105,10 +1189,14 @@ fn run_consumer(
                         // Ignore overruns accumulated while the always-on stream
                         // was idle; only active-capture loss is relevant.
                         transport.overrun_samples.store(0, Ordering::Release);
+                        // Tells the WAV fixture source (audio-fixture builds)
+                        // to restart playback; ignored by the cpal callback.
+                        transport.session_active.store(true, Ordering::Release);
                         processor.begin_recording(policy, ready_tx);
                         recording = true;
                     }
                     Cmd::Stop(reply_tx) => {
+                        transport.session_active.store(false, Ordering::Release);
                         processor
                             .observe_overrun(transport.overrun_samples.swap(0, Ordering::AcqRel));
                         recording = false;

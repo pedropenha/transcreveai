@@ -19,6 +19,13 @@ incremental = true # Compile your binary in smaller steps.
 name = "transcreve_ai_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# E2E test builds only (T-009, F002 technical notes): when this feature is
+# compiled in AND the `TRANSCREVE_AUDIO_FIXTURE` env var points to a WAV file,
+# the capture pipeline reads that file instead of a microphone. Release builds
+# never enable it, so production binaries cannot be pointed at a file.
+audio-fixture = []
+
 # [[bin]]
 # name = "cli"
 # path = "src/audio_toolkit/bin/cli.rs"

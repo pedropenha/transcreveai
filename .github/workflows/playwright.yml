@@ -8,6 +8,7 @@ on:
       - "bun.lock"
       - "playwright.config.*"
       - "tests/**"
+      - "e2e/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
