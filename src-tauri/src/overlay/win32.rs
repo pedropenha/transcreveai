@@ -149,6 +149,40 @@ pub(crate) fn windows_overlay_bounds_from_area(
     )
 }
 
+/// Generic physical-pixel move+size shared with the toast window (T-062):
+/// one `SetWindowPos`, no activation, no Z-order change. Bypasses tao's
+/// current-DPI logical conversion, which mislands cross-monitor moves.
+pub(crate) fn set_window_bounds_physical(
+    window: &tauri::webview::WebviewWindow,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+
+    let hwnd = window
+        .hwnd()
+        .map_err(|error| format!("failed to get window handle: {error}"))?;
+
+    // SAFETY: `hwnd` is a valid window handle owned by this process (obtained
+    // from tao); the remaining arguments are plain coordinates/flags — no
+    // borrowed buffers or out-params are involved.
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            x,
+            y,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+        .map_err(|error| format!("failed to set window bounds: {error}"))?;
+    }
+    Ok(())
+}
+
 /// Moves and sizes the overlay in one native SetWindowPos, bypassing tao's
 /// current-DPI logical conversion that mislands cross-monitor moves.
 pub(crate) fn place_windows_overlay(
@@ -157,8 +191,6 @@ pub(crate) fn place_windows_overlay(
     logical_width: f64,
     logical_height: f64,
 ) -> Result<(), String> {
-    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
-
     let monitor = get_monitor_with_cursor(app_handle)
         .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
     let text_scale = windows_text_scale_factor();
@@ -172,22 +204,8 @@ pub(crate) fn place_windows_overlay(
         effective_edge(&settings),
         settings.flowbar_position_offset,
     );
-    let hwnd = overlay_window
-        .hwnd()
-        .map_err(|error| format!("failed to get overlay window handle: {error}"))?;
-
-    unsafe {
-        SetWindowPos(
-            hwnd,
-            None,
-            x,
-            y,
-            width,
-            height,
-            SWP_NOACTIVATE | SWP_NOZORDER,
-        )
+    set_window_bounds_physical(overlay_window, x, y, width, height)
         .map_err(|error| format!("failed to set overlay bounds: {error}"))?;
-    }
 
     log::debug!(
         "windows overlay bounds: x={} y={} width={} height={} scale={} text_scale={}",

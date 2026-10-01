@@ -30,6 +30,7 @@ mod settings;
 mod shortcut;
 mod signal_handle;
 mod stt;
+mod toast;
 mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
@@ -571,6 +572,10 @@ fn toggle_meeting_from_surface(app: &AppHandle) {
             },
         );
     }
+    // F008/T-062: the non-activatable meeting toast — hidden window created
+    // up front (WebView2 cold start is too slow to launch per detection),
+    // driven by `detector://meeting` / `toast://show` events.
+    toast::init(app_handle);
 }
 
 #[tauri::command]
@@ -987,6 +992,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting_rules::meeting_rule_add,
             commands::meeting_rules::meeting_rule_set_action,
             commands::meeting_rules::meeting_rule_delete,
+            commands::toast::toast_set_collapsed,
+            commands::toast::toast_reopen,
+            commands::toast::toast_dismiss,
+            commands::toast::toast_set_content_height,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

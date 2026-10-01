@@ -7,7 +7,25 @@
 
 - **Alvo de merges**: `integration/v1` (worktree `C:\multimidia\ecc-v1`). `main` nunca é tocada.
 - **Base**: `chore/t-001a-baseline` + `chore/t-008-design-direction` (já mergeada em `3a82c14`).
-- **Última atualização**: 2026-10-01 — onda 5 mergeada em série (T-030→T-031→T-035→T-040→T-043→T-050); verificação pós-merge completa e verde (653 testes lib, clippy -D warnings, catracas ok, bindings regen). Pronto para retomar a próxima task na DAG (T-061).
+- **Última atualização**: 2026-10-02 — onda A (notetaker) em execução com 3 lanes paralelas: `feat/t-061-detector` (ecc-t061), `feat/t-062-toast` (ecc-t062), `feat/t-064-meeting-session` (ecc-t064). Onda 5 mergeada em série (T-030→T-031→T-035→T-040→T-043→T-050); verificação pós-merge completa e verde (653 testes lib, clippy -D warnings, catracas ok, bindings regen).
+
+## Em andamento (lanes)
+
+- **T-061** detector → `C:\multimidia\ecc-t061` (`feat/t-061-detector`): máquina pura + `detector://meeting` + `detector_respond` + `detector://start-requested` + settings de detecção + CRUD de `meeting_app_rules`.
+- **T-062** toast → `C:\multimidia\ecc-t062` (`feat/t-062-toast`): janela `toast` não-ativável, compacto/expandido/▾, colapso 60 s → ponto âmbar, `toast://show`, supressão DND/tela cheia. Consome `detector://meeting`; chama `detector_respond` via `invoke` direto (bindings chegam no merge).
+- **T-064** sessão → `C:\multimidia\ecc-t064` (`feat/t-064-meeting-session`): `MeetingSessionManager` + `meeting_start/pause/resume/stop/get/list/delete`, consentimento FR-009-02, limite FR-009-08, check-in FR-009-09, indicador FR-009-07. Consome `notetaker://start-requested` + `detector://start-requested`; emite `meeting://state` + `toast://show` + `meeting://process-requested` (seam T-067).
+
+### Contratos fixados entre lanes da onda A
+- `detector://meeting` → `{ detection_id, app_label, exe, pid, action, started_at }` / `{ detection_id, ended: true }` / `{ detection_id, dismissed: true }`.
+- `detector_respond(detection_id, action)` com `action ∈ start|start_mic_only|always|never|ignore_meeting|dismiss`; `start*`/`always` → `detector://start-requested { detection_id, app_label, exe, mic_only }`.
+- `meeting://state { meeting_id, status, elapsed_ms }`; `meeting://process-requested` = seam do pós-processamento (T-067).
+- `toast://state { collapsed, detection? }` backend→todas as janelas; `toast_set_collapsed`/`toast_reopen` commands.
+- Settings novos: T-061 → `meeting_detection_enabled`, `detect_any_call_enabled`, `meeting_auto_start`, `meeting_auto_stop`, `meeting_toast_sound`... (detecção); T-062 → `meeting_toast_position`, `meeting_toast_sound`; T-064 → `meeting_max_minutes`, `meeting_consent_*`, `meeting_silence_checkin_enabled`. ⚠️ `meeting_toast_sound` atribuído às duas lanes T-061/T-062 — deduplicar no merge.
+
+### Onda B (depois de T-064 mergear)
+- **T-065** transcrição ao vivo por trilha + coexistência com ditado · **T-066** janela da reunião · **T-067** pós-processamento/resumo (consome `meeting://process-requested`, `llm::router::complete_for_purpose`).
+### Onda C
+- **T-068** markdown/lista/busca · **T-069** auto-start/auto-stop + roteiro manual.
 
 ## Concluído
 
@@ -38,17 +56,13 @@
 - [x] **T-043** — merge `bb30a12`. Tela Modelos & Provedores, só locais na v1.
 - [x] **T-050** — merge `403ddfb`. Trait `LlmProvider` + roteamento cost-aware (BYOK).
 
-## Em andamento (lanes)
-
-- (nenhuma — onda 5 fechada; pendente: verificação pós-merge em `integration/v1`)
-
 ## Próximas na DAG (prontas para lanes)
 
-- **T-041** Flow Bar menu/soneca/sons · **T-042** Hub Início/Histórico · **T-044** Configurações + Dicionário (dep. T-035 ✔) · **T-045** onboarding · **T-046** privacidade/retenção · **T-061** detector (dep. T-060 ✔) · **T-062** toast · **T-064** sessão de reunião (dep. T-060/T-063 ✔) · **T-065–T-069**
+- **T-041** Flow Bar menu/soneca/sons · **T-042** Hub Início/Histórico · **T-044** Configurações + Dicionário (dep. T-035 ✔) · **T-045** onboarding · **T-046** privacidade/retenção
 
 ## Merges pendentes
 
-- (nenhum — as 6 lanes da onda 5 foram mergeadas em série nesta sessão)
+- Onda A: T-061, T-062, T-064 (ordem sugerida: T-064 → T-061 → T-062; conferir dedup de `meeting_toast_sound` e o wiring `detector://start-requested` → `meeting_start`).
 
 ## Bloqueios
 

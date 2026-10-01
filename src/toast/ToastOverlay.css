@@ -1,0 +1,353 @@
+@import "../styles/theme.css";
+
+/* ============================================================
+   Meeting toast (F008 / T-062) — same instrument surface as the Flow Bar:
+   flat theme surface + hairline border, shadow.floating (DESIGN.md §4/§9),
+   radius.lg, amber signal + camera glyph so meaning never rides on color.
+   The native window is content-sized (toast_set_content_height) and the card
+   is anchored to the window's bottom edge, so expand/collapse grows upward
+   while the toast's anchor above the Flow Bar never moves.
+   Keep card heights in sync with toastWindowHeight() in toastView.ts:
+   stage padding 16 + card (56 compact / 104 expanded / 272 with menu).
+   ============================================================ */
+
+:root {
+  --t-surface: color-mix(in srgb, var(--flowbar-surface) 98%, transparent);
+  --t-accent: var(--flowbar-warning); /* amber signal for detections */
+  --t-recording: var(--flowbar-recording); /* coral for "Gravando" */
+  --light-t-muted: var(--light-flowbar-text-muted);
+  --dark-t-muted: var(--dark-flowbar-text-muted);
+  --light-t-faint: color-mix(
+    in srgb,
+    var(--light-flowbar-text-muted) 72%,
+    transparent
+  );
+  --dark-t-faint: color-mix(
+    in srgb,
+    var(--dark-flowbar-text-muted) 72%,
+    transparent
+  );
+  --light-t-border: var(--light-flowbar-border);
+  --dark-t-border: var(--dark-flowbar-border);
+  --light-t-hair: color-mix(in srgb, var(--light-flowbar-text) 8%, transparent);
+  --dark-t-hair: color-mix(in srgb, var(--dark-flowbar-text) 8%, transparent);
+  --light-t-accent-soft: color-mix(
+    in srgb,
+    var(--primitive-amber-300) 22%,
+    transparent
+  );
+  --dark-t-accent-soft: color-mix(
+    in srgb,
+    var(--primitive-amber-200) 20%,
+    transparent
+  );
+
+  --t-muted: var(--light-t-muted);
+  --t-faint: var(--light-t-faint);
+  --t-border: var(--light-t-border);
+  --t-hair: var(--light-t-hair);
+  --t-accent-soft: var(--light-t-accent-soft);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --t-muted: var(--dark-t-muted);
+    --t-faint: var(--dark-t-faint);
+    --t-border: var(--dark-t-border);
+    --t-hair: var(--dark-t-hair);
+    --t-accent-soft: var(--dark-t-accent-soft);
+  }
+}
+:root[data-theme="light"] {
+  --t-muted: var(--light-t-muted);
+  --t-faint: var(--light-t-faint);
+  --t-border: var(--light-t-border);
+  --t-hair: var(--light-t-hair);
+  --t-accent-soft: var(--light-t-accent-soft);
+}
+:root[data-theme="dark"] {
+  --t-muted: var(--dark-t-muted);
+  --t-faint: var(--dark-t-faint);
+  --t-border: var(--dark-t-border);
+  --t-hair: var(--dark-t-hair);
+  --t-accent-soft: var(--dark-t-accent-soft);
+}
+
+.toast-stage {
+  position: fixed;
+  inset: 0;
+  padding: 16px; /* room for shadow.floating; counted in the reported height */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end; /* card anchors to the window's bottom edge */
+  align-items: center;
+  font-family: var(--font-family-sans);
+  color: var(--flowbar-text);
+}
+
+/* Screen-reader-only live region (same trick as the Flow Bar). */
+.toast-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.tcard {
+  width: 344px;
+  max-width: calc(100vw - 34px);
+  height: 56px;
+  box-sizing: border-box;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--t-border);
+  background: var(--t-surface);
+  box-shadow: var(--shadow-floating);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: tcard-pop var(--motion-duration-slow) var(--motion-easing-enter);
+  transition: height var(--motion-duration-slow) var(--motion-easing-enter);
+}
+.tcard.expanded {
+  height: 104px;
+}
+@keyframes tcard-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Compact row: icon | title + "● Agora · <App>" | ✕ (expanded only). */
+.trow {
+  height: 56px;
+  flex: none;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ticon {
+  flex: none;
+  color: var(--t-accent);
+}
+.ticon-warn {
+  flex: none;
+  color: var(--t-accent);
+}
+.ttexts {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ttitle {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tsub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--t-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tnow {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--t-accent);
+}
+
+/* Close button — same geometry as the Flow Bar's .sx. */
+.sx {
+  width: var(--control-target-min);
+  height: var(--control-target-min);
+  border-radius: var(--radius-pill);
+  flex: none;
+  padding: 0;
+  border: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--t-muted);
+  background: var(--t-hair);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-interaction)
+      var(--motion-easing-standard),
+    color var(--motion-duration-interaction) var(--motion-easing-standard);
+}
+.sx:hover {
+  background: var(--t-accent-soft);
+  color: var(--flowbar-text);
+}
+.sx:focus-visible {
+  outline: 2px solid var(--flowbar-accent);
+  outline-offset: 2px;
+}
+.tclose {
+  margin-inline-start: auto;
+}
+
+/* Expanded action row: primary "Iniciar Notetaker" + ▾ menu toggle. */
+.tactions {
+  height: 48px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-top: 1px solid var(--t-hair);
+}
+.tprimary {
+  flex: 1;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-md);
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primitive-neutral-950);
+  background: var(--flowbar-accent);
+  cursor: pointer;
+  transition:
+    filter var(--motion-duration-interaction) var(--motion-easing-standard),
+    transform var(--motion-duration-fast) var(--motion-easing-standard);
+}
+.tprimary:hover {
+  filter: brightness(1.08);
+}
+.tprimary:active {
+  transform: scale(0.98);
+}
+.tprimary:focus-visible {
+  outline: 2px solid var(--flowbar-text);
+  outline-offset: 2px;
+}
+.tmenu-btn {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 1px solid var(--t-border);
+  border-radius: var(--radius-md);
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--t-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-interaction)
+      var(--motion-easing-standard),
+    color var(--motion-duration-interaction) var(--motion-easing-standard);
+}
+.tmenu-btn:hover,
+.tmenu-btn[aria-expanded="true"] {
+  background: var(--t-hair);
+  color: var(--flowbar-text);
+}
+.tmenu-btn:focus-visible {
+  outline: 2px solid var(--flowbar-accent);
+  outline-offset: 2px;
+}
+
+/* ▾ menu — four FR-008-08 rows, part of the card so hover never drops. */
+.tmenu {
+  flex: none;
+  height: 168px; /* 4 × 38 items + 8 padding — matches toastWindowHeight */
+  box-sizing: border-box;
+  padding: 4px;
+  border-top: 1px solid var(--t-hair);
+  display: flex;
+  flex-direction: column;
+}
+.tmenu-item {
+  height: 38px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: start;
+  color: var(--flowbar-text);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tmenu-item:hover {
+  background: var(--t-hair);
+}
+.tmenu-item:focus-visible {
+  outline: 2px solid var(--flowbar-accent);
+  outline-offset: -2px;
+}
+
+/* Generic toast://show notice — icon + message (+ ✕ on hover). */
+.tnotice {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+}
+.tnotice-msg {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--flowbar-text);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* FR-008-09 confirmation: coral dot + "Gravando · <App>". */
+.tconfirm {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+}
+.tdot-rec {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--t-recording);
+  animation: tdot-pulse var(--motion-duration-pulse) infinite;
+}
+@keyframes tdot-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--t-accent-soft);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}

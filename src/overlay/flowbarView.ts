@@ -148,3 +148,16 @@ export function effectiveEdge(
   if (flowbarEdge === "right") return "right";
   return overlayPosition === "top" ? "top" : "bottom";
 }
+
+/**
+ * FR-008-10/12 (T-062): a collapsed or suppressed meeting toast surfaces on
+ * the Flow Bar as a small amber dot that reopens the toast on hover. The dot
+ * only exists while the bar itself renders a face — a hidden bar shows
+ * nothing (the toast://state consumer still reopens via `toast_reopen`).
+ */
+export function toastBadgeVisible(
+  view: FlowbarView,
+  toastPending: boolean,
+): boolean {
+  return toastPending && view !== "hidden";
+}

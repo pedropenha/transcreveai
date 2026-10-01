@@ -72,6 +72,23 @@ pub fn play_test_sound(app: &AppHandle, sound_type: SoundType) {
     }
 }
 
+/// FR-008-11: optional cue when the meeting toast first appears. Deliberately
+/// independent of `audio_feedback` and `sound_theme` — the toast has its own
+/// setting (`meeting_toast_sound`, default off) and a fixed subtle cue
+/// (`pop_start.wav`). The shared `audio_feedback_volume` still applies.
+pub fn play_toast_notification(app: &AppHandle) {
+    let settings = settings::get_settings(app);
+    if !settings.meeting_toast_sound {
+        return;
+    }
+    if let Ok(path) = app
+        .path()
+        .resolve("pop_start.wav", tauri::path::BaseDirectory::Resource)
+    {
+        play_sound_async(app, path);
+    }
+}
+
 fn play_sound_async(app: &AppHandle, path: PathBuf) {
     let app_handle = app.clone();
     thread::spawn(move || {

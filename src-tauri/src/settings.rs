@@ -233,6 +233,18 @@ pub enum FlowbarEdge {
     Right,
 }
 
+/// Where the meeting-detection toast anchors (FR-008-07/15).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ToastPosition {
+    /// Just above the Flow Bar; falls back to the bottom-right corner of the
+    /// cursor's monitor when the bar is not on screen.
+    #[default]
+    AboveFlowbar,
+    /// Always the bottom-right corner of the cursor's monitor work area.
+    BottomRight,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelUnloadTimeout {
@@ -758,8 +770,11 @@ pub struct AppSettings {
     /// T-069.
     #[serde(default = "default_meeting_auto_stop")]
     pub meeting_auto_stop: bool,
-    /// Optional notification sound for the detection toast (FR-008-11). Off
-    /// by default.
+    /// Where the meeting-detection toast anchors (FR-008-07/15).
+    #[serde(default)]
+    pub meeting_toast_position: ToastPosition,
+    /// Optional notification sound when the meeting toast first appears
+    /// (FR-008-11). Off by default; independent of `audio_feedback`.
     #[serde(default)]
     pub meeting_toast_sound: bool,
 }
@@ -1365,6 +1380,7 @@ pub fn get_default_settings() -> AppSettings {
         detect_any_call_enabled: false,
         meeting_auto_start: false,
         meeting_auto_stop: default_meeting_auto_stop(),
+        meeting_toast_position: ToastPosition::default(),
         meeting_toast_sound: false,
     }
 }
