@@ -7,6 +7,10 @@ pub const VAD_OFFLINE_HANGOVER_MS: u64 = 450;
 pub const VAD_STREAMING_HANGOVER_MS: u64 = 1650;
 pub const VAD_ONSET_MS: u64 = 60;
 
+/// FR-002-14: a session with less speech than this — or no speech at all — is
+/// discarded without calling the provider ("nada ouvido").
+pub const MIN_SPEECH_DURATION_MS: u64 = 300;
+
 /// Convert a VAD timing duration to whole detector frames, rounding up so an
 /// alternate backend never shortens Handy's onset, pre-roll, or hangover tail.
 pub const fn frames_for_duration_ms(duration_ms: u64, frame_samples: usize) -> usize {
@@ -50,6 +54,17 @@ pub trait VoiceActivityDetector: Send + Sync {
     /// Detectors without smoothing state return None.
     fn tail_report(&self) -> Option<VadTailReport> {
         None
+    }
+
+    /// Frames treated as voiced since the last `reset()`: every positive
+    /// classification plus every frame that errored, matching the pipeline's
+    /// fail-open handling (the recorder emits errored frames as speech, so an
+    /// undecidable frame counts as voiced evidence rather than starving the
+    /// "nada ouvido" check). Smoothing detectors report the wrapped
+    /// classifier's verdicts — not their pre-roll/hangover padding. Detectors
+    /// that cannot report this return 0.
+    fn voiced_frames(&self) -> usize {
+        0
     }
 
     fn reset(&mut self) {}

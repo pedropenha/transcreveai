@@ -2,7 +2,7 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
-use crate::managers::audio::AudioRecordingManager;
+use crate::managers::audio::{AudioRecordingManager, StopOutcome};
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
@@ -696,12 +696,8 @@ impl ShortcutAction for TranscribeAction {
             );
 
             let stop_recording_time = Instant::now();
-            if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
-                debug!(
-                    "Recording stopped and samples retrieved in {:?}, sample count: {}",
-                    stop_recording_time.elapsed(),
-                    samples.len()
-                );
+            if let Some(outcome) = rm.stop_recording(&binding_id, cancel_generation) {
+                debug!("Recording stopped in {:?}", stop_recording_time.elapsed());
 
                 if rm.was_cancelled_since(cancel_generation) {
                     debug!("Transcription operation cancelled after recording stop");
@@ -711,187 +707,195 @@ impl ShortcutAction for TranscribeAction {
                     return;
                 }
 
-                if samples.is_empty() {
-                    debug!("Recording produced no audio samples; skipping persistence");
-                    // Tear down any streaming worker so its channel doesn't leak
-                    // and block the next start_stream.
-                    tm.cancel_stream();
-                    utils::hide_recording_overlay(&ah);
-                    set_tray_state(&ah, TrayIconState::Idle);
-                } else {
-                    // Save WAV concurrently with transcription
-                    let sample_count = samples.len();
-                    let file_name = format!("transcreve-ai-{}.wav", chrono::Utc::now().timestamp());
-                    let wav_path = hm.recordings_dir().join(&file_name);
-                    let wav_path_for_verify = wav_path.clone();
-                    let samples_for_wav = samples.clone();
-                    let wav_handle = tauri::async_runtime::spawn_blocking(move || {
-                        crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
-                    });
-
-                    // Transcribe concurrently with WAV save. If a live stream was
-                    // running, finalize it and use its text (all audio was already
-                    // fed to the stream); otherwise batch-transcribe the samples.
-                    let transcription_time = Instant::now();
-                    let transcription_result = match tm.finalize_stream() {
-                        // A finalized stream with usable text wins. An empty result
-                        // (no active stream, produced nothing, or a finalize error
-                        // after the engine was returned) falls back to a full batch
-                        // transcription of the same audio. A finalize timeout is
-                        // surfaced instead — the worker may still hold the engine,
-                        // so a batch fallback would contend with it.
-                        Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe(samples),
-                        Err(err) => Err(err),
-                    };
-
-                    // Await WAV save and verify
-                    let wav_saved = match wav_handle.await {
-                        Ok(Ok(())) => {
-                            match crate::audio_toolkit::verify_wav_file(
-                                &wav_path_for_verify,
-                                sample_count,
-                            ) {
-                                Ok(()) => true,
-                                Err(e) => {
-                                    error!("WAV verification failed: {}", e);
-                                    false
-                                }
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            error!("Failed to save WAV file: {}", e);
-                            false
-                        }
-                        Err(e) => {
-                            error!("WAV save task panicked: {}", e);
-                            false
-                        }
-                    };
-
-                    if rm.was_cancelled_since(cancel_generation) {
-                        debug!("Transcription operation cancelled before output handling");
-                        utils::hide_recording_overlay(&ah);
+                let samples = match outcome {
+                    StopOutcome::NothingHeard {
+                        captured_samples,
+                        voiced_samples,
+                    } => {
+                        // FR-002-14 / FR-003-11: "nada ouvido" — discard before
+                        // any provider call, history entry, or paste; the Flow
+                        // Bar flashes feedback instead (auto-hiding shortly).
+                        debug!(
+                            "Discarding 'nada ouvido' session: captured={}ms voiced={}ms",
+                            captured_samples / 16,
+                            voiced_samples.map(|v| v / 16).unwrap_or(0)
+                        );
+                        tm.cancel_stream();
+                        utils::show_nothing_heard_overlay(&ah);
                         set_tray_state(&ah, TrayIconState::Idle);
                         return;
                     }
+                    StopOutcome::Ready(samples) => samples,
+                };
 
-                    match transcription_result {
-                        Ok(transcription) => {
-                            debug!(
-                                "Transcription completed in {:?}: '{}'",
-                                transcription_time.elapsed(),
-                                utils::redact_text(&transcription)
-                            );
+                debug!("Recording sample count: {}", samples.len());
 
-                            if post_process {
-                                if use_streaming_overlay {
-                                    tm.emit_stream_working(StreamWorkKind::Polishing);
-                                } else {
-                                    show_processing_overlay(&ah);
-                                }
-                            }
-                            let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
-                                || rm.was_cancelled_since(cancel_generation),
-                            )
-                            .await
-                            else {
-                                debug!("Transcription operation cancelled during output handling");
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                                return;
-                            };
+                // Save WAV concurrently with transcription
+                let sample_count = samples.len();
+                let file_name = format!("transcreve-ai-{}.wav", chrono::Utc::now().timestamp());
+                let wav_path = hm.recordings_dir().join(&file_name);
+                let wav_path_for_verify = wav_path.clone();
+                let samples_for_wav = samples.clone();
+                let wav_handle = tauri::async_runtime::spawn_blocking(move || {
+                    crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
+                });
 
-                            if rm.was_cancelled_since(cancel_generation) {
-                                debug!("Transcription operation cancelled before paste");
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                                return;
-                            }
+                // Transcribe concurrently with WAV save. If a live stream was
+                // running, finalize it and use its text (all audio was already
+                // fed to the stream); otherwise batch-transcribe the samples.
+                let transcription_time = Instant::now();
+                let transcription_result = match tm.finalize_stream() {
+                    // A finalized stream with usable text wins. An empty result
+                    // (no active stream, produced nothing, or a finalize error
+                    // after the engine was returned) falls back to a full batch
+                    // transcription of the same audio. A finalize timeout is
+                    // surfaced instead — the worker may still hold the engine,
+                    // so a batch fallback would contend with it.
+                    Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+                    Ok(_) => tm.transcribe(samples),
+                    Err(err) => Err(err),
+                };
 
-                            // Save to history if WAV was saved
-                            if wav_saved {
-                                if let Err(err) = hm.save_entry(
-                                    file_name,
-                                    transcription,
-                                    post_process,
-                                    processed.post_processed_text.clone(),
-                                    processed.post_process_prompt.clone(),
-                                ) {
-                                    error!("Failed to save history entry: {}", err);
-                                }
-                            }
-
-                            if processed.final_text.is_empty() {
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                            } else {
-                                let ah_clone = ah.clone();
-                                let paste_time = Instant::now();
-                                let final_text = processed.final_text;
-                                let rm_for_paste = Arc::clone(&rm);
-                                ah.run_on_main_thread(move || {
-                                    if rm_for_paste.was_cancelled_since(cancel_generation) {
-                                        debug!("Transcription operation cancelled before paste");
-                                        utils::hide_recording_overlay(&ah_clone);
-                                        set_tray_state(&ah_clone, TrayIconState::Idle);
-                                        return;
-                                    }
-
-                                    match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(()) => debug!(
-                                            "Text pasted successfully in {:?}",
-                                            paste_time.elapsed()
-                                        ),
-                                        Err(e) => {
-                                            error!("Failed to paste transcription: {}", e);
-                                            let _ = ah_clone.emit("paste-error", ());
-                                        }
-                                    }
-                                    utils::hide_recording_overlay(&ah_clone);
-                                    set_tray_state(&ah_clone, TrayIconState::Idle);
-                                })
-                                .unwrap_or_else(|e| {
-                                    error!("Failed to run paste on main thread: {:?}", e);
-                                    utils::hide_recording_overlay(&ah);
-                                    set_tray_state(&ah, TrayIconState::Idle);
-                                });
+                // Await WAV save and verify
+                let wav_saved = match wav_handle.await {
+                    Ok(Ok(())) => {
+                        match crate::audio_toolkit::verify_wav_file(
+                            &wav_path_for_verify,
+                            sample_count,
+                        ) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                error!("WAV verification failed: {}", e);
+                                false
                             }
                         }
-                        Err(err) => {
-                            if rm.was_cancelled_since(cancel_generation) {
-                                debug!(
-                                    "Transcription operation cancelled after transcription error"
-                                );
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                                return;
-                            }
+                    }
+                    Ok(Err(e)) => {
+                        error!("Failed to save WAV file: {}", e);
+                        false
+                    }
+                    Err(e) => {
+                        error!("WAV save task panicked: {}", e);
+                        false
+                    }
+                };
 
-                            error!("Transcription failed: {}", err);
-                            // Surface the failure to the UI (toast). The full
-                            // message is also in transcreve-ai.log via the line above.
-                            let _ = ah.emit("transcription-error", err.to_string());
-                            // Save entry with empty text so user can retry
-                            if wav_saved {
-                                if let Err(save_err) = hm.save_entry(
-                                    file_name,
-                                    String::new(),
-                                    post_process,
-                                    None,
-                                    None,
-                                ) {
-                                    error!("Failed to save failed history entry: {}", save_err);
-                                }
+                if rm.was_cancelled_since(cancel_generation) {
+                    debug!("Transcription operation cancelled before output handling");
+                    utils::hide_recording_overlay(&ah);
+                    set_tray_state(&ah, TrayIconState::Idle);
+                    return;
+                }
+
+                match transcription_result {
+                    Ok(transcription) => {
+                        debug!(
+                            "Transcription completed in {:?}: '{}'",
+                            transcription_time.elapsed(),
+                            utils::redact_text(&transcription)
+                        );
+
+                        if post_process {
+                            if use_streaming_overlay {
+                                tm.emit_stream_working(StreamWorkKind::Polishing);
+                            } else {
+                                show_processing_overlay(&ah);
                             }
+                        }
+                        let Some(processed) = complete_unless_cancelled(
+                            process_transcription_output(&ah, &transcription, post_process),
+                            || rm.was_cancelled_since(cancel_generation),
+                        )
+                        .await
+                        else {
+                            debug!("Transcription operation cancelled during output handling");
                             utils::hide_recording_overlay(&ah);
                             set_tray_state(&ah, TrayIconState::Idle);
+                            return;
+                        };
+
+                        if rm.was_cancelled_since(cancel_generation) {
+                            debug!("Transcription operation cancelled before paste");
+                            utils::hide_recording_overlay(&ah);
+                            set_tray_state(&ah, TrayIconState::Idle);
+                            return;
                         }
+
+                        // Save to history if WAV was saved
+                        if wav_saved {
+                            if let Err(err) = hm.save_entry(
+                                file_name,
+                                transcription,
+                                post_process,
+                                processed.post_processed_text.clone(),
+                                processed.post_process_prompt.clone(),
+                            ) {
+                                error!("Failed to save history entry: {}", err);
+                            }
+                        }
+
+                        if processed.final_text.is_empty() {
+                            utils::hide_recording_overlay(&ah);
+                            set_tray_state(&ah, TrayIconState::Idle);
+                        } else {
+                            let ah_clone = ah.clone();
+                            let paste_time = Instant::now();
+                            let final_text = processed.final_text;
+                            let rm_for_paste = Arc::clone(&rm);
+                            ah.run_on_main_thread(move || {
+                                if rm_for_paste.was_cancelled_since(cancel_generation) {
+                                    debug!("Transcription operation cancelled before paste");
+                                    utils::hide_recording_overlay(&ah_clone);
+                                    set_tray_state(&ah_clone, TrayIconState::Idle);
+                                    return;
+                                }
+
+                                match utils::paste(final_text, ah_clone.clone()) {
+                                    Ok(()) => debug!(
+                                        "Text pasted successfully in {:?}",
+                                        paste_time.elapsed()
+                                    ),
+                                    Err(e) => {
+                                        error!("Failed to paste transcription: {}", e);
+                                        let _ = ah_clone.emit("paste-error", ());
+                                    }
+                                }
+                                utils::hide_recording_overlay(&ah_clone);
+                                set_tray_state(&ah_clone, TrayIconState::Idle);
+                            })
+                            .unwrap_or_else(|e| {
+                                error!("Failed to run paste on main thread: {:?}", e);
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        if rm.was_cancelled_since(cancel_generation) {
+                            debug!("Transcription operation cancelled after transcription error");
+                            utils::hide_recording_overlay(&ah);
+                            set_tray_state(&ah, TrayIconState::Idle);
+                            return;
+                        }
+
+                        error!("Transcription failed: {}", err);
+                        // Surface the failure to the UI (toast). The full
+                        // message is also in transcreve-ai.log via the line above.
+                        let _ = ah.emit("transcription-error", err.to_string());
+                        // Save entry with empty text so user can retry
+                        if wav_saved {
+                            if let Err(save_err) =
+                                hm.save_entry(file_name, String::new(), post_process, None, None)
+                            {
+                                error!("Failed to save failed history entry: {}", save_err);
+                            }
+                        }
+                        utils::hide_recording_overlay(&ah);
+                        set_tray_state(&ah, TrayIconState::Idle);
                     }
                 }
             } else {
-                debug!("No samples retrieved from recording stop");
+                debug!("Recording stop returned no outcome");
                 // Tear down any streaming worker so its channel doesn't leak.
                 tm.cancel_stream();
                 utils::hide_recording_overlay(&ah);

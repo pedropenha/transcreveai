@@ -20,6 +20,10 @@ pub struct SmoothedVad {
     hangover_counter: usize,
     onset_counter: usize,
     in_speech: bool,
+    /// Voiced/fail-open frame count since `reset()` — the raw classifier's
+    /// verdict, before onset/hangover padding. Drives FR-002-14's
+    /// "nada ouvido" decision (< 300 ms of detected speech).
+    voiced_frames: usize,
 
     temp_out: Vec<f32>,
 }
@@ -40,6 +44,7 @@ impl SmoothedVad {
             hangover_counter: 0,
             onset_counter: 0,
             in_speech: false,
+            voiced_frames: 0,
             temp_out: Vec::new(),
         }
     }
@@ -63,8 +68,19 @@ impl VoiceActivityDetector for SmoothedVad {
             self.frame_buffer.pop_front();
         }
 
-        // 2. Delegate to the wrapped boolean VAD
-        let is_voice = self.inner_vad.is_voice(frame)?;
+        // 2. Delegate to the wrapped boolean VAD. A backend failure is
+        // emitted downstream as speech (fail-open), so it also counts as
+        // voiced evidence for the "nada ouvido" check.
+        let is_voice = match self.inner_vad.is_voice(frame) {
+            Ok(is_voice) => is_voice,
+            Err(err) => {
+                self.voiced_frames = self.voiced_frames.saturating_add(1);
+                return Err(err);
+            }
+        };
+        if is_voice {
+            self.voiced_frames = self.voiced_frames.saturating_add(1);
+        }
         if let Some(last) = self.frame_buffer.back_mut() {
             last.voiced = is_voice;
         }
@@ -127,6 +143,10 @@ impl VoiceActivityDetector for SmoothedVad {
         self.hangover_frames = frames;
     }
 
+    fn voiced_frames(&self) -> usize {
+        self.voiced_frames
+    }
+
     /// Trailing run of withheld frames plus smoothing state. Interior
     /// withheld frames (before already-emitted speech) are not counted.
     fn tail_report(&self) -> Option<VadTailReport> {
@@ -159,6 +179,7 @@ impl VoiceActivityDetector for SmoothedVad {
         self.hangover_counter = 0;
         self.onset_counter = 0;
         self.in_speech = false;
+        self.voiced_frames = 0;
         self.temp_out.clear();
     }
 }
@@ -200,6 +221,55 @@ mod tests {
 
     fn smoothed(script: &[bool], onset_frames: usize) -> SmoothedVad {
         SmoothedVad::new(Box::new(ScriptedVad::new(script)), 3, 2, onset_frames)
+    }
+
+    /// Inner VAD that fails on demand: the recorder fail-opens errors into
+    /// speech, so they must count as voiced frames.
+    struct FailingVad {
+        fail: bool,
+    }
+
+    impl VoiceActivityDetector for FailingVad {
+        fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>> {
+            if self.fail {
+                anyhow::bail!("scripted backend failure");
+            }
+            Ok(VadFrame::Speech(frame))
+        }
+
+        fn frame_samples(&self) -> usize {
+            4
+        }
+    }
+
+    #[test]
+    fn voiced_frames_counts_inner_voiced_and_fail_open_errors() {
+        // 3 voiced + 2 noise + 1 error: voiced = 4 (3 positives + fail-open).
+        let mut vad = SmoothedVad::new(Box::new(FailingVad { fail: false }), 3, 2, 2);
+        for value in [0.1, 0.2, 0.3] {
+            assert!(vad.push_frame(&frame(value)).is_ok());
+        }
+        assert_eq!(vad.voiced_frames(), 3);
+
+        let mut vad = smoothed(&[false, false], 2);
+        vad.push_frame(&frame(0.1)).unwrap();
+        vad.push_frame(&frame(0.2)).unwrap();
+        assert_eq!(vad.voiced_frames(), 0);
+
+        let mut vad = SmoothedVad::new(Box::new(FailingVad { fail: true }), 3, 2, 2);
+        assert!(vad.push_frame(&frame(0.5)).is_err());
+        assert_eq!(vad.voiced_frames(), 1);
+    }
+
+    #[test]
+    fn voiced_frames_resets_between_sessions() {
+        let mut vad = smoothed(&[true, true], 2);
+        vad.push_frame(&frame(0.1)).unwrap();
+        vad.push_frame(&frame(0.2)).unwrap();
+        assert_eq!(vad.voiced_frames(), 2);
+
+        vad.reset();
+        assert_eq!(vad.voiced_frames(), 0);
     }
 
     #[test]

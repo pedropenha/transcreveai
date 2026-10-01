@@ -12,6 +12,8 @@ pub struct EarshotVad {
     engine: Box<earshot::Detector>,
     threshold: f32,
     clamped_frame: [f32; EARSHOT_FRAME_SAMPLES],
+    /// Voiced/fail-open frame count since `reset()` — see the trait docs.
+    voiced_frames: usize,
 }
 
 impl EarshotVad {
@@ -26,6 +28,7 @@ impl EarshotVad {
             engine: earshot::Detector::default_boxed(),
             threshold,
             clamped_frame: [0.0; EARSHOT_FRAME_SAMPLES],
+            voiced_frames: 0,
         })
     }
 }
@@ -33,12 +36,17 @@ impl EarshotVad {
 impl VoiceActivityDetector for EarshotVad {
     fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>> {
         if frame.len() != EARSHOT_FRAME_SAMPLES {
+            // Fail-open: the recorder keeps errored frames as speech.
+            self.voiced_frames += 1;
             anyhow::bail!(
                 "expected {EARSHOT_FRAME_SAMPLES} samples, got {}",
                 frame.len()
             );
         }
         if frame.iter().any(|sample| !sample.is_finite()) {
+            // Fail-open: the recorder keeps errored frames as speech, so they
+            // count as voiced evidence for the "nada ouvido" floor.
+            self.voiced_frames += 1;
             anyhow::bail!("Earshot VAD input contained a non-finite sample");
         }
 
@@ -56,6 +64,7 @@ impl VoiceActivityDetector for EarshotVad {
         };
 
         if score >= self.threshold {
+            self.voiced_frames += 1;
             Ok(VadFrame::Speech(frame))
         } else {
             Ok(VadFrame::Noise)
@@ -66,8 +75,13 @@ impl VoiceActivityDetector for EarshotVad {
         EARSHOT_FRAME_SAMPLES
     }
 
+    fn voiced_frames(&self) -> usize {
+        self.voiced_frames
+    }
+
     fn reset(&mut self) {
         self.engine.reset();
+        self.voiced_frames = 0;
     }
 }
 
@@ -112,5 +126,22 @@ mod tests {
         let mut frame = [0.0; EARSHOT_FRAME_SAMPLES];
         frame[0] = f32::NAN;
         assert!(vad.push_frame(&frame).is_err());
+    }
+
+    #[test]
+    fn voiced_frames_counts_speech_and_fail_open_errors_only() {
+        let mut vad = EarshotVad::new(0.5).unwrap();
+        vad.push_frame(&[0.0; EARSHOT_FRAME_SAMPLES]).unwrap();
+        assert_eq!(vad.voiced_frames(), 0, "silence is not voiced");
+
+        // A rejected frame is emitted downstream as speech (fail-open), so it
+        // counts as voiced evidence.
+        let mut bad = [0.0; EARSHOT_FRAME_SAMPLES];
+        bad[0] = f32::INFINITY;
+        assert!(vad.push_frame(&bad).is_err());
+        assert_eq!(vad.voiced_frames(), 1);
+
+        vad.reset();
+        assert_eq!(vad.voiced_frames(), 0);
     }
 }

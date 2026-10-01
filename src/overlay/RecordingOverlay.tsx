@@ -12,7 +12,12 @@ import type {
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
-type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
+type OverlayState =
+  | "recording"
+  | "streaming"
+  | "transcribing"
+  | "processing"
+  | "nothing-heard";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -277,6 +282,28 @@ const RecordingOverlay: React.FC = () => {
                 true,
               )
             : listeningRow(open, true)}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- "Nada ouvido" flash (FR-002-14): the session is already discarded, so
+  // there is no waveform, spinner, or cancel affordance — just a brief static
+  // label. The backend hides the window ~1s after showing it.
+  if (state === "nothing-heard") {
+    return (
+      <div
+        dir={direction}
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard compact">
+          <div className="sbase">
+            <div className="sbase-l">
+              <span className="sdot arming" />
+            </div>
+            <span className="swork-label">{t("overlay.nothingHeard")}</span>
+            <div className="sbase-r" />
+          </div>
         </div>
       </div>
     );

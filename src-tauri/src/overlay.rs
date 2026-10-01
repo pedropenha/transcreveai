@@ -2,7 +2,7 @@ use crate::input;
 use crate::settings;
 use crate::settings::{OverlayPosition, OverlayStyle};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 #[cfg(not(target_os = "macos"))]
@@ -634,6 +634,38 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
 /// Shows the processing overlay window
 pub fn show_processing_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "processing");
+}
+
+/// How long the "Nada ouvido" notice stays on the Flow Bar (FR-002-14).
+const NOTHING_HEARD_DISPLAY: Duration = Duration::from_secs(1);
+
+/// FR-002-14: a session under the speech floor — or with no speech detected —
+/// is discarded instead of transcribed, and the Flow Bar flashes
+/// "Nada ouvido" briefly. The timed hide is guarded by the show generation so
+/// a session that reclaimed the overlay meanwhile is never hidden by it.
+pub fn show_nothing_heard_overlay(app_handle: &AppHandle) {
+    // Same gates as any session state: overlay disabled or user-hidden means
+    // no visual feedback at all (FR-001-10 moves feedback to the tray icon).
+    if settings::get_settings(app_handle).overlay_style == OverlayStyle::None
+        || is_flowbar_user_hidden()
+    {
+        return;
+    }
+
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        show_overlay_state_on_main(&handle, "nothing-heard");
+        // Snapshot AFTER this show bumped the generation: the delayed hide
+        // fires only if no newer session re-showed the overlay by then.
+        let generation = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
+        let handle = handle.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(NOTHING_HEARD_DISPLAY);
+            if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == generation {
+                hide_recording_overlay(&handle);
+            }
+        });
+    });
 }
 
 /// Updates the overlay window position based on current settings
