@@ -1149,38 +1149,6 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, Comm
     else return { status: "error", error: e  as any };
 }
 },
-async flowbarSetHover(rect: FlowbarRect | null) : Promise<Result<null, CommandError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("flowbar_set_hover", { rect }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async flowbarToggleDictation() : Promise<Result<null, CommandError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("flowbar_toggle_dictation") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async flowbarStartNotetaker() : Promise<Result<null, CommandError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("flowbar_start_notetaker") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("flowbar_retry_last_failed") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * A lista de muletas efetiva da limpeza `light`: a editada pelo usuário
  * (`custom_filler_words`) ou, quando ausente, o padrão pt-BR embutido.
@@ -1239,6 +1207,38 @@ async changeCleanupLevelSetting(level: CleanupLevel) : Promise<Result<null, Comm
 async changeSpokenPunctuationSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_spoken_punctuation_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async flowbarSetHover(rect: FlowbarRect | null) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_set_hover", { rect }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async flowbarToggleDictation() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_toggle_dictation") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async flowbarStartNotetaker() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_start_notetaker") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("flowbar_retry_last_failed") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

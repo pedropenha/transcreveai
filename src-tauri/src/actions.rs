@@ -1003,8 +1003,8 @@ impl ShortcutAction for TranscribeAction {
                                 // submit key after every insertion; the
                                 // spoken "enviar" only needs its own send
                                 // when that setting is off.
-                                let need_spoken_submit =
-                                    processed.press_enter && !(settings.auto_submit && method_inserts);
+                                let need_spoken_submit = processed.press_enter
+                                    && !(settings.auto_submit && method_inserts);
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");

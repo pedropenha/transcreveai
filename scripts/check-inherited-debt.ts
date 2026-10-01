@@ -27,10 +27,15 @@ import { basename, dirname, join } from "node:path";
 const SRC_ROOT = "src-tauri/src";
 
 // Ratchet ceilings — ADR-0001 baseline was 12 files / 146 unwrap+expect /
-// 50 unsafe; re-measured on the integration/v1 tip this branch is based on.
+// 50 unsafe; re-measured on the integration/v1 tip this branch is based on,
+// then again after the wave-5 merges: T-030 (modifier-release injection:
+// GetAsyncKeyState/SendInput), T-031 (UIPI foreground-target probe) and
+// T-040 (click-through + layered-window hit-testing) add Win32 FFI that has
+// no safe alternative, so the unsafe ceiling moves 50 → 62. All new blocks
+// carry SAFETY comments or are documented no-precondition calls.
 const MAX_FILES_OVER_800_LINES = 12;
 const MAX_PROD_UNWRAP_EXPECT = 158;
-const MAX_PROD_UNSAFE = 50;
+const MAX_PROD_UNSAFE = 62;
 const FILE_LINE_LIMIT = 800;
 
 const norm = (p: string): string => p.replace(/\\/g, "/");

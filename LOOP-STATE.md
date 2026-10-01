@@ -7,7 +7,7 @@
 
 - **Alvo de merges**: `integration/v1` (worktree `C:\multimidia\ecc-v1`). `main` nunca é tocada.
 - **Base**: `chore/t-001a-baseline` + `chore/t-008-design-direction` (já mergeada em `3a82c14`).
-- **Última atualização**: 2026-09-30 — waves 1–4 mergeadas; ratchet de dívida reparado pós-wave-4.
+- **Última atualização**: 2026-10-01 — onda 5 mergeada em série (T-030→T-031→T-035→T-040→T-043→T-050); verificação pós-merge em andamento.
 
 ## Concluído
 
@@ -31,18 +31,24 @@
 - [x] **T-022** — merge `30e8883`. Máquina de estados completa do coordinator (FR-002-09..19): Arming/Transcribing/Inserting, fila FIFO, limite de duração, preservação de áudio.
 - [x] **T-060** — merge `b4b4b11`. Monitor ConsentStore + snapshots de janelas + classificador.
 - [x] **T-063** — merge `6d7ba37`. Loopback WASAPI via cpal + blocos WAV + recuperação de reunião.
+- [x] **T-030** — merge `4136e1e`. Espera de liberação de modificadores (FR-005-01) + reliable paste como padrão.
+- [x] **T-031** — merge `d055a83`. `insertion_method` (auto/paste/typing/clipboard_only) + fallback UIPI + `newline_mode` + `InsertionReport`. Conflito com T-030 resolvido: `paste_text_direct` virou `insertion::type_text_direct`; o await de modificadores foi reintegrado em `type_text_direct` e `send_return_key`.
+- [x] **T-035** — merge `a1db877`. `pipeline/` puro (normalize → voice commands → vocab → `light`) + comandos de muletas. Conflito com T-031 resolvido: gatilho do "enviar" = `processed.press_enter`, gate = `method_inserts`.
+- [x] **T-040** — merge `7439760`. Flow Bar: click-through, hover Ditar/Notetaker, posição inferior-centro.
+- [x] **T-043** — merge `bb30a12`. Tela Modelos & Provedores, só locais na v1.
+- [x] **T-050** — merge `403ddfb`. Trait `LlmProvider` + roteamento cost-aware (BYOK).
 
 ## Em andamento (lanes)
 
-- (nenhuma)
+- (nenhuma — onda 5 fechada; pendente: verificação pós-merge em `integration/v1`)
 
 ## Próximas na DAG (prontas para lanes)
 
-- **T-061** detector · **T-062** toast · **T-064** sessão de reunião (dep. T-060/T-063 ✔) · **T-030/T-031** inserção · **T-035** pipeline de texto · **T-040** Flow Bar (dep. T-008 ✔) · **T-041** · **T-042** · **T-043** · **T-044** · **T-045** · **T-046** · **T-050** (dep. T-016 ✔) · **T-065–T-069**
+- **T-041** Flow Bar menu/soneca/sons · **T-042** Hub Início/Histórico · **T-044** Configurações + Dicionário (dep. T-035 ✔) · **T-045** onboarding · **T-046** privacidade/retenção · **T-061** detector (dep. T-060 ✔) · **T-062** toast · **T-064** sessão de reunião (dep. T-060/T-063 ✔) · **T-065–T-069**
 
 ## Merges pendentes
 
-- (nenhum)
+- (nenhum — as 6 lanes da onda 5 foram mergeadas em série nesta sessão)
 
 ## Bloqueios
 
@@ -51,10 +57,10 @@
 ## Dívida conhecida / fix-forward
 
 - `LLKHF_INJECTED` não é checado pelo crate handy-keys — eventos injetados pelo enigo chegam ao matcher (nota manual; candidate a patch upstream).
-- T-031 deve reconciliar `insertion_method` (novo, T-005) com `paste_method` legado que ainda dirige a colagem.
-- `src/bindings.ts` precisa ser regenerado num `bun run tauri dev` em algum merge (foi editado à mão na T-005).
-- Evento `shortcut://hook-dead` emitido mas ninguém escuta — UI de aviso fica para follow-up (T-040/T-041).
-- Aviso de fallback de mic (T-010) depende de `toast://show` — pendente de lane de UI.
+- `insertion_method` (T-005) reconciliado com `paste_method` na T-031: `resolve_plan` usa `paste_method` como o acorde do método `paste` e `external_script` como escape hatch (`insertion.rs`).
+- `src/bindings.ts` — conferir o teste `exported_typescript_bindings_match_checked_in_file` após a onda 5 (foi auto-mergeado nas 6 lanes); regenerar via `bun run tauri dev` se o teste falhar.
+- Evento `shortcut://hook-dead` emitido mas ninguém escuta — UI de aviso fica para follow-up (T-041).
+- Aviso de fallback de mic (T-010) depende de `toast://show` — pendente de lane de UI (T-062).
 - `managers/transcription.rs` virou diretório — lanes futuras devem editar os submódulos.
 - Infra: `CARGO_TARGET_DIR` compartilhado (`C:\t`) — lanes devem usar `-TargetDir C:\t-<lane>`; fixar `TEMP/TMP` único por lane (race em `temp_dir()`).
 

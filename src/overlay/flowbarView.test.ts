@@ -26,18 +26,9 @@ assert.equal(
 );
 
 // Session lifecycle → the five F001 states.
-assert.equal(
-  resolveFlowbarView({ ...base, phase: "recording" }),
-  "recording",
-);
-assert.equal(
-  resolveFlowbarView({ ...base, phase: "arming" }),
-  "recording",
-);
-assert.equal(
-  resolveFlowbarView({ ...base, phase: "transcribing" }),
-  "working",
-);
+assert.equal(resolveFlowbarView({ ...base, phase: "recording" }), "recording");
+assert.equal(resolveFlowbarView({ ...base, phase: "arming" }), "recording");
+assert.equal(resolveFlowbarView({ ...base, phase: "transcribing" }), "working");
 assert.equal(resolveFlowbarView({ ...base, phase: "inserting" }), "working");
 assert.equal(resolveFlowbarView({ ...base, phase: "done" }), "done");
 assert.equal(resolveFlowbarView({ ...base, phase: "error" }), "error");

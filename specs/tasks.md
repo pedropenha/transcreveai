@@ -80,20 +80,20 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 
 ### Inserção
 
-- [ ] **T-030** **Adaptar** inserção `paste` (`paste_tx/windows.rs` já faz snapshot multi-formato, exclusão do histórico/nuvem do clipboard e restauração condicionada a `GetClipboardSequenceNumber`): verificar a espera de liberação de modificadores (FR-005-01) e os AC. — Refs: FR-005-01..04, AC-005-01..04, AC-005-08
-- [ ] **T-031** [P] **Estender** métodos: Ctrl+V, Shift+Insert, Ctrl+Shift+V, digitação direta (`enigo`) e nenhum já existem. Faltam `auto` (que passa a ser o **padrão**, ADR-0002), detecção de janela elevada (UIPI) → `clipboard_only` com aviso, `newline_mode` e registro do resultado. — Refs: FR-005-05..11, AC-005-05, AC-005-07
+- [x] **T-030** **Adaptar** inserção `paste` (`paste_tx/windows.rs` já faz snapshot multi-formato, exclusão do histórico/nuvem do clipboard e restauração condicionada a `GetClipboardSequenceNumber`): verificar a espera de liberação de modificadores (FR-005-01) e os AC. — Refs: FR-005-01..04, AC-005-01..04, AC-005-08
+- [x] **T-031** [P] **Estender** métodos: Ctrl+V, Shift+Insert, Ctrl+Shift+V, digitação direta (`enigo`) e nenhum já existem. Faltam `auto` (que passa a ser o **padrão**, ADR-0002), detecção de janela elevada (UIPI) → `clipboard_only` com aviso, `newline_mode` e registro do resultado. — Refs: FR-005-05..11, AC-005-05, AC-005-07
 - [ ] **T-032** **(v1.1+)** Matriz de apps automatizada (AC-005-06) com `windows-desktop-e2e`. Na v1, a cobertura é o checklist de smoke manual entregue no fim do loop. Depende de: T-009.
 
 ### Pipeline mínimo
 
-- [ ] **T-035** **Estender** pipeline com as etapas 1, 2 e 4 (vocab) + limpeza determinística `light`, partindo de `custom_words` e da remoção de vícios em `audio_toolkit/text.rs`, num módulo `pipeline/` puro. A `light` remove muletas pt-BR ("né", "tipo", "aí", "ahn/ééé", "então assim", repetições imediatas) e corrige pontuação/capitalização; a lista é editável na tela Dicionário (T-044). — Refs: FR-004-01..03, FR-004-08, FR-004-12, AC-004-01, AC-004-10
+- [x] **T-035** **Estender** pipeline com as etapas 1, 2 e 4 (vocab) + limpeza determinística `light`, partindo de `custom_words` e da remoção de vícios em `audio_toolkit/text.rs`, num módulo `pipeline/` puro. A `light` remove muletas pt-BR ("né", "tipo", "aí", "ahn/ééé", "então assim", repetições imediatas) e corrige pontuação/capitalização; a lista é editável na tela Dicionário (T-044). — Refs: FR-004-01..03, FR-004-08, FR-004-12, AC-004-01, AC-004-10
 
 ### UI
 
-- [ ] **T-040** **Estender** `overlay.rs` + `src/overlay/` para a Flow Bar. Já existem: não-focável, topmost reaplicado, transparente, níveis e botão cancelar. Faltam: click-through na área transparente, hover com 2 botões (Ditar + Notetaker, F009 — o botão de reunião já existe na v1) e tooltip de atalho, estados da F001, posição inferior-centro (padrão). Depende de: T-008. — Refs: FR-001-01..06, NFR-001-01..05, AC-001-01..03, AC-001-07..08
+- [x] **T-040** **Estender** `overlay.rs` + `src/overlay/` para a Flow Bar. Já existem: não-focável, topmost reaplicado, transparente, níveis e botão cancelar. Faltam: click-through na área transparente, hover com 2 botões (Ditar + Notetaker, F009 — o botão de reunião já existe na v1) e tooltip de atalho, estados da F001, posição inferior-centro (padrão). Depende de: T-008. — Refs: FR-001-01..06, NFR-001-01..05, AC-001-01..03, AC-001-07..08
 - [ ] **T-041** [P] Flow Bar: menu de clique direito, arrastar/encaixar, multi-monitor, visibilidade, tela cheia, soneca (15/30/60 min), sons (ligados por padrão, desativáveis). — Refs: FR-001-07..13, AC-001-04..06
 - [ ] **T-042** [P] **Estender** Hub + Início/Histórico: a lista de histórico existe. Faltam FTS5, filtros, detalhe com diff, estatísticas e o layout da T-008. — Refs: FR-010-01..06, AC-010-03
-- [ ] **T-043** [P] Modelos & Provedores — **só modelos locais na v1** (listar, baixar, importar, excluir, selecionar para ditado/reunião). Adicionar/testar provedores em nuvem volta na v1.1+ com a T-014. — Refs: FR-003-01..04, AC-003-01, AC-003-08
+- [x] **T-043** [P] Modelos & Provedores — **só modelos locais na v1** (listar, baixar, importar, excluir, selecionar para ditado/reunião). Adicionar/testar provedores em nuvem volta na v1.1+ com a T-014. — Refs: FR-003-01..04, AC-003-01, AC-003-08
 - [ ] **T-044** [P] **Estender** Configurações (Geral com captura de atalho e medidor de mic; Sistema; Privacidade; Avançado — inclui limite de gravação e tamanho da fila de sessões) + Dicionário (vocab + lista editável de muletas da limpeza `light`, T-035), reorganizando as telas herdadas conforme a F010. — Refs: FR-010-07..10, FR-010-12, FR-002-02..03, FR-004-12
 - [ ] **T-045** **Adaptar** onboarding herdado: incluir o campo de prática e a opção de reabrir. Na etapa de transcrição, o usuário **escolhe o modelo local**; `large-v3-turbo` é o default recomendado (a detecção de hardware informa o rótulo, não impõe). Sem opção de nuvem na v1. — Refs: FR-010-16..17, FR-003-05, AC-010-01..02
 - [ ] **T-046** Modo offline, "O que é enviado", retenção, "Apagar todos os dados" (inclui o áudio preservado de sessões falhas, T-022). — Refs: FR-011-06..13, AC-011-02, AC-011-04, AC-011-06
@@ -116,7 +116,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 
 ## Fase 3 — Reuniões (v1)
 
-- [ ] **T-050** **Estender** `llm_client.rs` (OpenAI-compatível + Anthropic já existem) para o trait `LlmProvider`; teste de conexão; roteamento conforme `cost-aware-llm-pipeline`. **Na v1 serve só ao resumo de reunião (BYOK)**: sem chave configurada, transcrição e notas funcionam e o resumo fica desabilitado (FR-009-21). Depende de: T-016. — Refs: [contracts §3–4](architecture/contracts.md#3-llmprovider), FR-009-17..21
+- [x] **T-050** **Estender** `llm_client.rs` (OpenAI-compatível + Anthropic já existem) para o trait `LlmProvider`; teste de conexão; roteamento conforme `cost-aware-llm-pipeline`. **Na v1 serve só ao resumo de reunião (BYOK)**: sem chave configurada, transcrição e notas funcionam e o resumo fica desabilitado (FR-009-21). Depende de: T-016. — Refs: [contracts §3–4](architecture/contracts.md#3-llmprovider), FR-009-17..21
 
 - [x] **T-060** Monitor de uso do microfone (registro ConsentStore) + snapshots de janelas. — Refs: FR-008-01
 - [ ] **T-061** Detector (regras, debounce, memória de título, fim de reunião). Regras embutidas na v1: **Zoom, Teams, Meet (navegador), Webex**; demais apps da F008 ficam como regras v1.1+. — Refs: FR-008-02..06, FR-008-13..14

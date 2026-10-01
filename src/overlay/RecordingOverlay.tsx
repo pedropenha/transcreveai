@@ -70,7 +70,9 @@ const RecordingOverlay: React.FC = () => {
 
   // --- Hover / click-through (FR-001-02, NFR-001-02) ---
   const [hovered, setHovered] = useState(false);
-  const [tip, setTip] = useState<"dictate" | "notetaker" | "error" | null>(null);
+  const [tip, setTip] = useState<"dictate" | "notetaker" | "error" | null>(
+    null,
+  );
 
   // --- Dock edge the stage mirrors (FR-001-01/08) ---
   const [edge, setEdge] = useState<StageEdge>("bottom");
@@ -387,11 +389,7 @@ const RecordingOverlay: React.FC = () => {
   );
 
   const cancelBtn = (
-    <button
-      className="sx"
-      aria-label={t("overlay.cancel")}
-      onClick={cancel}
-    >
+    <button className="sx" aria-label={t("overlay.cancel")} onClick={cancel}>
       <X size={10} aria-hidden="true" />
     </button>
   );
@@ -525,30 +523,30 @@ const RecordingOverlay: React.FC = () => {
         // FR-001-02/03/04: exactly two actions + the shortcut tooltip.
         return (
           <div className="fbar-card scard f-hover">
-              <button
-                type="button"
-                className="fbtn"
-                aria-label={dictateTip}
-                onMouseEnter={() => setTip("dictate")}
-                onFocus={() => setTip("dictate")}
-                onMouseLeave={() => setTip(null)}
-                onBlur={() => setTip(null)}
-                onClick={dictate}
-              >
-                <Mic size={14} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="fbtn"
-                aria-label={t("overlay.notetaker")}
-                onMouseEnter={() => setTip("notetaker")}
-                onFocus={() => setTip("notetaker")}
-                onMouseLeave={() => setTip(null)}
-                onBlur={() => setTip(null)}
-                onClick={notetaker}
-              >
-                <CircleDot size={14} aria-hidden="true" />
-              </button>
+            <button
+              type="button"
+              className="fbtn"
+              aria-label={dictateTip}
+              onMouseEnter={() => setTip("dictate")}
+              onFocus={() => setTip("dictate")}
+              onMouseLeave={() => setTip(null)}
+              onBlur={() => setTip(null)}
+              onClick={dictate}
+            >
+              <Mic size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="fbtn"
+              aria-label={t("overlay.notetaker")}
+              onMouseEnter={() => setTip("notetaker")}
+              onFocus={() => setTip("notetaker")}
+              onMouseLeave={() => setTip(null)}
+              onBlur={() => setTip(null)}
+              onClick={notetaker}
+            >
+              <CircleDot size={14} aria-hidden="true" />
+            </button>
           </div>
         );
 

@@ -128,9 +128,7 @@ test.describe("Flow Bar — session states", () => {
     await emitTauriEvent(page, "session://state", sessionEvent("recording"));
 
     await expect(page.locator(".f-rec")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Cancel/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /Cancel/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /Stop/i })).toBeVisible();
 
     // The waveform only reacts once the backend reports real samples flowing.
@@ -138,14 +136,15 @@ test.describe("Flow Bar — session states", () => {
 
     // Muted/no-input audio → flat bars.
     const heightOf = (i: number) =>
-      page.locator(".swave i").nth(i).evaluate((el) => el.clientHeight);
+      page
+        .locator(".swave i")
+        .nth(i)
+        .evaluate((el) => el.clientHeight);
     const flat = await heightOf(3);
     await emitTauriEvent(page, "audio://level", {
       rms: Array(16).fill(0.95),
     });
-    await expect
-      .poll(() => heightOf(3))
-      .toBeGreaterThan(flat);
+    await expect.poll(() => heightOf(3)).toBeGreaterThan(flat);
 
     // The ■ button toggles the session off through the same binding edge.
     await page.getByRole("button", { name: /Stop/i }).click();
@@ -174,9 +173,7 @@ test.describe("Flow Bar — session states", () => {
     await expect(page.locator(".fbar-tip")).toContainText("model unavailable");
     const retry = page.getByRole("button", { name: /Try again/i });
     await retry.click();
-    expect(mock.calls.map((c) => c.cmd)).toContain(
-      "flowbar_retry_last_failed",
-    );
+    expect(mock.calls.map((c) => c.cmd)).toContain("flowbar_retry_last_failed");
   });
 
   test("nothing-heard flash and idle fallback after session://state idle", async ({
