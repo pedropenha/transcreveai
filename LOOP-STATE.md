@@ -62,6 +62,8 @@
 
 - Ratchet de dívida havia regredido (15 arquivos >800 linhas, 163 unwrap/expect, 68 unsafe) — reparado: testes extraídos de `matcher.rs`/`secrets.rs`/`text.rs`, `machine/tests.rs` dividido, blocos `unsafe` contíguos consolidados, `lock().unwrap()` → `unwrap_or_else(|e| e.into_inner())` nas travas internas.
 - Bug corrigido: evento de notificação do ConsentStore era manual-reset e nunca era resetado → busy-loop após a primeira mudança; agora auto-reset (`meeting/consent.rs`).
+- Bug corrigido: `build.rs` emitia `/MANIFEST:EMBED` global → manifest duplicado com o `resource.lib` do tauri-build (LNK1123 no `tauri build`). Agora o manifest sai do resource.lib (`new_without_app_manifest`) e é embutido via linker em bins e testes.
+- `bun run tauri build` verde: `C:\t\release\bundle\{nsis,msi}\` produziram `Transcreve.ai_0.9.7_x64-setup.exe` e `.msi`. Smoke manual pendente (checklist no fim do loop).
 
 ## Notas operacionais
 
