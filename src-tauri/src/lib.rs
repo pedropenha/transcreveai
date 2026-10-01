@@ -13,6 +13,10 @@ mod helpers;
 mod input;
 mod llm_client;
 mod managers;
+/// Meeting notetaker domain (F009). `pub` so the capture plumbing T-063 ships
+/// stays reachable from the crate boundary until the session layer (T-064)
+/// consumes it.
+pub mod meeting;
 mod memory;
 mod overlay;
 mod paste_tx;
@@ -218,6 +222,24 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     );
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+
+    // FR-009-05 / AC-009-04 (T-063): a meeting still `recording`/`paused` when
+    // the previous process died is orphaned — the app is single-instance, so
+    // no live capture can still own it. Mark it `recovered` so the session
+    // layer offers it for processing; its sealed blocks are read back from
+    // `audio/meetings/<id>/`.
+    match crate::portable::app_data_dir(app_handle)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .and_then(|dir| crate::meeting::recovery::recover_interrupted_meetings_at(&dir))
+    {
+        Ok(recovered) if !recovered.is_empty() => {
+            log::warn!("Recovered {} interrupted meeting(s)", recovered.len());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log::warn!("Meeting recovery scan failed: {error}");
+        }
+    }
 
     // Initialize the transcribe-cpp native backend (logging + backend module
     // registration) once, before any whisper model is loaded.

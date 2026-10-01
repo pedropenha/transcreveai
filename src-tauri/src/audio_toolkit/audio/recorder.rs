@@ -853,7 +853,9 @@ fn handle_frame(
     }
 }
 
-fn drain_available_samples(
+/// `pub(crate)` so the system-audio loopback worker drains its ring through
+/// the identical bounded-read path as the microphone consumer.
+pub(crate) fn drain_available_samples(
     consumer: &mut Consumer<f32>,
     max_samples: usize,
     mut process: impl FnMut(&[f32]),

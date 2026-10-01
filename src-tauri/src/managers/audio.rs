@@ -1,10 +1,11 @@
 use crate::audio_toolkit::{
+    audio::FrameTap,
     list_input_devices,
     vad::{
         frames_for_duration_ms, EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS,
         VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS,
     },
-    AudioRecorder, SileroVad, VadPolicy, VoiceActivityDetector,
+    AudioFrameCallback, AudioRecorder, SileroVad, VadPolicy, VoiceActivityDetector,
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
@@ -1025,6 +1026,42 @@ impl AudioRecordingManager {
 
     pub fn cancel_generation(&self) -> u64 {
         self.cancel_generation.load(Ordering::Acquire)
+    }
+
+    /// Consumed by the meeting session (T-064); not yet wired to a caller.
+    #[allow(dead_code)]
+    /// Meeting notetaker (F009/T-063): attach a consumer to the shared mic
+    /// stream at `FrameTap::Raw` with `when_idle`, so the meeting's mic track
+    /// keeps receiving every frame — including between dictation sessions and
+    /// audio the dictation VAD would withhold — without opening the mic twice.
+    ///
+    /// Fails when the stream is not open: call `start_microphone_stream`
+    /// first. Runtime subscribers do not survive a stream rebuild — the caller
+    /// must re-subscribe after `needs_reopen` recovery.
+    pub fn subscribe_frame_consumer(
+        &self,
+        callback: AudioFrameCallback,
+    ) -> Result<u64, anyhow::Error> {
+        let recorder = self.recorder.lock().unwrap();
+        let recorder = recorder
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Recorder is not initialized"))?;
+        recorder
+            .subscribe(FrameTap::Raw, true, callback)
+            .map_err(|e| anyhow::anyhow!("Failed to subscribe frame consumer: {e}"))
+    }
+
+    /// Detach a consumer previously returned by [`Self::subscribe_frame_consumer`].
+    /// Consumed by the meeting session (T-064); not yet wired to a caller.
+    #[allow(dead_code)]
+    pub fn unsubscribe_frame_consumer(&self, id: u64) -> Result<(), anyhow::Error> {
+        let recorder = self.recorder.lock().unwrap();
+        if let Some(recorder) = recorder.as_ref() {
+            recorder
+                .unsubscribe(id)
+                .map_err(|e| anyhow::anyhow!("Failed to unsubscribe frame consumer: {e}"))?;
+        }
+        Ok(())
     }
 
     pub fn was_cancelled_since(&self, generation: u64) -> bool {
