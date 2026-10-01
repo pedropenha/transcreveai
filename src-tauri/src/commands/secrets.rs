@@ -53,7 +53,7 @@ pub async fn secret_set(
         return Ok(None);
     }
     secrets::validate_secret(&secret)
-        .map_err(|e| CommandError::new(CommandErrorCode::InvalidInput, e))?;
+        .map_err(|e| CommandError::new(CommandErrorCode::InvalidInput, e.to_string()))?;
     secrets::secret_store()
         .set(&provider_id, &secret)
         .map_err(|e| {
