@@ -28,13 +28,13 @@
 - [x] **fix/review-t016** — merge (ver git log). Cofre vence migração (sem sobrescrever chave nova); mutex serializando blob de settings; `store:default` removido; memory-store não migra; backoff de retentativa do cofre; comandos `secret_*` async; `ApiKeyField` não grava fragmento da máscara; validação 2560B/control chars; hint ≤len/4; contrato §5 atualizado; teste trava drift de bindings vs specta. 391 testes.
 - [x] **T-015** — merge (ver git log). `managers/hardware.rs` (RAM/AVX2/VRAM → tiers + recomendações FR-003-05); `model/disk.rs` (gate de espaço); `import_model` (GGUF probe + sha256 + cópia atômica); turbo = recommended no catálogo; 3 comandos novos reconciliados a CommandError no merge. 398 testes.
 - [x] **T-009** — merge (ver git log). Playwright nas webviews (`tests/helpers/tauri-mock.ts` + 3 specs); harness nativo pywinauto em `e2e/native/` (smoke manual); feature cargo `audio-fixture` com `TRANSCREVE_AUDIO_FIXTURE` alimentando o ring do recorder; fixtures WAV pt-BR sintéticos. 380 testes (c/ feature).
+- [x] **T-013** — merge (ver git log). `prompt.rs` (initial_prompt c/ dedup + budget) + `hallucination.rs` (blocklist pt/en, filtros R0–R3 por energia RMS do segmento). Custom words já chegavam via vocabulary_hints. 437 testes. `bindings.ts` REGENERADO de verdade (teste de drift passa) — dívida da edição manual quitada.
 - [x] **T-007** — merge (ver git log). Menu da bandeja = FR-010-14 (Hub, ditado, reunião desabilitada até T-064, Flow Bar show/hide, pausa de detecção 1h, modo offline, sair); autostart default on; `offline_mode` + `meeting_detection_paused_until_ms` no schema; quit c/ confirmação se gravando; `--no-tray` fecha de verdade; relaunch hidden. 373 testes + `cargo check` pós-merge verde.
 
 ## Em andamento (lanes)
 
 - **T-021** `feat/t-021-matcher` @ `ecc-t021` (54045a53)
 - **T-011** `feat/t-011-vad` @ `ecc-t011` (dfd4b643)
-- **T-013** `feat/t-013-whisper-provider` @ `ecc-t013` (6becb513)
 - **T-022** `feat/t-022-coordinator` @ `ecc-t022` (8ef225a5)
 - **T-060** `feat/t-060-mic-monitor` @ `ecc-t060` (07ab58ff)
 - **T-063** `feat/t-063-loopback` @ `ecc-t063` (c049a38c)
@@ -55,7 +55,7 @@
 
 - `LLKHF_INJECTED` não é checado pelo crate handy-keys — eventos injetados pelo enigo chegam ao matcher (nota manual; candidate a patch upstream).
 - T-031 deve reconciliar `insertion_method` (novo, T-005) com `paste_method` legado que ainda dirige a colagem.
-- `src/bindings.ts` precisa ser regenerado num `bun run tauri dev` em algum merge (foi editado à mão na T-005).
+- `src/bindings.ts` regenerado via teste de drift (workaround mt.exe no exe de teste) — quitado. Problema de manifest do exe de teste no Windows (0xC0000139) segue aberto — fix em build.rs pendente.
 - Evento `shortcut://hook-dead` emitido mas ninguém escuta — UI de aviso fica para follow-up (T-040/T-041).
 - Aviso de fallback de mic (T-010) depende de `toast://show` — pendente de lane de UI.
 - `managers/transcription.rs` virou diretório — lanes futuras devem editar os submódulos.
