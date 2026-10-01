@@ -19,7 +19,7 @@
   },
   "sidebar": {
     "general": "Geral",
-    "models": "Modelos",
+    "models": "Modelos e Provedores",
     "advanced": "Avançado",
     "postProcessing": "Pós-Processamento",
     "history": "Histórico",
@@ -218,7 +218,7 @@
       }
     },
     "models": {
-      "title": "Modelos de Transcrição",
+      "title": "Modelos e Provedores",
       "description": "Selecione um modelo de transcrição ou baixe modelos adicionais. Diferentes modelos oferecem diferentes níveis de precisão e velocidade.",
       "deleteConfirm": "Tem certeza de que deseja excluir {{modelName}}? Você precisará baixá-lo novamente para usá-lo.",
       "deleteActiveConfirm": "{{modelName}} é o seu modelo ativo. Excluí-lo interromperá as transcrições até que você selecione um novo modelo. Tem certeza?",
@@ -235,6 +235,30 @@
       "rescan": {
         "label": "Reescanear",
         "tooltip": "Reescaneia em busca de modelos adicionados à pasta de modelos ou ao cache do Hugging Face fora do Transcreve.ai"
+      },
+      "usage": {
+        "title": "Uso",
+        "description": "Qual modelo local cada recurso usa para transcrever.",
+        "dictation": "Ditado",
+        "meeting": "Reunião",
+        "fallback": "Reserva",
+        "dictationDescription": "Modelo que transcreve o seu ditado. Selecionar outro modelo troca o motor ativo.",
+        "meetingDescription": "Modelo usado na transcrição de reuniões. \"Igual ao ditado\" segue {{modelName}}.",
+        "fallbackDescription": "Modelo tentado quando o principal falha. Opcional.",
+        "sameAsDictation": "Igual ao ditado",
+        "none": "Nenhum",
+        "noModel": "Nenhum modelo baixado"
+      },
+      "suitability": {
+        "goodFit": "Boa opção",
+        "heavy": "Pesado para esta máquina",
+        "notAdvised": "Não recomendado"
+      },
+      "import": {
+        "button": "Importar arquivo de modelo",
+        "title": "Importar Modelo",
+        "filterName": "Arquivo de modelo",
+        "success": "{{modelName}} importado com sucesso.\nSHA-256: {{sha256}}"
       }
     },
     "sound": {
@@ -638,6 +662,18 @@
       "whatsNewUpdates": {
         "label": "Mostrar novidades",
         "description": "Mostrar notas de versão após atualizações do Transcreve.ai"
+      }
+    },
+    "providers": {
+      "title": "Provedores",
+      "local": "Local",
+      "modelCount": "{{downloaded}} de {{total}} modelos baixados",
+      "downloadingModels": "{{downloaded}} de {{total}} modelos baixados — download em andamento",
+      "localOnlyNote": "Provedores em nuvem (OpenAI, Deepgram, …) chegam numa atualização futura. Nesta versão só há modelos locais.",
+      "types": {
+        "local_whisper": "Whisper",
+        "local_parakeet": "Parakeet",
+        "local_onnx": "Modelos ONNX"
       }
     }
   },

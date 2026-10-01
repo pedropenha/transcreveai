@@ -17,4 +17,5 @@
 pub mod local;
 pub mod orchestrator;
 pub mod provider;
+pub mod selection;
 pub mod types;

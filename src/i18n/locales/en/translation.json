@@ -19,7 +19,7 @@
   },
   "sidebar": {
     "general": "General",
-    "models": "Models",
+    "models": "Models & Providers",
     "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
@@ -218,7 +218,7 @@
       }
     },
     "models": {
-      "title": "Transcription Models",
+      "title": "Models & Providers",
       "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",
       "searchPlaceholder": "Search models by name…",
       "yourModels": "Downloaded Models",
@@ -235,7 +235,31 @@
         "label": "Rescan",
         "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Transcreve.ai"
       },
-      "noModelsMatch": "No models match this filter."
+      "noModelsMatch": "No models match this filter.",
+      "usage": {
+        "title": "Usage",
+        "description": "Which local model each feature transcribes with.",
+        "dictation": "Dictation",
+        "meeting": "Meeting",
+        "fallback": "Fallback",
+        "dictationDescription": "Model that transcribes your dictation. Selecting another model switches the active engine.",
+        "meetingDescription": "Model used for meeting transcription. \"Same as dictation\" follows {{modelName}}.",
+        "fallbackDescription": "Model tried when the primary one fails. Optional.",
+        "sameAsDictation": "Same as dictation",
+        "none": "None",
+        "noModel": "No downloaded model"
+      },
+      "suitability": {
+        "goodFit": "Good fit",
+        "heavy": "Heavy for this machine",
+        "notAdvised": "Not advised"
+      },
+      "import": {
+        "button": "Import model file",
+        "title": "Import Model",
+        "filterName": "Model file",
+        "success": "{{modelName}} imported successfully.\nSHA-256: {{sha256}}"
+      }
     },
     "sound": {
       "title": "Sound",
@@ -638,6 +662,18 @@
           "description": "Open-source speech-to-text app this project is built on",
           "details": "Transcreve.ai is a fork of Handy by CJ Pais, released under the MIT license. Thanks to CJ and the Handy contributors."
         }
+      }
+    },
+    "providers": {
+      "title": "Providers",
+      "local": "Local",
+      "modelCount": "{{downloaded}} of {{total}} models downloaded",
+      "downloadingModels": "{{downloaded}} of {{total}} models downloaded — download in progress",
+      "localOnlyNote": "Cloud providers (OpenAI, Deepgram, …) arrive in a future update. Only local models are available in this version.",
+      "types": {
+        "local_whisper": "Whisper",
+        "local_parakeet": "Parakeet",
+        "local_onnx": "ONNX models"
       }
     }
   },

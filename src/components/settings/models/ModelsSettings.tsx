@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, message, open } from "@tauri-apps/plugin-dialog";
 import {
   AudioLines,
   ChevronDown,
+  FolderInput,
   Globe,
   Languages,
   RefreshCw,
@@ -12,6 +13,17 @@ import {
 import type { ModelCardStatus } from "@/components/onboarding";
 import { ModelCard } from "@/components/onboarding";
 import { useModelStore } from "@/stores/modelStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { ProvidersSection } from "./ProvidersSection";
+import { UsageSelectors } from "./UsageSelectors";
+import {
+  deriveLocalProviders,
+  effectiveDictationModelId,
+  effectiveFallbackModelId,
+  effectiveMeetingModelId,
+  suitabilityForModel,
+  type SttUsage,
+} from "@/lib/providers";
 import {
   getLanguageLabel,
   MODEL_CAPABILITY_LANGUAGES,
@@ -51,12 +63,60 @@ export const ModelsSettings: React.FC = () => {
     extractingModels,
     loading,
     isRescanning,
+    recommendations,
     downloadModel,
     cancelDownload,
     selectModel,
     deleteModel,
     rescanLocalModels,
+    importModel,
+    loadRecommendations,
   } = useModelStore();
+  const settings = useSettingsStore((s) => s.settings);
+  const [isImporting, setIsImporting] = useState(false);
+
+  // Hardware suitability labels are advisory — fetch once, never block on it.
+  useEffect(() => {
+    void loadRecommendations();
+  }, [loadRecommendations]);
+
+  // Effective per-usage picks (meeting inherits dictation when unset).
+  const usageModelIds = useMemo<Record<SttUsage, string | null>>(
+    () => ({
+      dictation: effectiveDictationModelId(settings),
+      meeting: effectiveMeetingModelId(settings),
+      fallback: effectiveFallbackModelId(settings),
+    }),
+    [settings],
+  );
+
+  // model.id -> usage badges shown on its card.
+  const usagesByModelId = useMemo(() => {
+    const map = new Map<string, SttUsage[]>();
+    for (const [usage, modelId] of Object.entries(usageModelIds) as [
+      SttUsage,
+      string | null,
+    ][]) {
+      if (!modelId) continue;
+      const list = map.get(modelId) ?? [];
+      list.push(usage);
+      map.set(modelId, list);
+    }
+    return map;
+  }, [usageModelIds]);
+
+  const providers = useMemo(
+    () =>
+      deriveLocalProviders(
+        models,
+        usageModelIds,
+        new Set([
+          ...Object.keys(downloadingModels),
+          ...Object.keys(extractingModels),
+        ]),
+      ),
+    [models, usageModelIds, downloadingModels, extractingModels],
+  );
 
   // click outside handler for language dropdown
   useEffect(() => {
@@ -175,6 +235,47 @@ export const ModelsSettings: React.FC = () => {
     }
   };
 
+  // FR-003-07: pick a .gguf/.bin on disk; the backend format-checks it,
+  // verifies disk space, and returns the SHA-256 shown to the user.
+  const handleImportModel = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        filters: [
+          {
+            name: t("settings.models.import.filterName"),
+            extensions: ["gguf", "bin"],
+          },
+        ],
+      });
+      if (typeof selected !== "string" || selected === "") return;
+      setIsImporting(true);
+      const imported = await importModel(selected);
+      if (imported) {
+        await message(
+          t("settings.models.import.success", {
+            modelName: imported.model.name,
+            sha256: imported.sha256,
+          }),
+          {
+            title: t("settings.models.import.title"),
+            kind: "info",
+          },
+        );
+      } else {
+        await message(useModelStore.getState().error ?? "", {
+          title: t("settings.models.import.title"),
+          kind: "error",
+        });
+      }
+    } catch (err) {
+      console.error("Failed to import model:", err);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // Filter models by search query (name + description), language filter, and toggles
   const filteredModels = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -248,6 +349,13 @@ export const ModelsSettings: React.FC = () => {
         </p>
       </div>
 
+      {/* v1 providers = the local engine families behind the catalog
+          (FR-003-01); cloud providers return in v1.1 (T-014). */}
+      <ProvidersSection providers={providers} />
+
+      {/* Per-usage model picks: dictation / meeting / fallback (FR-003-03). */}
+      <UsageSelectors />
+
       {/* Search bar — filter the catalog by name or description */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text/40 pointer-events-none" />
@@ -279,6 +387,20 @@ export const ModelsSettings: React.FC = () => {
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${isRescanning ? "animate-spin" : ""}`}
+                />
+              </button>
+
+              {/* Import a .gguf/.bin model file from disk (FR-003-07) */}
+              <button
+                type="button"
+                onClick={() => void handleImportModel()}
+                disabled={isImporting}
+                title={t("settings.models.import.button")}
+                aria-label={t("settings.models.import.button")}
+                className="flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FolderInput
+                  className={`w-3.5 h-3.5 ${isImporting ? "animate-pulse" : ""}`}
                 />
               </button>
 
@@ -418,6 +540,8 @@ export const ModelsSettings: React.FC = () => {
               downloadProgress={getDownloadProgress(model.id)}
               downloadSpeed={getDownloadSpeed(model.id)}
               showRecommended={false}
+              suitability={suitabilityForModel(recommendations, model.id)}
+              usages={usagesByModelId.get(model.id)}
             />
           ))}
         </div>
@@ -440,6 +564,8 @@ export const ModelsSettings: React.FC = () => {
                 downloadProgress={getDownloadProgress(model.id)}
                 downloadSpeed={getDownloadSpeed(model.id)}
                 showRecommended={true}
+                suitability={suitabilityForModel(recommendations, model.id)}
+                usages={usagesByModelId.get(model.id)}
               />
             ))}
           </div>

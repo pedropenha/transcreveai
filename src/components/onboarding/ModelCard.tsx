@@ -10,7 +10,8 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import type { ModelInfo } from "@/bindings";
+import type { ModelInfo, Suitability } from "@/bindings";
+import type { SttUsage } from "@/lib/providers";
 import { formatModelSize } from "../../lib/utils/format";
 import {
   getTranslatedModelDescription,
@@ -75,6 +76,12 @@ interface ModelCardProps {
   downloadProgress?: number;
   downloadSpeed?: number; // MB/s
   showRecommended?: boolean;
+  /** Hardware suitability hint (FR-003-05); "recommended" renders via
+   * `is_recommended`, so only the other labels show a badge. */
+  suitability?: Suitability;
+  /** Usage slots (dictation/meeting/fallback) whose effective pick is this
+   * model — shown as badges on the Models & Providers screen (FR-003-03). */
+  usages?: SttUsage[];
 }
 
 const ModelCard: React.FC<ModelCardProps> = ({
@@ -90,6 +97,8 @@ const ModelCard: React.FC<ModelCardProps> = ({
   downloadProgress,
   downloadSpeed,
   showRecommended = true,
+  suitability,
+  usages,
 }) => {
   const { t } = useTranslation();
   const debugMode = useSettingsStore(
@@ -191,6 +200,25 @@ const ModelCard: React.FC<ModelCardProps> = ({
                 {t("modelSelector.switching")}
               </Badge>
             )}
+            {suitability === "good_fit" && (
+              <Badge variant="success">
+                {t("settings.models.suitability.goodFit")}
+              </Badge>
+            )}
+            {(suitability === "heavy" || suitability === "not_advised") && (
+              <Badge variant="warning">
+                {t(
+                  suitability === "heavy"
+                    ? "settings.models.suitability.heavy"
+                    : "settings.models.suitability.notAdvised",
+                )}
+              </Badge>
+            )}
+            {usages?.map((usage) => (
+              <Badge key={usage} variant="secondary">
+                {t(`settings.models.usage.${usage}`)}
+              </Badge>
+            ))}
           </div>
           <p className="text-text/60 text-sm leading-relaxed">
             {displayDescription}

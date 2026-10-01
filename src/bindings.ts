@@ -762,6 +762,39 @@ async setActiveModel(modelId: string) : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Select the STT provider for a usage slot (FR-003-03).
+ * 
+ * In v1 the selectable providers are the installed local models, addressed as
+ * `local_model:<model_id>` (see `stt::selection`):
+ * - `Dictation` requires a `local_model:` id and is the real engine switch —
+ * it delegates to [`switch_active_model`] so the model is loaded and
+ * `selected_model` stays the single source of truth.
+ * - `Meeting`/`Fallback` accept `null` (meeting inherits dictation; fallback
+ * becomes unset) or a `local_model:` id persisted verbatim.
+ * - Any other id is a `providers`-table reference and is rejected with
+ * `NotFound` until cloud providers land in v1.1+.
+ */
+async setSttProvider(usage: SttUsage, providerId: string | null) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_stt_provider", { usage, providerId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Read the effective per-usage model picks in one call — the same resolution
+ * the backend applies, so the UI does not have to reimplement inheritance.
+ */
+async getEffectiveSttModels() : Promise<Result<EffectiveSttModels, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_effective_stt_models") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getCurrentModel() : Promise<Result<string, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_current_model") };
@@ -1212,18 +1245,24 @@ flowbar_hide_in_fullscreen?: boolean;
 flowbar_snoozed_until_ms?: number | null; 
 /**
  * STT provider used for dictation (data-model `transcription.dictation_provider`).
- * `None` resolves to the local `selected_model` until the provider
- * registry (T-004) lands.
+ * Stays `None` in v1: the dictation model is `selected_model` (the real
+ * engine switch — `commands::models::set_stt_provider` writes it via
+ * `switch_active_model`). Values use the `local_model:<model_id>`
+ * pseudo-id for installed local models or a `providers` row id (v1.1+);
+ * resolution lives in `stt::selection`.
  */
 dictation_provider_id?: string | null; 
 /**
  * STT provider used for meeting transcription (data-model
- * `transcription.meeting_provider`); `None` inherits `dictation_provider_id`.
+ * `transcription.meeting_provider`); `None` inherits `dictation_provider_id`
+ * (and thus `selected_model` in v1). `local_model:<model_id>` pins a
+ * different local model for meetings (FR-003-03).
  */
 meeting_provider_id?: string | null; 
 /**
  * Fallback STT provider tried when the primary fails (data-model
- * `transcription.fallback_provider`).
+ * `transcription.fallback_provider`). `local_model:<model_id>` in v1;
+ * consumed when the orchestrator wires a real fallback.
  */
 fallback_provider_id?: string | null; 
 /**
@@ -1306,6 +1345,12 @@ export type CommandErrorCode =
  */
 "provider"
 export type CustomSounds = { start: boolean; stop: boolean }
+/**
+ * Effective local model id per usage slot after inheritance is applied
+ * (FR-003-03): the `local_model:` ids in the `*_provider_id` settings decoded
+ * back to model ids, with meeting falling back to the dictation pick.
+ */
+export type EffectiveSttModels = { dictation: string | null; meeting: string | null; fallback: string | null }
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
@@ -1553,6 +1598,11 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
+/**
+ * Which slot a STT provider selection fills (FR-003-03): dictation, meeting,
+ * or the optional fallback.
+ */
+export type SttUsage = "dictation" | "meeting" | "fallback"
 /**
  * The per-model label FR-003-05 defines. Rendered as a badge/hint; it never
  * blocks selection.

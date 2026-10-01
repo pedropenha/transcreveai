@@ -2,8 +2,15 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { produce } from "immer";
 import { listen } from "@tauri-apps/api/event";
-import { commands, type ModelInfo } from "@/bindings";
+import {
+  commands,
+  type ImportedModel,
+  type ModelInfo,
+  type ModelRecommendations,
+} from "@/bindings";
 import { toast } from "sonner";
+import { useSettingsStore } from "./settingsStore";
+import { localModelProviderId, type SttUsage } from "@/lib/providers";
 
 interface DownloadProgress {
   model_id: string;
@@ -32,6 +39,8 @@ interface ModelsStore {
   error: string | null;
   initialized: boolean;
   isRescanning: boolean;
+  /** Hardware probe + per-model suitability labels (FR-003-05). */
+  recommendations: ModelRecommendations | null;
 
   // Actions
   initialize: () => Promise<void>;
@@ -42,6 +51,19 @@ interface ModelsStore {
   downloadModel: (modelId: string) => Promise<boolean>;
   cancelDownload: (modelId: string) => Promise<boolean>;
   deleteModel: (modelId: string) => Promise<boolean>;
+  /** Import a local model file picked by the user (FR-003-07). */
+  importModel: (path: string) => Promise<ImportedModel | null>;
+  /** Hardware suitability labels; fetched lazily by the models screen. */
+  loadRecommendations: () => Promise<void>;
+  /**
+   * Select the STT provider for a usage slot (FR-003-03). `modelId` is turned
+   * into the `local_model:` provider id; `null` clears meeting/fallback.
+   * Dictation delegates to `selectModel` (it is the real engine switch).
+   */
+  setProviderForUsage: (
+    usage: SttUsage,
+    modelId: string | null,
+  ) => Promise<boolean>;
   getModelInfo: (modelId: string) => ModelInfo | undefined;
   isModelDownloading: (modelId: string) => boolean;
   isModelVerifying: (modelId: string) => boolean;
@@ -68,6 +90,7 @@ export const useModelStore = create<ModelsStore>()(
     error: null,
     initialized: false,
     isRescanning: false,
+    recommendations: null,
 
     // Internal setters
     setModels: (models) => set({ models }),
@@ -234,6 +257,9 @@ export const useModelStore = create<ModelsStore>()(
         if (result.status === "ok") {
           await get().loadModels();
           await get().loadCurrentModel();
+          // Deleting a model can also clear provider selections that pointed
+          // at it (meeting/fallback) — resync settings so usage labels drop.
+          await useSettingsStore.getState().refreshSettings();
           return true;
         } else {
           set({ error: `Failed to delete model: ${result.error.message}` });
@@ -241,6 +267,65 @@ export const useModelStore = create<ModelsStore>()(
         }
       } catch (err) {
         set({ error: `Failed to delete model: ${err}` });
+        return false;
+      }
+    },
+
+    importModel: async (path: string) => {
+      try {
+        set({ error: null });
+        const result = await commands.importModel(path);
+        if (result.status === "ok") {
+          // The import's rescan emits `models-updated` which reloads the list,
+          // but reload defensively in case the listener is not attached yet.
+          await get().loadModels();
+          return result.data;
+        }
+        set({ error: result.error.message });
+        return null;
+      } catch (err) {
+        set({ error: `Failed to import model: ${err}` });
+        return null;
+      }
+    },
+
+    loadRecommendations: async () => {
+      if (get().recommendations) return;
+      try {
+        const result = await commands.getModelRecommendations();
+        if (result.status === "ok") {
+          set({ recommendations: result.data });
+        }
+      } catch (err) {
+        // The probe only informs labels — never block the screen on it.
+        console.warn("Failed to load model recommendations:", err);
+      }
+    },
+
+    setProviderForUsage: async (usage: SttUsage, modelId: string | null) => {
+      // Dictation selection is the engine switch itself (selected_model); the
+      // backend resolves a null dictation provider to it.
+      if (usage === "dictation") {
+        if (modelId === null) {
+          set({ error: "Dictation requires a model" });
+          return false;
+        }
+        return get().selectModel(modelId);
+      }
+      try {
+        set({ error: null });
+        const result = await commands.setSttProvider(
+          usage,
+          modelId === null ? null : localModelProviderId(modelId),
+        );
+        if (result.status === "ok") {
+          await useSettingsStore.getState().refreshSettings();
+          return true;
+        }
+        set({ error: result.error.message });
+        return false;
+      } catch (err) {
+        set({ error: `Failed to set provider: ${err}` });
         return false;
       }
     },
