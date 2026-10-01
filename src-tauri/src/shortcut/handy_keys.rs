@@ -59,7 +59,8 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
-use crate::settings::{self, get_settings, ShortcutBinding};
+use crate::settings::{self, get_settings, ShortcutActivation, ShortcutBinding};
+use crate::transcription_coordinator::is_transcribe_binding;
 
 use super::handler::handle_shortcut_event;
 use super::matcher::{HotkeyAction, HotkeyMatcher};
@@ -353,10 +354,40 @@ impl HandyKeysState {
 
     /// Dispatch one matcher action to the shared shortcut handler.
     fn dispatch(app: &AppHandle, matcher: &HotkeyMatcher, action: HotkeyAction) {
-        let binding_id = action.binding_id().to_string();
-        let is_pressed = matches!(action, HotkeyAction::Pressed(_));
+        match action {
+            HotkeyAction::Pressed(binding_id) => {
+                // The mask must land while the hold is still active —
+                // before the potentially slow session-start dispatch.
+                Self::maybe_send_menu_mask(matcher, &binding_id);
+                Self::dispatch_edge(app, matcher, &binding_id, true);
+            }
+            HotkeyAction::Released(binding_id) => {
+                Self::dispatch_edge(app, matcher, &binding_id, false);
+            }
+            HotkeyAction::Promoted { from, to } => {
+                // FR-002-05: the session's mode follows the largest
+                // combination seen. v1 ships dictate mode only, so there
+                // is nothing to switch yet — the prefix session keeps
+                // running on the `from` binding's edges, and command/note
+                // modes (v1.1+) consume this action when they land.
+                debug!(
+                    "handy-keys: '{}' promoted to '{}' (mode promotion)",
+                    from, to
+                );
+            }
+            HotkeyAction::DoubleTapped(binding_id) => {
+                Self::dispatch_double_tap(app, matcher, &binding_id);
+            }
+            HotkeyAction::ArmingInterrupted(binding_id) => {
+                Self::dispatch_arming_interrupt(app, &binding_id);
+            }
+        }
+    }
+
+    /// Route a press/release edge to the shared shortcut handler.
+    fn dispatch_edge(app: &AppHandle, matcher: &HotkeyMatcher, binding_id: &str, is_pressed: bool) {
         let hotkey_string = matcher
-            .hotkey_string(&binding_id)
+            .hotkey_string(binding_id)
             .unwrap_or_default()
             .to_string();
         debug!(
@@ -365,12 +396,87 @@ impl HandyKeysState {
         );
         // A panicking handler must not take the manager thread down with it:
         // nothing supervises or respawns it.
+        let binding_id = binding_id.to_string();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             handle_shortcut_event(app, &binding_id, &hotkey_string, is_pressed);
         }));
         if result.is_err() {
             error!(
                 "handy-keys: shortcut handler panicked for binding '{}'",
+                binding_id
+            );
+        }
+    }
+
+    /// FR-002-04 "menu mask key": modifier-only combos keep every edge
+    /// flowing to the OS — suppressing their key-downs would break the OS
+    /// chords that extend them (`Ctrl+Win+→` switching desktops) — so a
+    /// Win/Alt release ending the hold would read to the shell as a lone
+    /// menu-arming tap. Injecting the inert mask key while the hold is
+    /// active inserts an intervening keystroke and disarms that
+    /// heuristic. Windows-only concern; on other platforms modifier taps
+    /// don't arm a menu, and their listeners decide blocking differently.
+    #[cfg(target_os = "windows")]
+    fn maybe_send_menu_mask(matcher: &HotkeyMatcher, binding_id: &str) {
+        let needs_mask = matcher.hotkey(binding_id).is_some_and(|hotkey| {
+            hotkey.key.is_none()
+                && hotkey
+                    .modifiers
+                    .intersects(handy_keys::Modifiers::CMD | handy_keys::Modifiers::OPT)
+        });
+        if needs_mask {
+            crate::input::send_menu_mask_key();
+        }
+    }
+
+    /// See the Windows variant — the Start-menu/menu-bar heuristic is a
+    /// Windows shell behavior, so this is a no-op elsewhere.
+    #[cfg(not(target_os = "windows"))]
+    fn maybe_send_menu_mask(_matcher: &HotkeyMatcher, _binding_id: &str) {}
+
+    /// FR-002-07: a double-tap on the PTT binding starts a hands-free
+    /// session — modeled as an external toggle press so it bypasses the
+    /// coordinator's debounce (it lands close behind the second tap's own
+    /// edges) and produces a locked recording regardless of physical key
+    /// state. Gated to push-to-talk mode: toggle already alternates on
+    /// every press and hold-or-toggle locks on a single tap, so in those
+    /// modes a third start would flip the session the taps just set.
+    fn dispatch_double_tap(app: &AppHandle, matcher: &HotkeyMatcher, binding_id: &str) {
+        let settings = get_settings(app);
+        if !settings.double_tap_enabled
+            || settings.shortcut_activation != ShortcutActivation::PushToTalk
+            || !is_transcribe_binding(binding_id)
+        {
+            return;
+        }
+        debug!("handy-keys: double-tap on '{binding_id}' — starting hands-free");
+        if let Some(coordinator) = app.try_state::<crate::TranscriptionCoordinator>() {
+            coordinator.send_external_input(
+                binding_id,
+                matcher.hotkey_string(binding_id).unwrap_or("double-tap"),
+            );
+        }
+    }
+
+    /// FR-002-06: a stray non-modifier key inside the arming window means
+    /// the user is reaching for an OS chord over our modifiers, not
+    /// dictating — cancel the session silently (the key itself was never
+    /// suppressed, so it flows through). Only transcribe bindings own
+    /// sessions worth cancelling.
+    fn dispatch_arming_interrupt(app: &AppHandle, binding_id: &str) {
+        if !is_transcribe_binding(binding_id) {
+            return;
+        }
+        debug!("handy-keys: arming interrupted for '{binding_id}' — cancelling session");
+        // As everywhere on this thread: a panicking cancel must not kill
+        // the manager loop.
+        let binding_id = binding_id.to_string();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::utils::cancel_current_operation(app);
+        }));
+        if result.is_err() {
+            error!(
+                "handy-keys: arming-interrupt cancel panicked for '{}'",
                 binding_id
             );
         }
@@ -404,7 +510,16 @@ impl HandyKeysState {
         if let Some(old) = previous {
             set.remove(&old);
         }
-        set.insert(hotkey);
+        // FR-002-04: only combos with a non-modifier key belong in the
+        // suppression set — their key event is the one swallowed (that is
+        // what keeps `Win+Space` from switching the keyboard layout).
+        // Modifier-only combos keep *every* edge flowing: their key-downs
+        // may be the prefix of an OS chord (`Ctrl+Win+→` must still switch
+        // desktops, FR-002-06), and the Start-menu heuristic their release
+        // would trigger is disarmed by the menu-mask injection on press.
+        if hotkey.key.is_some() {
+            set.insert(hotkey);
+        }
 
         debug!(
             "Registered handy-keys shortcut: {} -> {:?}",
