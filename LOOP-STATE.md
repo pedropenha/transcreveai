@@ -7,7 +7,7 @@
 
 - **Alvo de merges**: `integration/v1` (worktree `C:\multimidia\ecc-v1`). `main` nunca é tocada.
 - **Base**: `chore/t-001a-baseline` + `chore/t-008-design-direction` (já mergeada em `3a82c14`).
-- **Última atualização**: 2026-10-01 — onda 5 mergeada em série (T-030→T-031→T-035→T-040→T-043→T-050); verificação pós-merge em andamento.
+- **Última atualização**: 2026-10-01 — onda 5 mergeada em série (T-030→T-031→T-035→T-040→T-043→T-050); verificação pós-merge completa e verde (653 testes lib, clippy -D warnings, catracas ok, bindings regen). Pronto para retomar a próxima task na DAG (T-061).
 
 ## Concluído
 
