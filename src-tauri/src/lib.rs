@@ -569,7 +569,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // F012/T-091: the voice-assistant overlay — hidden window created up
     // front for the same cold-start reason, driven by the `assistant`
-    // binding, the Flow Bar ✦ button and the `assistant_*` commands.
+    // dictation binding (shortcut-only) and the `assistant_*` commands.
     assistant::init(app_handle);
 }
 
@@ -1052,7 +1052,6 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::flowbar::flowbar_set_hover,
             commands::flowbar::flowbar_toggle_dictation,
             commands::flowbar::flowbar_start_notetaker,
-            commands::flowbar::flowbar_open_assistant,
             commands::flowbar::flowbar_retry_last_failed,
             commands::assistant::assistant_get_state,
             commands::assistant::assistant_send,

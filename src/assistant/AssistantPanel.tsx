@@ -3,47 +3,37 @@ import { emit, listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
-import { Pin, PinOff, Sparkles, X } from "lucide-react";
+import { MessageSquarePlus, Pin, PinOff, Sparkles, X } from "lucide-react";
 import "./AssistantPanel.css";
 import { commands, events } from "@/bindings";
 import type { AssistantStateEvent, StreamTextEvent } from "@/bindings";
 import i18n from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import {
-  appendDictated,
   canDragPanel,
-  canSend,
-  composerValue,
   errorKindKey,
-  hotkeyIntent,
   isPanelDragging,
   pinToggleKey,
+  providerHintIsAdvisory,
   providerHintKey,
   safeMarkdownUrl,
-  type AssistantViewState,
   type PanelGrab,
 } from "./assistantView";
 
-/** `assistant://dictated` payload — the finalized text of a routed
- * dictation, appended to the editable prompt (FR-012-12). */
-interface DictatedPayload {
-  text: string;
-}
-
-/** How long the last live-preview fragment stays visible after the stream
- * stops while waiting for the finalized `assistant://dictated` text. */
-const DICTATED_SETTLE_MS = 3000;
+/** How long the last live-preview fragment stays visible after dictation
+ * stops — the auto-sent user message normally replaces it almost
+ * immediately; this is only the fallback for a lost trailing event. */
+const LIVE_SETTLE_MS = 1500;
 
 const AssistantPanel: React.FC = () => {
   const { t } = useTranslation();
   const direction = getLanguageDirection(i18n.language);
 
   const [state, setState] = useState<AssistantStateEvent | null>(null);
-  const [draft, setDraft] = useState("");
-  // Live STT preview routed to the panel — shown inside the composer while
-  // `state.dictating`, folded into `draft` on `assistant://dictated`.
+  // Live STT preview while a dictation is routed to the panel — rendered as
+  // a pending user bubble until the finalized transcript lands as a real
+  // message (FR-012-12: the visible transcription the user approved).
   const [live, setLive] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Title-strip drag (T-092): the grab offset captured at pointerdown plus
   // an rAF ticket so moves land at most once per frame — the store is only
@@ -53,60 +43,20 @@ const AssistantPanel: React.FC = () => {
   // The view-model decisions read the freshest state inside event handlers.
   const stateRef = useRef<AssistantStateEvent | null>(null);
   stateRef.current = state;
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-
-  const focusInput = useCallback(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const send = useCallback((text: string) => {
-    const s = stateRef.current;
-    if (!s) return;
-    if (!canSend(text, { phase: s.phase, providerReady: s.providerReady })) {
-      return;
-    }
-    void commands.assistantSend(text).then((result) => {
-      if (result.status === "ok") {
-        setDraft("");
-        setLive("");
-      }
-    });
-  }, []);
-
-  /** Second hotkey press with the panel open (FR-012-13): send a non-empty
-   * draft, otherwise pull keyboard focus into the input. */
-  const handleHotkey = useCallback(() => {
-    const s = stateRef.current;
-    if (!s) return;
-    const intent = hotkeyIntent(draftRef.current, {
-      phase: s.phase,
-      providerReady: s.providerReady,
-    });
-    if (intent === "send") {
-      send(draftRef.current);
-    } else if (intent === "focus") {
-      void commands.assistantFocus();
-      focusInput();
-    }
-  }, [send, focusInput]);
 
   useEffect(() => {
     let unlisteners: (() => void)[] = [];
     let cancelled = false;
 
     const setup = async () => {
-      // Hydrate before wiring listeners: `assistant_get_state` also consumes
-      // a `pendingHotkey` press that arrived while this webview was booting.
+      // Hydrate before wiring listeners so a cold webview renders the full
+      // snapshot (open conversation, pinned state, provider chip).
       try {
         const result = await commands.assistantGetState();
         if (cancelled) return;
         if (result.status === "ok") {
           setState(result.data);
-          // `handleHotkey` reads the snapshot via stateRef — seed it directly
-          // because the render hasn't happened yet on this mount path.
           stateRef.current = result.data;
-          if (result.data.pendingHotkey) handleHotkey();
         }
       } catch {
         // The panel can still render its chrome without a snapshot; the next
@@ -130,17 +80,6 @@ const AssistantPanel: React.FC = () => {
         }),
       );
 
-      await add(() =>
-        listen<DictatedPayload>("assistant://dictated", (event) => {
-          setDraft((d) => appendDictated(d, event.payload.text));
-          setLive("");
-        }),
-      );
-
-      await add(() => listen("assistant://hotkey", () => handleHotkey()));
-
-      // The streaming engine broadcasts committed+tentative text to every
-      // window; the panel only shows it while this dictation is routed here.
       // The streaming engine broadcasts committed+tentative text to every
       // window; the panel only shows it while this dictation is routed here.
       await add(() =>
@@ -165,35 +104,31 @@ const AssistantPanel: React.FC = () => {
     // Mount-once: handlers read via refs, so no listener ever goes stale.
   }, []);
 
-  // The live preview is only "live" while a dictation is routed here; once
-  // it stops, the finalized `assistant://dictated` normally replaces it —
-  // give that delivery a short window before clearing a stale preview.
+  // The live bubble is replaced by the finalized user message the moment
+  // the pipeline auto-sends it — clear the preview as soon as a user
+  // message lands (or, as a fallback, a beat after dictation stops).
+  const messageCount = state?.messages.length ?? 0;
   useEffect(() => {
     if (state?.dictating !== false) return;
     if (!live) return;
-    const id = window.setTimeout(() => setLive(""), DICTATED_SETTLE_MS);
+    const lastUser = [...(state?.messages ?? [])]
+      .reverse()
+      .find((m) => m.role === "user");
+    if (lastUser && lastUser.content.trim() === live.trim()) {
+      setLive("");
+      return;
+    }
+    const id = window.setTimeout(() => setLive(""), LIVE_SETTLE_MS);
     return () => window.clearTimeout(id);
-  }, [state?.dictating, live]);
+  }, [state?.dictating, state?.messages, live, messageCount]);
 
   // Keep the newest turn in view as messages/thinking land.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [state?.messages, state?.phase]);
+  }, [state?.messages, state?.phase, state?.queuedPrompt, live]);
 
   // ---- Actions ------------------------------------------------------------
-
-  const viewState: AssistantViewState = {
-    phase: state?.phase ?? "idle",
-    providerReady: state?.providerReady ?? false,
-  };
-
-  const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send(draft);
-    }
-  };
 
   // Esc anywhere in the panel: cancel while thinking, close otherwise
   // (AC-012-05 — the backend aborts the provider future).
@@ -220,7 +155,7 @@ const AssistantPanel: React.FC = () => {
   const onTitlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
     if (!canDragPanel(stateRef.current?.pinned ?? false)) return;
-    // The pin/close buttons inside the strip are not drag handles.
+    // The buttons inside the strip are not drag handles.
     if ((e.target as HTMLElement).closest("button")) return;
     grabRef.current = { clientX: e.clientX, clientY: e.clientY };
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -254,24 +189,32 @@ const AssistantPanel: React.FC = () => {
     void commands.assistantSetPanelPinned(!(stateRef.current?.pinned ?? false));
   };
 
-  const close = () => void commands.assistantClose();
+  const close = useCallback(() => void commands.assistantClose(), []);
   const cancel = () => void commands.assistantCancel();
   const retry = () => void commands.assistantRetry();
-  const newConversation = () => {
-    void commands.assistantNewConversation();
-    setDraft("");
-    setLive("");
-    focusInput();
-  };
+  const newConversation = () => void commands.assistantNewConversation();
   const openSettings = () => {
     void commands.showMainWindowCommand();
-    // Lands on the Settings section's advanced tab, where the assistant
+    // Lands on the Settings section's general tab, where the assistant
     // provider picker lives (`settingsTab` is read by SettingsHub).
     void emit("hub://navigate", {
       section: "settings",
-      settingsTab: "advanced",
+      settingsTab: "general",
     });
   };
+
+  /** Title-strip buttons act on pointerdown — a plain click can be
+   * swallowed by the native focus transition the panel's mousedown handler
+   * triggers (the X "not closing" bug). */
+  const stripButton = (action: () => void) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      action();
+    },
+    onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
+    onClick: (e: React.MouseEvent) => e.stopPropagation(),
+  });
 
   // ---- Render -------------------------------------------------------------
 
@@ -279,7 +222,8 @@ const AssistantPanel: React.FC = () => {
   const pinned = state?.pinned ?? false;
   const phase = state?.phase ?? "idle";
   const messages = state?.messages ?? [];
-  const sendable = canSend(draft, viewState);
+  const queued = state?.queuedPrompt ?? null;
+  const experimental = providerHintIsAdvisory(state?.providerHint);
   const showEmpty =
     messages.length === 0 && phase === "idle" && !dictating && state !== null;
 
@@ -304,18 +248,33 @@ const AssistantPanel: React.FC = () => {
           <Sparkles size={13} className="as-title-icon" aria-hidden="true" />
           <span className="as-title-text">{t("assistant.title")}</span>
           {state?.providerLabel && (
-            <span className="as-provider" title={state.providerId ?? undefined}>
-              {t("assistant.provider", { label: state.providerLabel })}
+            <span
+              className={`as-provider${experimental ? " as-provider--experimental" : ""}`}
+              title={state.providerId ?? undefined}
+            >
+              {state.providerLabel}
+              {experimental && (
+                <em className="as-exp"> {t("assistant.experimental")}</em>
+              )}
             </span>
           )}
           <span className="as-title-spacer" />
+          <button
+            type="button"
+            className="as-pin"
+            aria-label={t("assistant.newConversation")}
+            title={t("assistant.newConversation")}
+            {...stripButton(newConversation)}
+          >
+            <MessageSquarePlus size={12} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className={`as-pin${pinned ? " as-pin--on" : ""}`}
             aria-label={t(pinToggleKey(pinned))}
             aria-pressed={pinned}
             title={t(pinToggleKey(pinned))}
-            onClick={togglePin}
+            {...stripButton(togglePin)}
           >
             {pinned ? (
               <PinOff size={12} aria-hidden="true" />
@@ -327,7 +286,7 @@ const AssistantPanel: React.FC = () => {
             type="button"
             className="as-x"
             aria-label={t("assistant.close")}
-            onClick={close}
+            {...stripButton(close)}
           >
             <X size={12} aria-hidden="true" />
           </button>
@@ -390,10 +349,34 @@ const AssistantPanel: React.FC = () => {
               )}
             </div>
           ))}
+          {queued && (
+            <div className="as-msg as-user as-queued" role="status">
+              {queued}
+              <span className="as-queued-tag">{t("assistant.queued")}</span>
+            </div>
+          )}
+          {dictating && (
+            <div className="as-msg as-user as-live-msg" role="status">
+              <span className="as-live">
+                <span className="as-dot" />
+                {t("assistant.listening")}
+              </span>
+              {live && <span className="as-live-text">{live}</span>}
+            </div>
+          )}
           {phase === "thinking" && (
             <div className="as-msg as-assistant as-thinking" role="status">
               <span className="as-spinner" />
-              {t("assistant.thinking")}
+              <span className="as-thinking-text">
+                {state?.providerLabel
+                  ? t("assistant.thinkingVia", {
+                      provider: state.providerLabel,
+                    })
+                  : t("assistant.thinking")}
+              </span>
+              <button type="button" className="as-cancel" onClick={cancel}>
+                {t("assistant.cancel")}
+              </button>
             </div>
           )}
           {phase === "error" && (
@@ -421,45 +404,9 @@ const AssistantPanel: React.FC = () => {
           )}
         </div>
 
-        <div className="as-composer">
-          {dictating && (
-            <div className="as-live" role="status">
-              <span className="as-dot" />
-              {t("assistant.listening")}
-            </div>
-          )}
-          <textarea
-            ref={inputRef}
-            className="as-input"
-            value={composerValue(draft, live, dictating)}
-            readOnly={dictating}
-            placeholder={t("assistant.inputPlaceholder")}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onInputKeyDown}
-            rows={2}
-            aria-label={t("assistant.inputPlaceholder")}
-          />
-          <div className="as-composer-row">
-            <button type="button" className="as-new" onClick={newConversation}>
-              {t("assistant.newConversation")}
-            </button>
-            <span className="as-hint">{t("assistant.sendHint")}</span>
-            {phase === "thinking" ? (
-              <button type="button" className="as-send" onClick={cancel}>
-                {t("assistant.cancel")}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="as-send"
-                disabled={!sendable}
-                onClick={() => send(draft)}
-              >
-                {t("assistant.send")}
-              </button>
-            )}
-          </div>
-        </div>
+        <footer className="as-foot">
+          <span className="as-hint">{t("assistant.dictateHint")}</span>
+        </footer>
       </div>
     </div>
   );

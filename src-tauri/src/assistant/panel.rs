@@ -3,10 +3,10 @@
 //! entry points (`init`/`open`/`close`/`focus`/`hotkey`).
 
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use super::state::{emit_state, emit_state_locked};
-use super::{lock_session, AssistantSession, HOTKEY_EVENT};
+use super::{lock_session, AssistantSession};
 use crate::settings::{self, AssistantPanelPosition};
 use crate::window_labels::ASSISTANT;
 
@@ -605,6 +605,20 @@ pub fn open_panel(app: &AppHandle) {
     emit_state(app);
 }
 
+/// Closing the panel mid-dictation is the abort gesture — stop the routed
+/// capture too, or the mic would keep recording invisibly until the next
+/// hotkey press. `cancel_current_operation` clears the claim via
+/// `note_dictation_cancelled`; the final text is then dropped at `stop`,
+/// never pasted elsewhere (FR-012-12 `DictationRoute::Drop`).
+fn abort_routed_dictation(app: &AppHandle) {
+    let routed = lock_session(app)
+        .map(|s| s.dictation_routed || s.dictating)
+        .unwrap_or(false);
+    if routed {
+        crate::utils::cancel_current_operation(app);
+    }
+}
+
 /// Hide the panel; the session (history, draft-independent state) survives —
 /// the conversation is cleared only by `new_conversation` (FR-012-15).
 pub fn close_panel(app: &AppHandle) {
@@ -615,6 +629,7 @@ pub fn close_panel(app: &AppHandle) {
         session.open = false;
         emit_state_locked(app, &mut session);
     }
+    abort_routed_dictation(app);
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || hide_native(&handle));
 }
@@ -623,13 +638,16 @@ pub fn close_panel(app: &AppHandle) {
 /// keep the session flag honest so the next hotkey press re-opens instead of
 /// sending.
 pub fn note_panel_hidden(app: &AppHandle) {
-    let Some(mut session) = lock_session(app) else {
-        return;
-    };
-    if session.open {
-        session.open = false;
-        emit_state_locked(app, &mut session);
+    {
+        let Some(mut session) = lock_session(app) else {
+            return;
+        };
+        if session.open {
+            session.open = false;
+            emit_state_locked(app, &mut session);
+        }
     }
+    abort_routed_dictation(app);
 }
 
 /// Explicit user intent to interact — click (`assistant_focus`) or a routed
@@ -637,22 +655,4 @@ pub fn note_panel_hidden(app: &AppHandle) {
 pub fn focus_panel(app: &AppHandle) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || focus_native(&handle));
-}
-
-/// The global assistant hotkey. First press opens; with the panel open the
-/// press is forwarded to the webview (`assistant://hotkey`), which sends a
-/// non-empty draft or focuses the input (FR-012-10 / FR-012-13).
-pub fn hotkey_pressed(app: &AppHandle) {
-    let open = lock_session(app).map(|s| s.open).unwrap_or(false);
-    if !open {
-        open_panel(app);
-        return;
-    }
-    if let Some(mut session) = lock_session(app) {
-        // Recorded so a webview still booting can pick it up via
-        // `assistant_get_state` instead of losing the press.
-        session.pending_hotkey = true;
-        session.pending_hotkey_at = Some(std::time::Instant::now());
-    }
-    let _ = app.emit_to(ASSISTANT, HOTKEY_EVENT, ());
 }

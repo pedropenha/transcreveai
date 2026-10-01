@@ -1310,18 +1310,6 @@ async flowbarStartNotetaker() : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * FR-012-10: the ✦ button — opens the assistant overlay. Clicking the Flow
- * Bar is explicit intent, so the panel may take focus (FR-012-11).
- */
-async flowbarOpenAssistant() : Promise<Result<null, CommandError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("flowbar_open_assistant") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("flowbar_retry_last_failed") };
@@ -1331,8 +1319,7 @@ async flowbarRetryLastFailed() : Promise<Result<null, CommandError>> {
 }
 },
 /**
- * Full snapshot for the panel — also consumes the `pending_hotkey` flag so
- * a press that arrived while the webview was booting isn't lost.
+ * Full snapshot for the panel (webview hydration on mount).
  */
 async assistantGetState() : Promise<Result<AssistantStateEvent, CommandError>> {
     try {
@@ -1467,9 +1454,10 @@ async assistantSetPanelPinned(pinned: boolean) : Promise<Result<null, CommandErr
 },
 /**
  * FR-012-04: persist the assistant provider choice (`None` resets to auto).
- * Accepts any known `post_process_providers` id, including `cli_agent/*` —
- * except experimental adapters, which have no verified non-mutating mode
- * and are refused outright (NFR-012-02).
+ * Accepts any known `post_process_providers` id, including `cli_agent/*`
+ * and experimental adapters — an explicit selection is the user's opt-in
+ * (experimental adapters are never auto-picked and still refuse
+ * non-assistant purposes; NFR-012-02).
  */
 async setAssistantProvider(providerId: string | null) : Promise<Result<null, CommandError>> {
     try {
@@ -2268,8 +2256,10 @@ export type AssistantProviderHint =
  */
 "cli_agent_not_detected" | 
 /**
- * `cli_agent/*` adapter without a verified non-mutating headless mode —
- * refused outright (NFR-012-02), no matter its config or detection.
+ * `cli_agent/*` adapter without a verified non-mutating headless mode.
+ * Advisory when explicitly selected for the assistant: the call is
+ * allowed (the user opted in) but the panel flags it as experimental.
+ * Auto-picks and non-assistant purposes still refuse it (NFR-012-02).
  */
 "cli_agent_experimental"
 /**
@@ -2278,19 +2268,18 @@ export type AssistantProviderHint =
 export type AssistantStateEvent = { open: boolean; phase: AssistantPhase; 
 /**
  * A dictation session is currently routed to the panel — the panel
- * shows the live STT preview (from `StreamTextEvent`) in the input.
+ * shows the live STT preview (from `StreamTextEvent`).
  */
-dictating: boolean; 
+dictating: boolean; providerId: string | null; providerLabel: string | null; 
 /**
- * A hotkey press arrived while the webview wasn't listening yet —
- * consumed by `assistant_get_state`.
- */
-pendingHotkey: boolean; providerId: string | null; providerLabel: string | null; 
-/**
- * The provider is usable right now — gates dictation claims *and* the
- * send button (AC-012-06).
+ * The provider is usable right now (AC-012-06).
  */
 providerReady: boolean; providerHint: AssistantProviderHint | null; 
+/**
+ * A prompt dictated while a turn was in flight — queued and sent
+ * automatically when the current turn commits (FR-012-13).
+ */
+queuedPrompt: string | null; 
 /**
  * Last provider failure, classified for localization.
  */
@@ -2368,8 +2357,10 @@ binary: string;
  */
 detected: boolean; 
 /**
- * Per-provider enable flag (FR-012-05); always `false` while
- * `experimental` is set.
+ * Per-provider enable flag (FR-012-05). Experimental adapters can be
+ * enabled — the flag is honest about the toggle; only assistant use is
+ * gated elsewhere (`CliAgentProvider::complete` refuses non-assistant
+ * purposes for them).
  */
 enabled: boolean; 
 /**

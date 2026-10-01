@@ -259,8 +259,10 @@ pub struct CliAgentStatus {
     /// The binary resolved — to an explicit `binary_path` override or a
     /// spawnable PATHEXT match.
     pub detected: bool,
-    /// Per-provider enable flag (FR-012-05); always `false` while
-    /// `experimental` is set.
+    /// Per-provider enable flag (FR-012-05). Experimental adapters can be
+    /// enabled — the flag is honest about the toggle; only assistant use is
+    /// gated elsewhere (`CliAgentProvider::complete` refuses non-assistant
+    /// purposes for them).
     pub enabled: bool,
     /// File name of the resolved binary (`codex.cmd`, …) when detected —
     /// never the full path, which would leak the user's home dir/username.
@@ -281,7 +283,7 @@ fn agent_status(spec: &cli_agent::CliAgentSpec, config: &CliAgentConfig) -> CliA
         label: spec.label.to_string(),
         binary: spec.binary.to_string(),
         detected: binary.is_some(),
-        enabled: config.enabled && !spec.experimental,
+        enabled: config.enabled,
         binary_name: binary
             .as_ref()
             .and_then(|p| p.file_name())
@@ -475,10 +477,12 @@ mod tests {
     }
 
     #[test]
-    fn experimental_cli_agents_are_never_usable_or_enabled() {
+    fn experimental_cli_agents_are_never_usable_for_summaries() {
         // Even if a store claims cursor-agent is enabled and a binary is on
-        // PATH, the adapter has no verified non-mutating mode: status must
-        // report it disabled, and the summary gate must treat it unusable.
+        // PATH, the adapter has no verified non-mutating mode: the summary
+        // gate (a silent batch path) must treat it unusable. The settings
+        // row still reports `experimental` and the honest `enabled` flag —
+        // explicit assistant selection is the only place it can run.
         let spec = cli_agent::adapter_for("cli_agent/cursor_agent").unwrap();
         let mut settings = settings_with("cli_agent/cursor_agent", "");
         settings.cli_agent_configs.insert(
@@ -491,7 +495,7 @@ mod tests {
         let config = CliAgentConfig::default();
         let row = agent_status(spec, &config);
         assert!(row.experimental);
-        assert!(!row.enabled);
+        assert!(row.enabled);
     }
 
     #[test]
@@ -540,13 +544,15 @@ mod tests {
         };
         assert!(normalize_cli_agent_config(spec, config).is_err());
 
-        // Enabling an experimental adapter → InvalidInput.
+        // Enabling an experimental adapter is allowed — the spawn-side
+        // purpose gate (`complete()`) is what keeps it out of silent/batch
+        // callers; the toggle itself is honest.
         let cursor = cli_agent::adapter_for("cli_agent/cursor_agent").unwrap();
         let config = CliAgentConfig {
             enabled: true,
             ..CliAgentConfig::default()
         };
-        assert!(normalize_cli_agent_config(cursor, config).is_err());
+        assert!(normalize_cli_agent_config(cursor, config).is_ok());
     }
 
     #[test]

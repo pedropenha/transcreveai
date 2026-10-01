@@ -191,7 +191,7 @@
           },
           "assistant": {
             "name": "Tecla do Assistente",
-            "description": "Abre o assistente flutuante. Pressione de novo com o painel aberto para enviar o que você escreveu ou ditou."
+            "description": "Abre o assistente flutuante já ditando. Pressione de novo para parar de ditar e enviar."
           }
         },
         "errors": {
@@ -570,7 +570,11 @@
         "status": "Todos os status",
         "period": "Qualquer período"
       },
-      "modes": { "dictation": "Ditado", "command": "Comando", "note": "Nota" },
+      "modes": {
+        "dictation": "Ditado",
+        "command": "Comando",
+        "note": "Nota"
+      },
       "status": {
         "inserted": "Inserido",
         "copied": "Copiado",
@@ -898,9 +902,6 @@
   "assistant": {
     "title": "Assistente",
     "provider": "Provedor: {{label}}",
-    "inputPlaceholder": "Pergunte ou dite…",
-    "send": "Enviar",
-    "sendHint": "Enter envia · Shift+Enter quebra linha",
     "cancel": "Cancelar",
     "close": "Fechar",
     "pin": "Fixar",
@@ -910,7 +911,7 @@
     "thinking": "Pensando…",
     "cancelled": "Cancelado",
     "listening": "Ouvindo…",
-    "empty": "Dite ou digite uma pergunta para começar.",
+    "empty": "Pressione o atalho do assistente e fale.",
     "privacyHint": "O áudio é transcrito neste dispositivo — nada é enviado até você enviar.",
     "errorTitle": "O assistente não conseguiu responder.",
     "error": {
@@ -932,9 +933,13 @@
       "missingModel": "Escolha um modelo para este provedor nas Configurações.",
       "cliAgentDisabled": "Este agente CLI está desativado nas Configurações.",
       "cliAgentNotDetected": "Este agente CLI não foi encontrado no PATH.",
-      "cliAgentExperimental": "Este agente CLI é experimental e ainda não pode responder."
+      "cliAgentExperimental": "Provedor experimental — selecionado por você; pode modificar arquivos ou executar comandos."
     },
-    "openSettings": "Abrir configurações"
+    "openSettings": "Abrir configurações",
+    "experimental": "experimental",
+    "thinkingVia": "Pensando via {{provider}}…",
+    "queued": "na fila — envia em seguida",
+    "dictateHint": "Atalho do assistente dita · Esc fecha"
   },
   "toast": {
     "meetingDetected": "Reunião detectada",

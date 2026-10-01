@@ -1390,9 +1390,9 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
-    // FR-012-10: the assistant overlay hotkey. Pressed once it toggles the
-    // panel; pressed again with the panel open it submits the draft prompt
-    // (the panel forwards a `assistant://hotkey` event back to itself).
+    // FR-012-10/13: the assistant overlay hotkey — a dictation-family
+    // binding. Press once: the panel opens and captures speech; press again:
+    // the dictation ends and the transcript is sent to the provider.
     #[cfg(target_os = "macos")]
     let default_assistant_shortcut = "option+shift+a";
     #[cfg(not(target_os = "macos"))]
@@ -1403,7 +1403,7 @@ pub fn get_default_settings() -> AppSettings {
         ShortcutBinding {
             id: "assistant".to_string(),
             name: "Assistant".to_string(),
-            description: "Opens the floating voice assistant.".to_string(),
+            description: "Speak to the floating voice assistant; press again to send.".to_string(),
             default_binding: default_assistant_shortcut.to_string(),
             current_binding: default_assistant_shortcut.to_string(),
         },

@@ -513,15 +513,23 @@
   padding: 10px 14px;
 }
 
-/* Hover card — 88x36, exactly two 28px actions + gap (F001 FR-001-02..04). */
-.f-hover {
-  width: var(--flowbar-size-hover-width);
+/* Hover — two independent pills side by side (dictate mic + Notetaker dot),
+   same 36px height the merged card had; each pill is a circle around its
+   28px action. The group is a plain flex row — the zone rect wraps both. */
+.f-hover-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.f-hover-pill {
+  width: var(--flowbar-size-hover-height);
   height: var(--flowbar-size-hover-height);
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   padding: 0;
+  border-radius: var(--radius-pill);
 }
 .fbtn {
   width: 28px;

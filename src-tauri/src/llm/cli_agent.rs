@@ -23,13 +23,13 @@
 //!   `--tools`) from being loaded. **Not** `--bare`: on 2.1.273 `--bare`
 //!   refuses OAuth/keychain auth — exactly the subscription session this
 //!   provider exists to reuse (FR-012-03).
-//! * `cursor-agent` / `devin` → **experimental, refused**: neither CLI has a
-//!   verified non-mutating headless mode (no equivalent of codex's
-//!   `--sandbox read-only` or claude's `--tools ""`). The adapters stay
-//!   listed so the UI can mark them experimental/disabled, but
-//!   [`CliAgentProvider::complete`] refuses to spawn them and
-//!   `cli_agent_update_config` rejects `enabled: true` until a safe flag set
-//!   is verified.
+//! * `cursor-agent` / `devin` → **experimental**: neither CLI has a verified
+//!   non-mutating headless mode (no equivalent of codex's `--sandbox
+//!   read-only` or claude's `--tools ""`). They are never auto-picked and
+//!   never serve non-assistant purposes, but an *explicit* assistant
+//!   provider selection may spawn them — the assistant is the interactive
+//!   surface where the user opted in and watches the call, while the UI
+//!   keeps flagging the adapter as experimental (NFR-012-02).
 //!
 //! Multi-turn requests are flattened into a single delimited transcript —
 //! these CLIs are stateless per invocation (FR-012-15 only re-sends history).
@@ -67,7 +67,7 @@
 //! binary resolution plus headless execution.
 
 use super::provider::LlmProvider;
-use super::types::{LlmError, LlmRequest, LlmResponse, LlmUsage};
+use super::types::{LlmError, LlmPurpose, LlmRequest, LlmResponse, LlmUsage};
 use crate::settings::CliAgentConfig;
 use crate::stt::types::{HealthReport, ProviderId};
 use std::time::Duration;
@@ -140,8 +140,9 @@ pub struct CliAgentSpec {
     /// env whitelist (e.g. `CODEX_HOME` relocates codex's config dir).
     pub extra_env: &'static [&'static str],
     /// `true` = no verified non-mutating headless mode. The adapter stays
-    /// listed (the UI can mark it experimental/disabled) but `complete()`
-    /// refuses to spawn it and `cli_agent_update_config` rejects enabling it.
+    /// listed (the UI marks it experimental), is never auto-picked, and
+    /// `complete()` refuses non-assistant purposes — an explicit assistant
+    /// provider selection is the opt-in that lets it run.
     pub experimental: bool,
     /// Adapter-specific additions to the extra-args deny-list — flags whose
     /// names differ between CLIs but that would equally defeat the hardened
@@ -206,11 +207,13 @@ impl CliAgentProvider {
     }
 
     /// Experimental adapters have no verified non-mutating mode — refuse
-    /// rather than trusting a prompt-flattened dictation transcript to a CLI
-    /// that can edit files or run commands under the user's session.
+    /// them for silent/batch purposes (summaries, cleanup). An *explicit*
+    /// assistant provider selection is the user opt-in that lets an
+    /// experimental adapter spawn (still argv-direct, no shell, kill on
+    /// drop, env whitelist).
     fn experimental_error(&self) -> LlmError {
         LlmError::Provider(format!(
-            "'{}' has no verified non-mutating headless mode and is disabled",
+            "'{}' has no verified non-mutating headless mode and is disabled for this use",
             self.spec.binary
         ))
     }
@@ -223,7 +226,7 @@ impl LlmProvider for CliAgentProvider {
     }
 
     async fn complete(&self, req: LlmRequest) -> Result<LlmResponse, LlmError> {
-        if self.spec.experimental {
+        if self.spec.experimental && req.purpose != LlmPurpose::Assistant {
             return Err(self.experimental_error());
         }
         // Re-validate at spawn time — the config may have bypassed
@@ -293,16 +296,9 @@ impl LlmProvider for CliAgentProvider {
     /// where the adapter defines one — an auth probe, since a CLI that runs
     /// but is not signed in is not usable either.
     async fn health_check(&self) -> Result<HealthReport, LlmError> {
-        if self.spec.experimental {
-            return Ok(HealthReport {
-                ok: false,
-                latency_ms: None,
-                detail: Some(
-                    "experimental provider — disabled until a non-mutating mode is verified"
-                        .to_string(),
-                ),
-            });
-        }
+        // Probes are read-only (`--version`, auth status) — let them run for
+        // experimental adapters too so the settings "test" button stays
+        // useful for an explicitly selected provider.
         let binary = match resolve_binary(self.spec, &self.config) {
             Some(b) => b,
             None => {

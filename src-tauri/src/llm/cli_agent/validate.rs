@@ -178,14 +178,10 @@ pub(crate) fn validate_binary_override(spec: &CliAgentSpec, path: &str) -> Resul
 
 /// Whole-config check used by `cli_agent_update_config`. Normalization
 /// (blank override → `None`, timeout clamp) happens at the command layer;
-/// this refuses what normalization cannot fix.
+/// this refuses what normalization cannot fix. Experimental adapters may be
+/// enabled explicitly — the spawn-side gate (`LlmPurpose` in `complete()`)
+/// is what keeps them out of silent/batch callers.
 pub(crate) fn validate_config(spec: &CliAgentSpec, config: &CliAgentConfig) -> Result<(), String> {
-    if spec.experimental && config.enabled {
-        return Err(format!(
-            "'{}' has no verified non-mutating headless mode and stays disabled",
-            spec.binary
-        ));
-    }
     if let Some(path) = config.binary_path.as_deref() {
         validate_binary_override(spec, path)?;
     }

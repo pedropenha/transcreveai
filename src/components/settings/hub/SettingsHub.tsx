@@ -119,12 +119,6 @@ const AdvancedHubSettings: React.FC = () => {
           descriptionKey="settings.debug.pasteDelayAfter.description"
         />
       </SettingsGroup>
-      {/* F012/T-091: the assistant overlay is a v1 feature — its provider
-          stays visible regardless of `post_process_enabled` (the
-          post-processing screen itself is still experimental). */}
-      <SettingsGroup title={t("settingsHub.groups.assistant")}>
-        <AssistantProvider descriptionMode="tooltip" grouped />
-      </SettingsGroup>
       <SettingsGroup title={t("settingsHub.groups.performance")}>
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped />
         <RecordingBuffer descriptionMode="tooltip" grouped />

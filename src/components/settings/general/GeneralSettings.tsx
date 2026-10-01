@@ -14,6 +14,7 @@ import { MuteWhileRecording } from "../MuteWhileRecording";
 import { LanguageSelector } from "../LanguageSelector";
 import { AppLanguageSelector } from "../AppLanguageSelector";
 import { ThemeSelector } from "../ThemeSelector";
+import { AssistantProvider } from "../AssistantProvider";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -29,6 +30,11 @@ export const GeneralSettings: React.FC = () => {
         {/* F012/T-091: assistant overlay hotkey — same capture UI as the
             other bindings (FR-012-10). */}
         <ShortcutInput shortcutId="assistant" grouped={true} />
+      </SettingsGroup>
+      {/* F012: assistant provider next to its hotkey — Codex/Claude are
+          detected on PATH, no key needed (FR-012-02/04). */}
+      <SettingsGroup title={t("settingsHub.groups.assistant")}>
+        <AssistantProvider descriptionMode="tooltip" grouped />
       </SettingsGroup>
       <SettingsGroup title={t("settings.general.language.title")}>
         <LanguageSelector descriptionMode="tooltip" grouped />

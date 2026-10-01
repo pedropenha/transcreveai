@@ -36,6 +36,10 @@ type PostProcessProviderState = {
   // cli_agent/* providers (F012): PATH detection status, per-provider config.
   isCliAgentProvider: boolean;
   cliAgentStatus: CliAgentStatus | undefined;
+  // Full detection map (provider_id → status) — the assistant provider
+  // picker uses it to keep experimental adapters selectable (explicit
+  // opt-in) while the post-processing dropdown leaves them disabled.
+  cliAgents: Record<string, CliAgentStatus>;
   cliAgentConfig: CliAgentConfig;
   isCliAgentUpdating: boolean;
   updateCliAgentConfig: (patch: Partial<CliAgentConfig>) => Promise<void>;
@@ -350,6 +354,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     handleRefreshModels,
     isCliAgentProvider,
     cliAgentStatus,
+    cliAgents,
     cliAgentConfig,
     isCliAgentUpdating: isUpdating(`cli_agent_config:${selectedProviderId}`),
     updateCliAgentConfig,

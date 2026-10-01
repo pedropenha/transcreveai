@@ -19,12 +19,13 @@
 //!   monitor under the cursor, and the position/pin land in settings so the
 //!   panel reopens where it was left (AC-012-04).
 //!
-//! Dictation routing (FR-012-12): a `transcribe*` press claims the session's
-//! output for the panel while it is open (`dictation_routed`);
-//! `actions::TranscribeAction::stop` consumes the claim and delivers the
-//! final text over `assistant://dictated` instead of `paste_for_session` —
-//! routed dictation is never inserted into another app and never runs the
-//! LLM cleanup pass (it lands verbatim in the editable prompt field).
+//! Dictation routing (FR-012-12/13): the `assistant` binding is a
+//! dictation-family shortcut — a press opens the panel and starts a capture
+//! claimed for it (`dictation_routed`); the next press ends the dictation and
+//! the pipeline auto-sends the final text to the provider
+//! (`actions::TranscribeAction::stop` consumes the claim via
+//! `take_dictation_route`). The regular `transcribe*` bindings always dictate
+//! to the focused app — they are never claimed by the panel.
 //!
 //! Cancellation (AC-012-05): the in-flight call rides a spawned task whose
 //! `JoinHandle` is aborted on cancel — for `cli_agent/*` providers the
@@ -33,26 +34,24 @@
 use serde::Serialize;
 use specta::Type;
 use std::sync::Mutex;
-use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 use crate::commands::llm::LlmErrorKind;
 use crate::llm::types::LlmMessage;
 use crate::settings::PostProcessProvider;
 
+mod context;
 mod panel;
 mod state;
 #[cfg(test)]
 mod tests;
 mod turn;
 
-pub use panel::{
-    close_panel, focus_panel, hotkey_pressed, init, move_panel, note_panel_hidden, open_panel,
-};
+pub use panel::{close_panel, focus_panel, init, move_panel, note_panel_hidden, open_panel};
 pub(crate) use state::emit_state;
 pub use state::{
-    deliver_dictated_text, maybe_claim_dictation, note_dictation_cancelled, state_event,
-    take_dictation_route,
+    maybe_claim_dictation, note_dictation_cancelled, state_event, take_dictation_route,
+    DictationRoute,
 };
 pub use turn::{cancel_in_flight, dismiss, new_conversation, retry, send};
 
@@ -63,19 +62,6 @@ pub use turn::{cancel_in_flight, dismiss, new_conversation, retry, send};
 /// Full panel snapshot — emitted on every state change and returned by
 /// `assistant_get_state` so a cold webview hydrates on mount.
 pub const STATE_EVENT: &str = "assistant://state";
-
-/// Final text of an assistant-routed dictation — the panel appends it to the
-/// editable prompt field (FR-012-12). `{ text }`.
-pub const DICTATED_EVENT: &str = "assistant://dictated";
-
-/// The global assistant hotkey was pressed while the panel was open — the
-/// panel sends the draft when non-empty, else focuses the input (FR-012-10 /
-/// FR-012-13: "segunda pressionada do atalho envia").
-pub const HOTKEY_EVENT: &str = "assistant://hotkey";
-
-/// How long a `pending_hotkey` press waits for a booting webview before it is
-/// dropped — longer and a stale press could replay on an unrelated remount.
-const PENDING_HOTKEY_TTL: Duration = Duration::from_secs(3);
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -146,8 +132,10 @@ pub enum AssistantProviderHint {
     CliAgentDisabled,
     /// `cli_agent/*` provider enabled but the binary is not on PATH.
     CliAgentNotDetected,
-    /// `cli_agent/*` adapter without a verified non-mutating headless mode —
-    /// refused outright (NFR-012-02), no matter its config or detection.
+    /// `cli_agent/*` adapter without a verified non-mutating headless mode.
+    /// Advisory when explicitly selected for the assistant: the call is
+    /// allowed (the user opted in) but the panel flags it as experimental.
+    /// Auto-picks and non-assistant purposes still refuse it (NFR-012-02).
     CliAgentExperimental,
 }
 
@@ -158,17 +146,16 @@ pub struct AssistantStateEvent {
     pub open: bool,
     pub phase: AssistantPhase,
     /// A dictation session is currently routed to the panel — the panel
-    /// shows the live STT preview (from `StreamTextEvent`) in the input.
+    /// shows the live STT preview (from `StreamTextEvent`).
     pub dictating: bool,
-    /// A hotkey press arrived while the webview wasn't listening yet —
-    /// consumed by `assistant_get_state`.
-    pub pending_hotkey: bool,
     pub provider_id: Option<String>,
     pub provider_label: Option<String>,
-    /// The provider is usable right now — gates dictation claims *and* the
-    /// send button (AC-012-06).
+    /// The provider is usable right now (AC-012-06).
     pub provider_ready: bool,
     pub provider_hint: Option<AssistantProviderHint>,
+    /// A prompt dictated while a turn was in flight — queued and sent
+    /// automatically when the current turn commits (FR-012-13).
+    pub queued_prompt: Option<String>,
     /// Last provider failure, classified for localization.
     pub error_kind: Option<LlmErrorKind>,
     pub error_detail: Option<String>,
@@ -186,11 +173,6 @@ struct AssistantSession {
     /// recording start (panel open), consumed at stop (FR-012-12).
     dictation_routed: bool,
     dictating: bool,
-    /// Instant the hotkey press was recorded — the flag expires after
-    /// `PENDING_HOTKEY_TTL` so a press that a live webview already consumed
-    /// can't be replayed by a later remount (explicit-send only, FR-012-13).
-    pending_hotkey: bool,
-    pending_hotkey_at: Option<std::time::Instant>,
     error_kind: Option<LlmErrorKind>,
     error_detail: Option<String>,
     messages: Vec<AssistantMessage>,
@@ -198,6 +180,9 @@ struct AssistantSession {
     /// matches was cancelled/superseded and is dropped.
     generation: u64,
     in_flight: Option<tauri::async_runtime::JoinHandle<()>>,
+    /// Prompt that arrived while a turn was in flight — sent automatically
+    /// when the turn commits; cleared on cancel/new conversation.
+    pending_prompt: Option<String>,
     /// Cached provider resolution — reads the OS keyring and scans PATH, so
     /// hot paths reuse it within [`PROVIDER_SNAPSHOT_TTL`].
     provider_snapshot: Option<CachedProviderSnapshot>,

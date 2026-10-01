@@ -46,8 +46,11 @@ enum Command {
     PipelineFinished(PipelineOutcome),
 }
 
+/// `assistant` is a dictation-family binding too (F012): its press opens the
+/// panel and starts a capture whose output is routed to it — tap-to-send
+/// comes free from the coordinator's activation modes.
 pub fn is_transcribe_binding(id: &str) -> bool {
-    id == "transcribe" || id == "transcribe_with_post_process"
+    id == "transcribe" || id == "transcribe_with_post_process" || id == "assistant"
 }
 
 pub struct TranscriptionCoordinator {

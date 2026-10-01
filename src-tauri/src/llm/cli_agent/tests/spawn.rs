@@ -344,32 +344,44 @@ async fn provider_complete_errors_on_truncated_unparseable_output() {
 }
 
 #[tokio::test]
-async fn experimental_adapters_refuse_to_run() {
+async fn experimental_adapters_run_only_for_the_assistant() {
     for id in ["cli_agent/cursor_agent", "cli_agent/devin"] {
         let dir = tempfile::tempdir().unwrap();
         let spec = adapter_for(id).unwrap();
         assert!(spec.experimental, "{id} must be marked experimental");
-        // Even with a real-looking binary override, complete() refuses.
         let binary = echo_tool_named(dir.path(), spec.binary);
         let mut cfg = config();
         cfg.binary_path = Some(binary.to_string_lossy().to_string());
         let provider = CliAgentProvider::new(spec, cfg, String::new());
+        // Silent/batch purposes still refuse — a summary must never spawn an
+        // unverified agent.
         match provider.complete(req("", "hi")).await {
             Err(LlmError::Provider(msg)) => assert!(msg.contains("non-mutating")),
             other => panic!("{id}: expected Provider error, got {other:?}"),
         }
+        // The assistant purpose is the explicit opt-in — the echo tool
+        // stands in for a real binary and answers plainly.
+        let mut assistant_req = req("", "hi");
+        assistant_req.purpose = LlmPurpose::Assistant;
+        match provider.complete(assistant_req).await {
+            Ok(resp) => assert!(resp.text.contains("canned response")),
+            other => panic!("{id}: assistant purpose must spawn, got {other:?}"),
+        }
+        // Read-only probes are allowed too (the settings "test" button).
         let report = provider.health_check().await.unwrap();
-        assert!(!report.ok);
+        assert!(report.ok);
     }
 }
 
 #[test]
-fn validate_config_rejects_enabling_experimental_adapters() {
+fn validate_config_allows_enabling_experimental_adapters() {
+    // The enabled toggle is honest for every adapter — experimental gating
+    // lives in `complete()`'s purpose check, not in the config store.
     for id in ["cli_agent/cursor_agent", "cli_agent/devin"] {
         let spec = adapter_for(id).unwrap();
         let mut cfg = config();
         cfg.enabled = true;
-        assert!(validate_config(spec, &cfg).is_err());
+        assert!(validate_config(spec, &cfg).is_ok());
         cfg.enabled = false;
         assert!(validate_config(spec, &cfg).is_ok());
     }

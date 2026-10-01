@@ -41,7 +41,7 @@ export type OverlayHint =
 export type FlowbarView =
   | "hidden" // window unmapped or awaiting first hint (session-only mode)
   | "idle" // 48x8 slit (FR-001-01)
-  | "hover" // action card: dictate + notetaker + assistant (✦, FR-012-10)
+  | "hover" // action card: dictate + notetaker (assistant is shortcut-only, F012)
   | "recording" // ✕ | waveform | ■ (FR-001-05/06, AC-001-07)
   | "meeting-recording" // pause/resume | timer | ■ — the meeting pill (FR-009-07)
   | "streaming" // live transcription panel (pre-existing)

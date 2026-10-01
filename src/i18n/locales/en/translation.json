@@ -191,7 +191,7 @@
           },
           "assistant": {
             "name": "Assistant Hotkey",
-            "description": "Opens the floating assistant. Press again with the panel open to send what you wrote or dictated."
+            "description": "Opens the floating assistant and starts dictating. Press again to stop dictating and send."
           }
         },
         "errors": {
@@ -972,9 +972,6 @@
   "assistant": {
     "title": "Assistant",
     "provider": "Provider: {{label}}",
-    "inputPlaceholder": "Ask or dictate…",
-    "send": "Send",
-    "sendHint": "Enter to send · Shift+Enter for a new line",
     "cancel": "Cancel",
     "close": "Close",
     "pin": "Pin",
@@ -984,7 +981,7 @@
     "thinking": "Thinking…",
     "cancelled": "Cancelled",
     "listening": "Listening…",
-    "empty": "Dictate or type a question to start.",
+    "empty": "Press the assistant shortcut and speak.",
     "privacyHint": "Audio is transcribed on this device — nothing is sent until you press send.",
     "errorTitle": "The assistant could not answer.",
     "error": {
@@ -1006,9 +1003,13 @@
       "missingModel": "Choose a model for this provider in Settings.",
       "cliAgentDisabled": "This CLI agent is disabled in Settings.",
       "cliAgentNotDetected": "This CLI agent was not found on PATH.",
-      "cliAgentExperimental": "This CLI agent is experimental and is not allowed to answer yet."
+      "cliAgentExperimental": "Experimental provider — selected by you; it may modify files or run commands."
     },
-    "openSettings": "Open settings"
+    "openSettings": "Open settings",
+    "experimental": "experimental",
+    "thinkingVia": "Thinking via {{provider}}…",
+    "queued": "queued — sends next",
+    "dictateHint": "Assistant shortcut dictates · Esc closes"
   },
   "toast": {
     "meetingDetected": "Meeting detected",

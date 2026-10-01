@@ -8,16 +8,14 @@
 
 use super::{CommandError, CommandErrorCode, CommandResult};
 use crate::assistant::{self, AssistantStateEvent};
-use crate::llm::cli_agent;
 use crate::settings;
 use tauri::AppHandle;
 
-/// Full snapshot for the panel — also consumes the `pending_hotkey` flag so
-/// a press that arrived while the webview was booting isn't lost.
+/// Full snapshot for the panel (webview hydration on mount).
 #[tauri::command]
 #[specta::specta]
 pub fn assistant_get_state(app: AppHandle) -> CommandResult<AssistantStateEvent> {
-    Ok(assistant::state_event(&app, true))
+    Ok(assistant::state_event(&app))
 }
 
 /// FR-012-13: send the (edited) prompt. Explicit user action only — dictation
@@ -120,9 +118,10 @@ pub fn assistant_set_panel_pinned(app: AppHandle, pinned: bool) -> CommandResult
 }
 
 /// FR-012-04: persist the assistant provider choice (`None` resets to auto).
-/// Accepts any known `post_process_providers` id, including `cli_agent/*` —
-/// except experimental adapters, which have no verified non-mutating mode
-/// and are refused outright (NFR-012-02).
+/// Accepts any known `post_process_providers` id, including `cli_agent/*`
+/// and experimental adapters — an explicit selection is the user's opt-in
+/// (experimental adapters are never auto-picked and still refuse
+/// non-assistant purposes; NFR-012-02).
 #[tauri::command]
 #[specta::specta]
 pub fn set_assistant_provider(app: AppHandle, provider_id: Option<String>) -> CommandResult<()> {
@@ -136,12 +135,6 @@ pub fn set_assistant_provider(app: AppHandle, provider_id: Option<String>) -> Co
                 return Err(CommandError::new(
                     CommandErrorCode::NotFound,
                     format!("Provider '{id}' not found"),
-                ));
-            }
-            if cli_agent::adapter_for(id).is_some_and(|spec| spec.experimental) {
-                return Err(CommandError::new(
-                    CommandErrorCode::InvalidInput,
-                    format!("Provider '{id}' is experimental and cannot answer the assistant yet"),
                 ));
             }
             settings.assistant_provider_id = Some(id.to_string());

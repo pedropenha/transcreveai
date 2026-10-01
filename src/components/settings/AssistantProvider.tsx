@@ -24,7 +24,14 @@ export const AssistantProvider: React.FC<{
   const value = getSetting("assistant_provider_id") ?? "auto";
   const options = [
     { value: "auto", label: t("settingsHub.assistant.provider.auto") },
-    ...state.providerOptions,
+    // The assistant dropdown keeps *experimental* CLI agents selectable —
+    // choosing one here is the user's explicit opt-in (FR-012-04), the
+    // label still flags it experimental. Missing/disabled rows stay off.
+    ...state.providerOptions.map((option) =>
+      option.disabled && state.cliAgents[option.value]?.experimental
+        ? { ...option, disabled: false }
+        : option,
+    ),
   ];
 
   const onChange = (next: string) => {

@@ -14,7 +14,6 @@ import {
   Mic,
   Pause,
   Play,
-  Sparkles,
   Square,
   TriangleAlert,
   X,
@@ -98,14 +97,13 @@ const RecordingOverlay: React.FC = () => {
 
   // --- Hover / click-through (FR-001-02, NFR-001-02) ---
   const [hovered, setHovered] = useState(false);
-  const [tip, setTip] = useState<
-    "dictate" | "notetaker" | "assistant" | "error" | null
-  >(null);
+  const [tip, setTip] = useState<"dictate" | "notetaker" | "error" | null>(
+    null,
+  );
 
   // --- Dock edge the stage mirrors (FR-001-01/08) ---
   const [edge, setEdge] = useState<StageEdge>("bottom");
   const [dictateShortcut, setDictateShortcut] = useState<string>("");
-  const [assistantShortcut, setAssistantShortcut] = useState<string>("");
 
   // --- Collapsed/suppressed meeting toast → amber dot (FR-008-10/12) ---
   const [toastPending, setToastPending] = useState(false);
@@ -161,12 +159,6 @@ const RecordingOverlay: React.FC = () => {
       setDictateShortcut(
         formatKeyCombination(
           s.bindings?.["transcribe"]?.current_binding ?? "",
-          osType,
-        ),
-      );
-      setAssistantShortcut(
-        formatKeyCombination(
-          s.bindings?.["assistant"]?.current_binding ?? "",
           osType,
         ),
       );
@@ -543,11 +535,6 @@ const RecordingOverlay: React.FC = () => {
   const notetaker = () => {
     void commands.flowbarStartNotetaker();
   };
-  // FR-012-10: the ✦ button opens the assistant overlay (and lets it take
-  // focus — a click is explicit intent).
-  const assistant = () => {
-    void commands.flowbarOpenAssistant();
-  };
   // FR-009-06: the meeting pill's own pause/resume + stop.
   const meetingTogglePause = () => {
     void (meetingStatus === "paused"
@@ -675,15 +662,10 @@ const RecordingOverlay: React.FC = () => {
     dictateShortcut === ""
       ? t("overlay.dictate")
       : `${t("overlay.dictate")} · ${dictateShortcut}`;
-  const assistantTip =
-    assistantShortcut === ""
-      ? t("overlay.assistant")
-      : `${t("overlay.assistant")} · ${assistantShortcut}`;
 
   const tipContent = (() => {
     if (tip === "dictate") return dictateTip;
     if (tip === "notetaker") return t("overlay.notetaker");
-    if (tip === "assistant") return assistantTip;
     if (tip === "error") return sessionError || t("overlay.failed");
     return null;
   })();
@@ -753,46 +735,40 @@ const RecordingOverlay: React.FC = () => {
         );
 
       case "hover":
-        // FR-001-02/03/04 + FR-012-10: dictate, notetaker and the assistant
-        // overlay's ✦ — three actions + the shortcut tooltip.
+        // FR-001-02/03/04: dictate + notetaker as two *separate* pills —
+        // the mic control and the Notetaker dot are distinct surfaces, not
+        // one merged card. The assistant is shortcut-only (F012: no Flow
+        // Bar slot).
         return (
-          <div className="fbar-card scard f-hover">
-            <button
-              type="button"
-              className="fbtn"
-              aria-label={dictateTip}
-              onMouseEnter={() => setTip("dictate")}
-              onFocus={() => setTip("dictate")}
-              onMouseLeave={() => setTip(null)}
-              onBlur={() => setTip(null)}
-              onClick={dictate}
-            >
-              <Mic size={14} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="fbtn"
-              aria-label={t("overlay.notetaker")}
-              onMouseEnter={() => setTip("notetaker")}
-              onFocus={() => setTip("notetaker")}
-              onMouseLeave={() => setTip(null)}
-              onBlur={() => setTip(null)}
-              onClick={notetaker}
-            >
-              <CircleDot size={14} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="fbtn"
-              aria-label={assistantTip}
-              onMouseEnter={() => setTip("assistant")}
-              onFocus={() => setTip("assistant")}
-              onMouseLeave={() => setTip(null)}
-              onBlur={() => setTip(null)}
-              onClick={assistant}
-            >
-              <Sparkles size={14} aria-hidden="true" />
-            </button>
+          <div className="f-hover-group">
+            <div className="fbar-card scard f-hover-pill">
+              <button
+                type="button"
+                className="fbtn"
+                aria-label={dictateTip}
+                onMouseEnter={() => setTip("dictate")}
+                onFocus={() => setTip("dictate")}
+                onMouseLeave={() => setTip(null)}
+                onBlur={() => setTip(null)}
+                onClick={dictate}
+              >
+                <Mic size={14} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="fbar-card scard f-hover-pill">
+              <button
+                type="button"
+                className="fbtn"
+                aria-label={t("overlay.notetaker")}
+                onMouseEnter={() => setTip("notetaker")}
+                onFocus={() => setTip("notetaker")}
+                onMouseLeave={() => setTip(null)}
+                onBlur={() => setTip(null)}
+                onClick={notetaker}
+              >
+                <CircleDot size={14} aria-hidden="true" />
+              </button>
+            </div>
           </div>
         );
 

@@ -2,14 +2,13 @@
 //! dictation routing (FR-012-12) — everything that derives `assistant://state`
 //! payloads or the session's routing flags from settings and the session.
 
-use serde::Serialize;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use super::panel::focus_panel;
 use super::{
     lock_session, AssistantPhase, AssistantProviderHint, AssistantSession, AssistantStateEvent,
-    CachedProviderSnapshot, DICTATED_EVENT, PENDING_HOTKEY_TTL, STATE_EVENT,
+    CachedProviderSnapshot, STATE_EVENT,
 };
 use crate::llm::cli_agent;
 use crate::llm::router;
@@ -34,20 +33,24 @@ pub(crate) fn provider_status(
         return (false, Some(AssistantProviderHint::Offline));
     }
     if cli_agent::is_cli_agent(&provider.id) {
-        // Experimental adapters have no verified non-mutating mode — never
-        // report them ready, even when enabled and detected (NFR-012-02).
-        if cli_agent::adapter_for(&provider.id).is_some_and(|s| s.experimental) {
-            return (false, Some(AssistantProviderHint::CliAgentExperimental));
-        }
+        let spec = cli_agent::adapter_for(&provider.id);
         let config = settings.cli_agent_config(&provider.id);
         if !config.enabled {
             return (false, Some(AssistantProviderHint::CliAgentDisabled));
         }
-        let detected = cli_agent::adapter_for(&provider.id)
+        let detected = spec
             .and_then(|spec| cli_agent::resolve_binary(spec, &config))
             .is_some();
         if !detected {
             return (false, Some(AssistantProviderHint::CliAgentNotDetected));
+        }
+        // Experimental adapters (no verified non-mutating headless mode) may
+        // still be *explicitly* selected — the assistant is the interactive
+        // surface where the user opted in, so the call is allowed and the
+        // panel flags the provider as experimental. Auto-picks and
+        // non-assistant purposes still refuse them (NFR-012-02).
+        if spec.is_some_and(|s| s.experimental) {
+            return (true, Some(AssistantProviderHint::CliAgentExperimental));
         }
         // CLI agents need no model — empty means the CLI's own default.
         return (true, None);
@@ -225,62 +228,38 @@ fn provider_snapshot(
 }
 
 /// Build the panel state snapshot while holding `session` — provider fields
-/// plus the session fields. `consume_pending_hotkey` (the
-/// `assistant_get_state` hydration path) clears the flag so a press is
-/// delivered exactly once; event emissions keep it so a webview still
-/// booting can pick the press up later.
-fn build_state_event(
-    app: &AppHandle,
-    session: &mut AssistantSession,
-    consume_pending_hotkey: bool,
-) -> AssistantStateEvent {
+/// plus the session fields.
+fn build_state_event(app: &AppHandle, session: &mut AssistantSession) -> AssistantStateEvent {
     let settings = settings::get_settings(app);
     let (provider, provider_ready, provider_hint) = provider_snapshot(app, &settings, session);
-    // Expire a press nobody consumed — it belonged to a webview that was
-    // already live (handled via HOTKEY_EVENT) or one that never booted.
-    if session.pending_hotkey
-        && session
-            .pending_hotkey_at
-            .is_some_and(|at| at.elapsed() > PENDING_HOTKEY_TTL)
-    {
-        session.pending_hotkey = false;
-        session.pending_hotkey_at = None;
-    }
-    let event = AssistantStateEvent {
+    AssistantStateEvent {
         open: session.open,
         phase: session.phase,
         dictating: session.dictating,
-        pending_hotkey: session.pending_hotkey,
         provider_id: provider.as_ref().map(|p| p.id.clone()),
         provider_label: provider.as_ref().map(|p| p.label.clone()),
         provider_ready,
         provider_hint,
+        queued_prompt: session.pending_prompt.clone(),
         error_kind: session.error_kind,
         error_detail: session.error_detail.clone(),
         messages: session.messages.clone(),
         pinned: settings.assistant_panel_pinned,
-    };
-    if consume_pending_hotkey {
-        session.pending_hotkey = false;
-        session.pending_hotkey_at = None;
     }
-    event
 }
 
 /// Build + emit while the session guard is held: emissions are serialized by
 /// the session lock, so a fast-finishing turn can never land a stale
 /// `thinking` snapshot on top of the real outcome.
 pub(crate) fn emit_state_locked(app: &AppHandle, session: &mut AssistantSession) {
-    let event = build_state_event(app, session, false);
+    let event = build_state_event(app, session);
     let _ = app.emit_to(ASSISTANT, STATE_EVENT, event);
 }
 
-/// Full snapshot for `assistant_get_state` — also consumes the
-/// `pending_hotkey` flag so a press that arrived while the webview was
-/// booting is delivered exactly once.
-pub fn state_event(app: &AppHandle, consume_pending_hotkey: bool) -> AssistantStateEvent {
+/// Full snapshot for `assistant_get_state` (webview hydration on mount).
+pub fn state_event(app: &AppHandle) -> AssistantStateEvent {
     if let Some(mut session) = lock_session(app) {
-        return build_state_event(app, &mut session, consume_pending_hotkey);
+        return build_state_event(app, &mut session);
     }
     // No session state yet — report a bare snapshot (still goes through the
     // uncached path: no session means nowhere to keep the cache).
@@ -290,11 +269,11 @@ pub fn state_event(app: &AppHandle, consume_pending_hotkey: bool) -> AssistantSt
         open: false,
         phase: AssistantPhase::Idle,
         dictating: false,
-        pending_hotkey: false,
         provider_id: provider.as_ref().map(|p| p.id.clone()),
         provider_label: provider.as_ref().map(|p| p.label.clone()),
         provider_ready,
         provider_hint,
+        queued_prompt: None,
         error_kind: None,
         error_detail: None,
         messages: Vec::new(),
@@ -307,42 +286,28 @@ pub(crate) fn emit_state(app: &AppHandle) {
         emit_state_locked(app, &mut session);
         return;
     }
-    let _ = app.emit_to(ASSISTANT, STATE_EVENT, state_event(app, false));
+    let _ = app.emit_to(ASSISTANT, STATE_EVENT, state_event(app));
 }
 // ---------------------------------------------------------------------------
 // Dictation routing (FR-012-12)
 // ---------------------------------------------------------------------------
 
-/// Called by `TranscribeAction::start` when a `transcribe*` recording begins.
-/// With the panel open the session's output is claimed for the assistant
-/// input — `stop` consumes the claim via `take_dictation_route` and skips
-/// `paste_for_session` entirely. AC-012-06: no usable provider → no claim,
-/// so the dictation keeps its normal destination instead of being
-/// transcribed "para envio".
-pub fn maybe_claim_dictation(app: &AppHandle) {
-    // Cheap gate first: this runs on every dictation start, and a closed (or
-    // already-claimed) panel must never reach the provider snapshot — it
-    // reads the OS keyring and scans PATH.
-    {
-        let Some(session) = lock_session(app) else {
-            return;
-        };
-        if !session.open || session.dictation_routed {
-            return;
-        }
+/// Called by `TranscribeAction::start` for every dictation-family start.
+/// Only the dedicated `assistant` binding is claimed — `transcribe` /
+/// `transcribe_with_post_process` always dictate to the focused app, even
+/// while the panel is open (FR-012-12). `stop` consumes the claim via
+/// `take_dictation_route` and auto-sends instead of `paste_for_session`.
+/// The claim is unconditional: the binding itself is explicit intent, and a
+/// missing provider surfaces as a send error the panel explains.
+pub fn maybe_claim_dictation(app: &AppHandle, binding_id: &str) {
+    if binding_id != "assistant" {
+        return;
     }
     let claimed = {
-        let settings = settings::get_settings(app);
         let Some(mut session) = lock_session(app) else {
             return;
         };
         if !session.open || session.dictation_routed {
-            return;
-        }
-        // AC-012-06: no usable provider → no claim, so the dictation keeps
-        // its normal destination instead of being transcribed "para envio".
-        let (_provider, provider_ready, _hint) = provider_snapshot(app, &settings, &mut session);
-        if !provider_ready {
             return;
         }
         session.dictation_routed = true;
@@ -352,31 +317,47 @@ pub fn maybe_claim_dictation(app: &AppHandle) {
     };
     if claimed {
         // "um ditado pode focar o painel" (FR-012-11) — the user is talking
-        // to the assistant, so the panel may take focus for quick edits.
+        // to the assistant, so the panel may take focus.
         focus_panel(app);
     }
 }
 
-/// Consume the dictation claim at `stop` time. Returns true when this
-/// session's final text must go to the panel instead of any external app —
-/// only while the panel is still open, so a dictation started before the
-/// panel closed isn't swallowed by a dead claim. `dictating` clears here so
-/// the panel drops its live preview; the final text follows on
-/// `assistant://dictated`.
-pub fn take_dictation_route(app: &AppHandle) -> bool {
-    let claimed = {
-        let Some(mut session) = lock_session(app) else {
-            return false;
-        };
-        let claimed = session.dictation_routed && session.open;
-        if session.dictation_routed || session.dictating {
-            session.dictation_routed = false;
-            session.dictating = false;
-            emit_state_locked(app, &mut session);
-        }
-        claimed
+/// Where a finished dictation's final text goes — consumed once, at `stop`.
+/// The claim is set by `maybe_claim_dictation` when the `assistant` binding
+/// started the capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DictationRoute {
+    /// Never claimed — normal pipeline (paste into the focused app).
+    Normal,
+    /// Claimed, panel still open — auto-send the text to the provider.
+    Send,
+    /// Claimed but the panel was closed mid-dictation — drop the text.
+    /// Pasting it into whatever happens to be focused would leak an
+    /// assistant-bound dictation (closing the panel is the abort gesture).
+    Drop,
+}
+
+/// Consume the dictation claim at `stop` time. `dictating` clears here so
+/// the panel drops its live preview; the pipeline sends (`Send`), drops
+/// (`Drop`), or pastes (`Normal`) accordingly — an assistant-claimed
+/// session **never** reaches `paste_for_session`.
+pub fn take_dictation_route(app: &AppHandle) -> DictationRoute {
+    let Some(mut session) = lock_session(app) else {
+        return DictationRoute::Normal;
     };
-    claimed
+    let route = if !session.dictation_routed {
+        DictationRoute::Normal
+    } else if session.open {
+        DictationRoute::Send
+    } else {
+        DictationRoute::Drop
+    };
+    if session.dictation_routed || session.dictating {
+        session.dictation_routed = false;
+        session.dictating = false;
+        emit_state_locked(app, &mut session);
+    }
+    route
 }
 
 /// A claimed dictation that never reached `stop` (cancel, failed start) —
@@ -390,13 +371,4 @@ pub fn note_dictation_cancelled(app: &AppHandle) {
         session.dictating = false;
         emit_state_locked(app, &mut session);
     }
-}
-
-/// Deliver the finalized dictation text to the panel input.
-pub fn deliver_dictated_text(app: &AppHandle, text: &str) {
-    #[derive(Serialize, Clone)]
-    struct DictatedPayload<'a> {
-        text: &'a str,
-    }
-    let _ = app.emit_to(ASSISTANT, DICTATED_EVENT, DictatedPayload { text });
 }

@@ -59,18 +59,27 @@ fn truncate_history_never_leaves_an_assistant_head() {
 #[test]
 fn truncate_history_enforces_the_char_budget() {
     // Six ~30k-char turns (180k total) exceed MAX_INPUT_CHARS — the
-    // newest pairs are kept, oldest dropped whole.
+    // newest pairs are kept, oldest dropped whole. The context block
+    // reserve (~24k) counts against the budget too: with 30k messages the
+    // retained tail can shrink to the single newest prompt, which `len >
+    // 1` keeps — so size alone isn't a stable assertion; the budget and
+    // the user-head invariant are.
     let mut messages: Vec<AssistantMessage> = (0..6)
         .map(|i| {
             msg(
                 if i % 2 == 0 { "user" } else { "assistant" },
-                "x".repeat(30_000),
+                "x".repeat(10_000),
             )
         })
         .collect();
     truncate_history(&mut messages);
-    assert!(SYSTEM_PROMPT.chars().count() + history_chars(&messages) <= MAX_INPUT_CHARS);
+    assert!(
+        SYSTEM_PROMPT.chars().count() + CONTEXT_RESERVE_CHARS + history_chars(&messages)
+            <= MAX_INPUT_CHARS
+    );
     assert_eq!(messages.first().unwrap().role, "user");
+    // 60k of messages don't fit next to the reserve — the tail is bounded.
+    assert!(messages.len() < 6);
     // A single oversized newest prompt is never dropped — `len > 1`
     // stops the budget loop.
     let mut lone = vec![msg("user", "x".repeat(MAX_INPUT_CHARS * 2))];
@@ -79,17 +88,24 @@ fn truncate_history_enforces_the_char_budget() {
 }
 
 #[test]
-fn provider_status_refuses_experimental_cli_adapters() {
-    // Experimental adapters can never be reported ready — NFR-012-02 —
-    // even when enabled and binary-present on the machine.
+fn provider_status_flags_experimental_cli_adapters() {
+    // Experimental adapters are explicitly selectable for the assistant:
+    // detected → ready with the `CliAgentExperimental` advisory hint;
+    // undetected → `CliAgentNotDetected`. They are never silently ready —
+    // the hint always says why.
     let settings = AppSettings::default();
     for experimental in ["cli_agent/cursor_agent", "cli_agent/devin"] {
         let p = provider(experimental);
-        assert_eq!(
-            provider_status(&settings, Some(&p), false),
-            (false, Some(AssistantProviderHint::CliAgentExperimental)),
-            "{experimental} must always read as experimental"
-        );
+        let (ready, hint) = provider_status(&settings, Some(&p), false);
+        match hint {
+            Some(AssistantProviderHint::CliAgentExperimental) => {
+                assert!(ready, "{experimental}: detected → ready + advisory");
+            }
+            Some(AssistantProviderHint::CliAgentNotDetected) => {
+                assert!(!ready, "{experimental}: absent → not detected");
+            }
+            other => panic!("{experimental}: unexpected hint {other:?}"),
+        }
     }
     // Non-experimental adapters are unaffected.
     let codex = provider("cli_agent/codex");

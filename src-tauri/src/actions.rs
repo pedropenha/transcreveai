@@ -638,10 +638,10 @@ impl ShortcutAction for TranscribeAction {
                     "Recording request accepted in {:?}; waiting for first microphone samples",
                     recording_start_time.elapsed()
                 );
-                // FR-012-12: with the assistant panel open this session's
-                // output is claimed for its input field — `stop` will skip
-                // `paste_for_session` and emit `assistant://dictated`.
-                crate::assistant::maybe_claim_dictation(app);
+                // FR-012-12: the `assistant` binding's session output is
+                // claimed for the panel — `stop` skips `paste_for_session`
+                // and auto-sends the final text to the provider.
+                crate::assistant::maybe_claim_dictation(app, &binding_id);
                 let generation = readiness.generation();
                 let app_clone = app.clone();
                 let rm_clone = Arc::clone(&rm);
@@ -772,8 +772,11 @@ impl ShortcutAction for TranscribeAction {
         let post_process = self.post_process;
         // FR-012-12: a dictation claimed by the assistant panel never gets
         // the LLM cleanup pass and never reaches `paste_for_session` — the
-        // final text lands verbatim in the panel's editable input.
-        let routed_to_assistant = crate::assistant::take_dictation_route(app);
+        // final text is sent to the provider (`Send`) or dropped entirely
+        // when the panel was closed mid-dictation (`Drop`).
+        let dictation_route = crate::assistant::take_dictation_route(app);
+        let routed_to_assistant =
+            !matches!(dictation_route, crate::assistant::DictationRoute::Normal);
         let post_process = post_process && !routed_to_assistant;
         let cancel_generation = rm.cancel_generation();
         // The session the pipeline is about to work: its id rides on
@@ -996,13 +999,37 @@ impl ShortcutAction for TranscribeAction {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 finish.report(PipelineOutcome::Empty);
+                            } else if matches!(
+                                dictation_route,
+                                crate::assistant::DictationRoute::Drop
+                            ) {
+                                // FR-012-12: the panel was closed mid-
+                                // dictation — closing is the abort gesture,
+                                // so the transcript is dropped. It must
+                                // never fall through to `paste_for_session`
+                                // (that would leak an assistant-bound
+                                // dictation into a random focused app).
+                                debug!("Assistant dictation dropped: panel closed mid-dictation");
+                                if let Some(id) = history_entry_id {
+                                    if let Err(err) =
+                                        hm.update_session_status(id, "cancelled", None)
+                                    {
+                                        error!("Failed to mark history entry cancelled: {}", err);
+                                    }
+                                }
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                finish.report(PipelineOutcome::Cancelled);
                             } else if routed_to_assistant {
-                                // FR-012-12: the dictation belongs to the
-                                // assistant panel — deliver the final text to
-                                // its input field; nothing is pasted into
-                                // another app and no submit key is sent.
+                                // FR-012-12/13: the dictation belongs to the
+                                // assistant panel — the final text is sent
+                                // straight to the provider (second hotkey
+                                // press = dictate end = send); nothing is
+                                // pasted into another app.
                                 let final_text = processed.final_text;
-                                crate::assistant::deliver_dictated_text(&ah, &final_text);
+                                if let Err(err) = crate::assistant::send(&ah, &final_text) {
+                                    warn!("assistant auto-send failed: {err}");
+                                }
                                 if let Some(id) = history_entry_id {
                                     if let Err(err) = hm.update_session_status(id, "routed", None) {
                                         error!("Failed to mark history entry routed: {}", err);
@@ -1260,18 +1287,27 @@ impl ShortcutAction for PasteLastAction {
     }
 }
 
-// Assistant Action (FR-012-10): the global hotkey opens the overlay; a
-// second press while open is forwarded to the panel (`assistant://hotkey`),
-// which submits a non-empty draft or focuses the input.
+// Assistant Action (FR-012-10/12/13): a dictation-family binding. The press
+// opens the panel and starts a capture whose output is claimed for the
+// assistant (routed, never pasted); the next press ends the dictation and
+// auto-sends the transcript to the provider. Tap/hold semantics come from
+// the coordinator's activation modes, like every transcribe binding.
 struct AssistantAction;
 
 impl ShortcutAction for AssistantAction {
-    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
-        crate::assistant::hotkey_pressed(app);
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+        crate::assistant::open_panel(app);
+        TranscribeAction {
+            post_process: false,
+        }
+        .start(app, binding_id, shortcut_str);
     }
 
-    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
-        // Edge-triggered only — nothing on release.
+    fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+        TranscribeAction {
+            post_process: false,
+        }
+        .stop(app, binding_id, shortcut_str);
     }
 }
 

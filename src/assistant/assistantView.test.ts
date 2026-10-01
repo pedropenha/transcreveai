@@ -1,55 +1,13 @@
 import assert from "node:assert/strict";
 import {
-  appendDictated,
   canDragPanel,
-  canSend,
-  composerValue,
   errorKindKey,
-  hotkeyIntent,
   isPanelDragging,
   pinToggleKey,
+  providerHintIsAdvisory,
   providerHintKey,
   safeMarkdownUrl,
 } from "./assistantView";
-
-const ready = { phase: "idle" as const, providerReady: true };
-
-// --- appendDictated (FR-012-12): the transcription lands in the field ---
-assert.equal(appendDictated("", "olá"), "olá");
-assert.equal(appendDictated("resuma", "isto"), "resuma isto");
-// Dictation never erases what the user already typed.
-assert.equal(appendDictated("  ", "t"), "t");
-assert.equal(appendDictated("x", "   "), "x");
-// Trailing whitespace on the draft doesn't double the separator.
-assert.equal(appendDictated("resuma  ", "isto"), "resuma isto");
-
-// --- composerValue: live preview composes over the draft while dictating ---
-assert.equal(composerValue("olá", "mundo", true), "olá mundo");
-assert.equal(composerValue("olá", "mundo", false), "olá");
-assert.equal(composerValue("olá", "", true), "olá");
-
-// --- canSend (FR-012-13/AC-012-06): explicit send only, provider-gated ---
-assert.equal(canSend("pergunta", ready), true);
-assert.equal(canSend("   ", ready), false);
-assert.equal(canSend("q", { phase: "thinking", providerReady: true }), false);
-assert.equal(canSend("q", { phase: "idle", providerReady: false }), false);
-assert.equal(canSend("q", { phase: "error", providerReady: true }), true);
-assert.equal(canSend("q", { phase: "cancelled", providerReady: true }), true);
-
-// --- hotkeyIntent (FR-012-10/13): second press sends a non-empty draft ---
-assert.equal(hotkeyIntent("pergunta", ready), "send");
-assert.equal(hotkeyIntent("", ready), "focus");
-assert.equal(hotkeyIntent("   ", ready), "focus");
-assert.equal(
-  hotkeyIntent("q", { phase: "thinking", providerReady: true }),
-  "ignore",
-);
-// No provider: a draft press falls back to focusing the input — the banner
-// explains why nothing can be sent.
-assert.equal(
-  hotkeyIntent("q", { phase: "idle", providerReady: false }),
-  "focus",
-);
 
 // --- providerHintKey: backend hint → localized string ---
 assert.equal(providerHintKey("no_provider"), "assistant.hint.noProvider");
@@ -73,6 +31,16 @@ assert.equal(
 );
 assert.equal(providerHintKey(null), "assistant.hint.noProvider");
 assert.equal(providerHintKey("bogus"), "assistant.hint.noProvider");
+
+// --- providerHintIsAdvisory: only the experimental flag doesn't block ---
+// An explicitly selected experimental provider is usable (the user opted
+// in) — every other hint explains why the provider can't answer.
+assert.equal(providerHintIsAdvisory("cli_agent_experimental"), true);
+assert.equal(providerHintIsAdvisory("no_provider"), false);
+assert.equal(providerHintIsAdvisory("cli_agent_not_detected"), false);
+assert.equal(providerHintIsAdvisory("offline"), false);
+assert.equal(providerHintIsAdvisory(null), false);
+assert.equal(providerHintIsAdvisory(undefined), false);
 
 // --- errorKindKey: the panel localizes via the typed kind, not raw text ---
 assert.equal(errorKindKey("network"), "assistant.error.network");

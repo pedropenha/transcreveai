@@ -51,6 +51,12 @@ pub(crate) fn cap_response(text: String) -> String {
 /// keeping every turn inside a sane context window.
 pub(crate) const MAX_INPUT_CHARS: usize = 64_000;
 
+/// Budget reserved for the local-context block
+/// (`context::build_context_block`) — it joins the system prompt at send
+/// time, so history truncation must leave room for it inside
+/// `MAX_INPUT_CHARS`.
+pub(crate) const CONTEXT_RESERVE_CHARS: usize = super::context::CONTEXT_MAX_CHARS;
+
 /// Turns sent to the provider and kept in the panel. FR-012-15: bounded
 /// history — the oldest messages drop first, count-capped and
 /// char-budgeted, and the retained tail always re-opens on a `user` turn
@@ -65,7 +71,8 @@ pub(crate) fn truncate_history(messages: &mut Vec<AssistantMessage>) {
     // Char budget — drop leading pairs until the request fits. `len > 1`
     // keeps the newest user prompt even if it alone overflows the budget.
     while messages.len() > 1
-        && SYSTEM_PROMPT.chars().count() + history_chars(messages) > MAX_INPUT_CHARS
+        && SYSTEM_PROMPT.chars().count() + CONTEXT_RESERVE_CHARS + history_chars(messages)
+            > MAX_INPUT_CHARS
     {
         messages.remove(0);
         drop_leading_non_user(messages);
@@ -139,6 +146,7 @@ pub(crate) async fn run_turn(app: AppHandle, history: Vec<AssistantMessage>, gen
         return;
     }
     session.in_flight = None;
+    let mut send_pending = false;
     match outcome {
         Ok(response) => {
             session
@@ -148,12 +156,26 @@ pub(crate) async fn run_turn(app: AppHandle, history: Vec<AssistantMessage>, gen
             session.phase = AssistantPhase::Idle;
             session.error_kind = None;
             session.error_detail = None;
+            send_pending = true;
         }
         Err(e) => {
             log::warn!("assistant turn failed: {e}");
             session.phase = AssistantPhase::Error;
             session.error_kind = Some(LlmErrorKind::from(&e));
             session.error_detail = Some(short_error(&e));
+            // A queued prompt survives the failure as a plain user message —
+            // the user sees it landed, and `assistant_retry` re-sends it.
+            if let Some(pending) = session.pending_prompt.take() {
+                session.messages.push(AssistantMessage::user(pending));
+                truncate_history(&mut session.messages);
+            }
+        }
+    }
+    // A prompt dictated while the provider was answering is sent now, as its
+    // own turn — auto-sent dictation is never silently dropped (FR-012-13).
+    if send_pending {
+        if let Some(pending) = session.pending_prompt.take() {
+            begin_turn_locked(&app, &mut session, &pending);
         }
     }
     // Emit while the guard is held so the outcome snapshot is serialized
@@ -180,8 +202,17 @@ async fn complete_turn(
             messages.push(msg);
         }
     }
+    // FR-012-19: local context snapshot — recent dictations + meeting
+    // titles/summaries/notes/transcript excerpts. Fail-open: an empty block
+    // on any error; the turn is never blocked by context lookup.
+    let context = super::context::build_context_block(app).await;
+    let system = if context.is_empty() {
+        SYSTEM_PROMPT.to_string()
+    } else {
+        format!("{SYSTEM_PROMPT}\n\n{context}")
+    };
     let req = LlmRequest {
-        system: SYSTEM_PROMPT.to_string(),
+        system,
         messages,
         max_tokens: 2048,
         temperature: 0.4,
@@ -211,8 +242,25 @@ async fn complete_turn(
     })
 }
 
+/// Push `prompt` as a user turn and spawn the provider call. Callers must
+/// hold the session lock and must already know `in_flight` is empty — the
+/// spawn's handle lands before the guard drops (see `spawn_turn_locked`).
+fn begin_turn_locked(app: &AppHandle, session: &mut AssistantSession, prompt: &str) {
+    session.phase = AssistantPhase::Thinking;
+    session.error_kind = None;
+    session.error_detail = None;
+    session.messages.push(AssistantMessage::user(prompt));
+    truncate_history(&mut session.messages);
+    session.generation += 1;
+    let generation = session.generation;
+    let history = session.messages.clone();
+    spawn_turn_locked(app, session, history, generation);
+}
+
 /// `assistant_send` — push the user message and kick the provider call.
-/// FR-012-13: sending is always an explicit action; nothing is sent before.
+/// While a turn is in flight the prompt is queued (`pending_prompt`) and
+/// sent automatically when the turn commits, so auto-sent dictation
+/// (FR-012-13) is never dropped by a Busy race.
 pub fn send(app: &AppHandle, prompt: &str) -> CommandResult<()> {
     let prompt = prompt.trim();
     if prompt.is_empty() {
@@ -229,22 +277,19 @@ pub fn send(app: &AppHandle, prompt: &str) -> CommandResult<()> {
             ));
         };
         if session.in_flight.is_some() {
-            return Err(CommandError::new(
-                CommandErrorCode::Busy,
-                "The assistant is still answering",
-            ));
+            match session.pending_prompt.as_mut() {
+                Some(pending) => {
+                    pending.push('\n');
+                    pending.push_str(prompt);
+                }
+                None => session.pending_prompt = Some(prompt.to_string()),
+            }
+            emit_state_locked(app, &mut session);
+            return Ok(());
         }
-        session.phase = AssistantPhase::Thinking;
-        session.error_kind = None;
-        session.error_detail = None;
-        session.messages.push(AssistantMessage::user(prompt));
-        truncate_history(&mut session.messages);
-        session.generation += 1;
-        let generation = session.generation;
-        let history = session.messages.clone();
         // Spawn + store + emit under this one guard — see spawn_turn_locked
         // for why the handle must land before the lock releases.
-        spawn_turn_locked(app, &mut session, history, generation);
+        begin_turn_locked(app, &mut session, prompt);
         emit_state_locked(app, &mut session);
     }
     Ok(())
@@ -295,7 +340,11 @@ pub fn cancel_in_flight(app: &AppHandle) -> bool {
     let Some(mut session) = lock_session(app) else {
         return false;
     };
+    // A queued prompt dies with the turn it was waiting on — cancel means
+    // cancel.
+    session.pending_prompt = None;
     let Some(handle) = session.in_flight.take() else {
+        emit_state_locked(app, &mut session);
         return false;
     };
     handle.abort();
@@ -321,6 +370,7 @@ pub fn new_conversation(app: &AppHandle) {
     if let Some(handle) = session.in_flight.take() {
         handle.abort();
     }
+    session.pending_prompt = None;
     session.generation += 1;
     session.messages.clear();
     session.phase = AssistantPhase::Idle;

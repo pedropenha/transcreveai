@@ -297,19 +297,30 @@
   padding: 2px 8px;
 }
 
-/* Composer: editable prompt (dictation lands here, FR-012-12/13). */
-.as-composer {
-  border-top: 1px solid var(--flowbar-border);
-  padding: 8px 10px 10px;
-}
+/* Dictation-first panel (FR-012-12/13): no composer — the live STT preview
+   renders as a pending user bubble, the finalized text lands as a real
+   message on auto-send. */
 
 .as-live {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: var(--font-size-xxs);
   color: var(--flowbar-recording);
-  margin-bottom: 4px;
+}
+
+.as-live-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-style: dashed;
+}
+
+.as-live-text {
+  color: var(--flowbar-text);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  overflow-wrap: anywhere;
 }
 
 .as-dot {
@@ -326,53 +337,56 @@
   }
 }
 
-.as-input {
-  width: 100%;
-  box-sizing: border-box;
-  resize: none;
-  border: 1px solid var(--flowbar-border);
-  border-radius: var(--radius-md);
-  background: var(--flowbar-surface-raised);
-  color: var(--flowbar-text);
-  font-family: var(--font-family-sans);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-snug);
-  padding: 7px 9px;
-  outline: none;
+/* A prompt dictated while the provider was answering — sent automatically
+   when the turn commits. */
+.as-queued {
+  opacity: 0.75;
+  border-style: dashed;
 }
 
-.as-input:focus {
+.as-queued-tag {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--font-size-xxs);
+  color: var(--flowbar-text-muted);
+}
+
+.as-thinking-text {
+  flex: 1;
+}
+
+.as-cancel {
+  border: 1px solid var(--flowbar-border);
+  border-radius: var(--radius-pill);
+  background: var(--flowbar-surface-raised);
+  color: var(--flowbar-text);
+  font-size: var(--font-size-xxs);
+  padding: 2px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.as-cancel:hover {
   border-color: var(--flowbar-accent);
 }
 
-.as-input[readonly] {
-  opacity: 0.85;
+.as-provider--experimental {
+  border: 1px dashed color-mix(in srgb, var(--flowbar-warning) 55%, transparent);
 }
 
-.as-composer-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
+.as-exp {
+  font-style: normal;
+  color: var(--flowbar-warning);
 }
 
-.as-new {
-  border: none;
-  background: transparent;
-  color: var(--flowbar-text-muted);
-  font-size: var(--font-size-xxs);
-  padding: 3px 8px;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-}
-
-.as-new:hover {
-  color: var(--flowbar-text);
-  background: var(--flowbar-surface-raised);
+/* Footer — the voice-first hint row (replaces the composer). */
+.as-foot {
+  border-top: 1px solid var(--flowbar-border);
+  padding: 6px 10px;
 }
 
 .as-hint {
-  flex: 1;
+  display: block;
   text-align: center;
   font-size: var(--font-size-xxs);
   color: var(--flowbar-text-muted);
@@ -380,20 +394,4 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.as-send {
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--flowbar-accent);
-  color: var(--flowbar-surface);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  padding: 4px 14px;
-  cursor: pointer;
-}
-
-.as-send:disabled {
-  opacity: var(--state-disabled-opacity);
-  cursor: default;
 }
