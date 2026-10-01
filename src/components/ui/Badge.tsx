@@ -2,7 +2,7 @@ import React from "react";
 
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: "primary" | "success" | "warning" | "secondary";
+  variant?: "primary" | "success" | "warning" | "secondary" | "danger";
   className?: string;
 }
 
@@ -16,6 +16,7 @@ const Badge: React.FC<BadgeProps> = ({
     success: "bg-green-500/20 text-green-400",
     warning: "bg-amber-500/20 text-amber-400",
     secondary: "bg-mid-gray/20 text-text/70",
+    danger: "bg-red-500/20 text-red-400",
   };
 
   return (

@@ -124,6 +124,41 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
     Ok(())
 }
 
+/// Turn raw user input into a safe FTS5 `MATCH` expression (FR-009-25).
+///
+/// FTS5 parses its own query syntax — feeding the search box verbatim would
+/// error on input like `foo "bar` or let the user inject operators. The
+/// sanitizer keeps only alphanumeric runs (Unicode-aware, matching the
+/// default `unicode61` tokenizer), quotes each run as a phrase and appends
+/// `*` for prefix matching; terms are space-joined (implicit AND).
+///
+/// Returns `None` when nothing indexable remains — callers should then list
+/// every row instead of running an empty `MATCH`.
+pub(crate) fn fts_match_query(input: &str) -> Option<String> {
+    let mut terms: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for ch in input.chars() {
+        if ch.is_alphanumeric() {
+            current.push(ch);
+        } else if !current.is_empty() {
+            terms.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        terms.push(current);
+    }
+    if terms.is_empty() {
+        return None;
+    }
+    Some(
+        terms
+            .iter()
+            .map(|term| format!("\"{term}\"*"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
 /// Migrate from tauri-plugin-sql's migration tracking to rusqlite_migration's.
 /// tauri-plugin-sql used a `_sqlx_migrations` table, while rusqlite_migration
 /// uses SQLite's `user_version` pragma. This sets `user_version` to the highest
@@ -212,6 +247,7 @@ mod tests {
             "dictations_fts",
             "notes_fts",
             "meeting_fts",
+            "meetings_fts",
         ] {
             assert!(table_exists(&conn, table), "missing table {}", table);
         }
@@ -414,6 +450,79 @@ mod tests {
             )
             .expect("fts after delete");
         assert_eq!(hits, 0);
+    }
+
+    #[test]
+    fn fts_match_query_quotes_terms_and_prefixes() {
+        // Each term becomes a quoted phrase with a prefix `*`; terms AND.
+        assert_eq!(
+            fts_match_query("reuniao kube").as_deref(),
+            Some("\"reuniao\"* \"kube\"*")
+        );
+        // Unicode letters/digits are kept (unicode61 tokenizer).
+        assert_eq!(
+            fts_match_query("reunião 2fa").as_deref(),
+            Some("\"reunião\"* \"2fa\"*")
+        );
+        // Punctuation, quotes and operator-ish words never reach the query —
+        // the only unsafe characters are already stripped by the tokenizer.
+        assert_eq!(
+            fts_match_query("foo \"bar").as_deref(),
+            Some("\"foo\"* \"bar\"*")
+        );
+        assert_eq!(
+            fts_match_query("a-b (OR) NEAR").as_deref(),
+            Some("\"a\"* \"b\"* \"OR\"* \"NEAR\"*")
+        );
+        // Nothing indexable left → None (caller lists everything).
+        assert_eq!(fts_match_query(""), None);
+        assert_eq!(fts_match_query("   \t\n"), None);
+        assert_eq!(fts_match_query("\"-*()"), None);
+    }
+
+    #[test]
+    fn fts_match_query_output_never_errors_against_real_table() {
+        // Regression net for T-068: every sanitized query must parse as a
+        // valid FTS5 MATCH expression, no matter how hostile the input was.
+        let conn = migrated_conn();
+        conn.execute(
+            "INSERT INTO dictations (created_at, raw_text, final_text)
+             VALUES (1, 'reuniao com kubernetes', 'reuniao com kubernetes')",
+            [],
+        )
+        .expect("insert dictation");
+
+        for raw in [
+            "foo \"bar",
+            "a AND OR NOT b",
+            "NEAR(x y)",
+            "reuniao:kube",
+            "*%^&",
+            "' single ' quotes \"",
+        ] {
+            let Some(query) = fts_match_query(raw) else {
+                continue;
+            };
+            let result: rusqlite::Result<i64> = conn.query_row(
+                "SELECT COUNT(*) FROM dictations_fts WHERE dictations_fts MATCH ?1",
+                params![query],
+                |row| row.get(0),
+            );
+            assert!(
+                result.is_ok(),
+                "sanitized query {query:?} (from {raw:?}) must parse"
+            );
+        }
+
+        // And it actually matches (prefix semantics).
+        let hits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM dictations_fts WHERE dictations_fts MATCH ?1",
+                params![fts_match_query("reun kube").expect("query")],
+                |row| row.get(0),
+            )
+            .expect("prefix match");
+        assert_eq!(hits, 1);
     }
 
     #[test]

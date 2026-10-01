@@ -97,6 +97,10 @@ pub trait MeetingRepository {
     fn get(&self, id: &str) -> Result<Option<Meeting>>;
     /// Newest first (by `started_at`).
     fn list(&self) -> Result<Vec<Meeting>>;
+    /// Full-text search over title, summary, "Minhas notas" and transcript
+    /// (FR-009-25). `fts_query` is a sanitized FTS5 expression — build it
+    /// with `crate::db::fts_match_query`, never from raw user input.
+    fn search(&self, fts_query: &str) -> Result<Vec<Meeting>>;
     /// Persist every mutable field of `meeting`.
     fn update(&self, meeting: &Meeting) -> Result<()>;
     /// Set `status` (and optionally `error_code`); when `ended` is true also
@@ -171,6 +175,33 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
             .conn
             .prepare("SELECT * FROM meetings ORDER BY started_at DESC")?;
         let rows = stmt.query_map([], Meeting::from_row)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Unions the three FTS sources: `meetings_fts` (title + summary),
+    /// `notes_fts` (meeting notes rows) and `meeting_fts` (segment text).
+    /// `meetings` has a TEXT uuid primary key, so the FTS joins go through
+    /// the implicit `rowid` the external-content tables were created with.
+    fn search(&self, fts_query: &str) -> Result<Vec<Meeting>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.* FROM meetings m
+             WHERE EXISTS (
+                     SELECT 1 FROM meetings_fts
+                     WHERE meetings_fts MATCH ?1 AND meetings_fts.rowid = m.rowid
+                   )
+                OR EXISTS (
+                     SELECT 1 FROM notes_fts
+                     JOIN notes n ON n.rowid = notes_fts.rowid
+                     WHERE notes_fts MATCH ?1 AND n.meeting_id = m.id
+                   )
+                OR EXISTS (
+                     SELECT 1 FROM meeting_fts
+                     JOIN meeting_segments s ON s.rowid = meeting_fts.rowid
+                     WHERE meeting_fts MATCH ?1 AND s.meeting_id = m.id
+                   )
+             ORDER BY m.started_at DESC",
+        )?;
+        let rows = stmt.query_map(params![fts_query], Meeting::from_row)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -578,6 +609,80 @@ mod tests {
         // Deleting the meeting cascades to its segments (FK ON).
         meetings.delete(&m.id).expect("delete");
         assert!(segments.list_by_meeting(&m.id).expect("list").is_empty());
+    }
+
+    #[test]
+    fn search_matches_title_summary_notes_and_transcript() {
+        // FR-009-25 (T-068): full-text over title, summary, notes and
+        // transcript via the three FTS tables unioned by `search`.
+        use crate::db::notes::{Note, NoteRepository, SqliteNoteRepository};
+
+        let conn = setup();
+        let meetings = SqliteMeetingRepository::new(&conn);
+        let segments = SqliteMeetingSegmentRepository::new(&conn);
+        let notes = SqliteNoteRepository::new(&conn);
+        let q = |raw: &str| crate::db::fts_match_query(raw).expect("non-empty query");
+
+        // Four meetings, each matching a different source.
+        let mut by_title = Meeting::new("Retro kubernetes", "manual");
+        by_title.started_at = 100;
+        meetings.create(&by_title).expect("create by_title");
+
+        let mut by_summary = Meeting::new("Planning", "manual");
+        by_summary.started_at = 200;
+        by_summary.summary_md = Some("decidimos migrar para oauth".to_string());
+        meetings.create(&by_summary).expect("create by_summary");
+
+        let mut by_notes = Meeting::new("Daily", "manual");
+        by_notes.started_at = 300;
+        meetings.create(&by_notes).expect("create by_notes");
+        let mut n = Note::new("meeting");
+        n.meeting_id = Some(by_notes.id.clone());
+        n.body_md = "cliente pediu desconto".to_string();
+        notes.create(&n).expect("create note");
+
+        let mut by_segment = Meeting::new("1:1", "manual");
+        by_segment.started_at = 400;
+        meetings.create(&by_segment).expect("create by_segment");
+        segments
+            .create(&MeetingSegment::new(
+                &by_segment.id,
+                "mic",
+                0,
+                1500,
+                "okr review",
+            ))
+            .expect("create segment");
+
+        let mut noise = Meeting::new("Weekly sync", "manual");
+        noise.started_at = 500;
+        meetings.create(&noise).expect("create noise");
+
+        let ids = |term: &str| -> Vec<String> {
+            meetings
+                .search(&q(term))
+                .expect("search")
+                .into_iter()
+                .map(|m| m.id)
+                .collect()
+        };
+
+        assert_eq!(ids("kubernetes"), vec![by_title.id.clone()]);
+        assert_eq!(ids("oauth"), vec![by_summary.id.clone()]);
+        assert_eq!(ids("desconto"), vec![by_notes.id]);
+        assert_eq!(ids("okr"), vec![by_segment.id.clone()]);
+        assert!(ids("inexistente").is_empty());
+
+        // Prefix matching + edited summary stays searchable.
+        assert_eq!(ids("kube"), vec![by_title.id]);
+        by_summary.summary_md = Some("rollback plan".to_string());
+        meetings.update(&by_summary).expect("update summary");
+        assert!(ids("oauth").is_empty());
+        assert_eq!(ids("rollback"), vec![by_summary.id]);
+
+        // Deleting the meeting removes every FTS trace of it.
+        meetings.delete(&by_segment.id).expect("delete");
+        assert!(ids("okr").is_empty());
     }
 
     #[test]
