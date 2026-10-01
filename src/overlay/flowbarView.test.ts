@@ -9,6 +9,7 @@ const base: FlowbarViewInput = {
   alwaysOn: true,
   windowActive: true,
   phase: "idle",
+  meeting: "idle",
   notice: null,
   hint: null,
   hovered: false,
@@ -75,6 +76,34 @@ assert.equal(
 assert.equal(
   resolveFlowbarView({ ...base, phase: "error", hovered: true }),
   "error",
+);
+
+// FR-009-07: a live meeting claims the pill (over idle/hover and leftover
+// dictation hints) but never impersonates the dictation pill while one is
+// actually capturing — ■ there ends-and-inserts, not stops the meeting.
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "recording" }),
+  "meeting-recording",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "paused" }),
+  "meeting-recording",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "recording", hovered: true }),
+  "meeting-recording",
+);
+assert.equal(
+  resolveFlowbarView({
+    ...base,
+    meeting: "recording",
+    phase: "recording",
+  }),
+  "recording",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, meeting: "recording", phase: "done" }),
+  "done",
 );
 
 // effectiveEdge mirrors geometry::effective_edge.

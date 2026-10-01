@@ -7,10 +7,20 @@ import React, {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, CircleDot, Mic, Square, TriangleAlert, X } from "lucide-react";
+import {
+  Check,
+  CircleDot,
+  Mic,
+  Pause,
+  Play,
+  Square,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
 import type {
+  MeetingStateEvent,
   StreamPhase,
   StreamPhaseEvent,
   StreamTextEvent,
@@ -24,6 +34,7 @@ import {
   effectiveEdge,
   resolveFlowbarView,
   type FlowbarView,
+  type MeetingStatus,
   type OverlayHint,
   type SessionPhase,
   type StageEdge,
@@ -67,6 +78,11 @@ const RecordingOverlay: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+
+  // --- Meeting lifecycle (`meeting://state`, T-064 / FR-009-07) ---
+  // Terminal statuses collapse to "idle" — post-processing is T-067's UI.
+  const [meetingStatus, setMeetingStatus] = useState<MeetingStatus>("idle");
+  const [meetingElapsed, setMeetingElapsed] = useState(0);
 
   // --- Hover / click-through (FR-001-02, NFR-001-02) ---
   const [hovered, setHovered] = useState(false);
@@ -244,6 +260,18 @@ const RecordingOverlay: React.FC = () => {
         },
       );
 
+      // Meeting session — the always-visible recording indicator (FR-009-07).
+      const unlistenMeeting = await listen<MeetingStateEvent>(
+        "meeting://state",
+        (event) => {
+          const status = event.payload.status;
+          setMeetingElapsed(Math.floor(event.payload.elapsed_ms / 1000));
+          setMeetingStatus(
+            status === "recording" || status === "paused" ? status : "idle",
+          );
+        },
+      );
+
       const unlistenStream = await events.streamTextEvent.listen((event) => {
         setStreamText(event.payload);
       });
@@ -261,6 +289,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenCursor();
         unlistenReady();
         unlistenLevel();
+        unlistenMeeting();
         unlistenStream();
         unlistenPhase();
       };
@@ -282,6 +311,7 @@ const RecordingOverlay: React.FC = () => {
     alwaysOn,
     windowActive,
     phase,
+    meeting: meetingStatus,
     notice,
     hint,
     hovered,
@@ -361,6 +391,15 @@ const RecordingOverlay: React.FC = () => {
   const notetaker = () => {
     void commands.flowbarStartNotetaker();
   };
+  // FR-009-06: the meeting pill's own pause/resume + stop.
+  const meetingTogglePause = () => {
+    void (meetingStatus === "paused"
+      ? commands.meetingResume()
+      : commands.meetingPause());
+  };
+  const meetingStop = () => {
+    void commands.meetingStop();
+  };
   const cancel = () => {
     void commands.cancelOperation();
   };
@@ -426,6 +465,10 @@ const RecordingOverlay: React.FC = () => {
     switch (view) {
       case "recording":
         return t("overlay.listening");
+      case "meeting-recording":
+        return meetingStatus === "paused"
+          ? t("overlay.meetingPaused")
+          : t("overlay.meetingRecording");
       case "working":
         if (retrying) return t("overlay.retrying");
         if (phase === "inserting") return t("overlay.inserting");
@@ -577,6 +620,40 @@ const RecordingOverlay: React.FC = () => {
             </div>
           </div>
         );
+
+      case "meeting-recording": {
+        // FR-009-06/07: same pill language as dictation — left pause/resume,
+        // meeting timer center, ■ right stops the *meeting* (the dictation
+        // pill's ■ ends-and-inserts, so this face only wins while idle).
+        const paused = meetingStatus === "paused";
+        return (
+          <div className="scard fbar-card f-rec">
+            <div className="frow">
+              <button
+                type="button"
+                className="sx fside"
+                aria-label={paused ? t("overlay.resume") : t("overlay.pause")}
+                onClick={meetingTogglePause}
+              >
+                {paused ? (
+                  <Play size={10} aria-hidden="true" />
+                ) : (
+                  <Pause size={10} aria-hidden="true" />
+                )}
+              </button>
+              <span className="stimer">{fmtTime(meetingElapsed)}</span>
+              <button
+                type="button"
+                className="sx fside fstop"
+                aria-label={t("overlay.stopMeeting")}
+                onClick={meetingStop}
+              >
+                <Square size={9} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        );
+      }
 
       case "working":
         // F001 processing shape: three pulsing dots + an AT-only label — the

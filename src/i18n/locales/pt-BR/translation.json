@@ -749,10 +749,27 @@
     "done": "Concluído",
     "failed": "Ditado falhou",
     "retry": "Tentar novamente",
-    "retrying": "Tentando novamente..."
+    "retrying": "Tentando novamente...",
+    "pause": "Pausar",
+    "resume": "Retomar",
+    "stopMeeting": "Parar reunião",
+    "meetingRecording": "Gravando reunião",
+    "meetingPaused": "Reunião pausada"
   },
   "whatsNew": {
     "title": "Novidades no Transcreve.ai v{{version}}"
+  },
+  "meeting": {
+    "consent": {
+      "title": "Consentimento de gravação",
+      "body": "Antes da sua primeira reunião: gravar uma conversa pode exigir informar os participantes ou obter consentimento, conforme a legislação local (como a LGPD no Brasil). O Transcreve.ai grava e transcreve localmente no seu computador, mas informar os participantes é sua responsabilidade.",
+      "noticeLabel": "Texto do aviso para compartilhar no chat:",
+      "copy": "Copiar aviso",
+      "copied": "Aviso copiado para a área de transferência",
+      "copyFailed": "Não foi possível copiar o aviso",
+      "accept": "Entendi",
+      "acceptedHint": "Consentimento registrado — você já pode iniciar a reunião."
+    }
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} pode estar bloqueando 1 atalho",

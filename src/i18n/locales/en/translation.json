@@ -695,6 +695,18 @@
   "whatsNew": {
     "title": "New in Transcreve.ai v{{version}}"
   },
+  "meeting": {
+    "consent": {
+      "title": "Recording consent",
+      "body": "Before your first meeting: recording a conversation may require informing the participants or getting their consent, depending on local law (such as Brazil's LGPD). Transcreve.ai records and transcribes locally on your computer, but informing the participants is your responsibility.",
+      "noticeLabel": "Notice text you can share in the chat:",
+      "copy": "Copy notice",
+      "copied": "Notice copied to clipboard",
+      "copyFailed": "Could not copy the notice",
+      "accept": "Got it",
+      "acceptedHint": "Consent acknowledged — you can start the meeting again."
+    }
+  },
   "common": {
     "loading": "Loading...",
     "delete": "Delete",
@@ -752,7 +764,12 @@
     "done": "Done",
     "failed": "Dictation failed",
     "retry": "Try again",
-    "retrying": "Retrying..."
+    "retrying": "Retrying...",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stopMeeting": "Stop meeting",
+    "meetingRecording": "Recording meeting",
+    "meetingPaused": "Meeting paused"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",

@@ -26,6 +26,7 @@ import {
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { WhatsNewGate } from "./components/whats-new";
+import MeetingConsentGate from "./components/MeetingConsentGate";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
@@ -358,6 +359,9 @@ function App() {
       >
         <ErrorBoundary context="What's New">
           <WhatsNewGate />
+        </ErrorBoundary>
+        <ErrorBoundary context="Meeting Consent">
+          <MeetingConsentGate />
         </ErrorBoundary>
         {/* Main content area that takes remaining space */}
         <div className="flex-1 flex overflow-hidden">

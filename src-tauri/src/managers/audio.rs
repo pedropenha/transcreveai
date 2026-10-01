@@ -1096,8 +1096,7 @@ impl AudioRecordingManager {
     }
 
     /// Detach a consumer previously returned by [`Self::subscribe_frame_consumer`].
-    /// Consumed by the meeting session (T-064); not yet wired to a caller.
-    #[allow(dead_code)]
+    /// Consumed by the meeting session (T-064).
     pub fn unsubscribe_frame_consumer(&self, id: u64) -> Result<(), anyhow::Error> {
         let recorder = self.recorder.lock().unwrap();
         if let Some(recorder) = recorder.as_ref() {

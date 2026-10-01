@@ -131,6 +131,20 @@ impl BlockWriter {
         t0: Instant,
         block_samples: usize,
     ) -> Result<Self> {
+        Self::with_start_index(dir, track, t0, block_samples, 1)
+    }
+
+    /// Resume writing into `dir` after a pause: `next_index` continues the
+    /// track's numbering (from [`scan_meeting_blocks`]) and `t0` stays the
+    /// meeting's start so `start_offset_ms` keeps the pause gap
+    /// (FR-009-06).
+    pub fn with_start_index(
+        dir: &Path,
+        track: Track,
+        t0: Instant,
+        block_samples: usize,
+        next_index: u32,
+    ) -> Result<Self> {
         fs::create_dir_all(dir).with_context(|| format!("Failed to create {}", dir.display()))?;
         Ok(Self {
             dir: dir.to_path_buf(),
@@ -139,7 +153,7 @@ impl BlockWriter {
             t0,
             pending_start: None,
             pending: Vec::with_capacity(block_samples),
-            next_index: 1,
+            next_index: next_index.max(1),
             sealed: Vec::new(),
         })
     }

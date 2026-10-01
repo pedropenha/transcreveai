@@ -109,6 +109,34 @@ impl TrackPipeline {
     }
 }
 
+/// How a (re)started capture numbers and timestamps its blocks. On a fresh
+/// meeting this is [`Self::default`]; on resume (FR-009-06) `time_base` stays
+/// the meeting's start and `next_*_index` continue the on-disk numbering so
+/// resumed blocks never overwrite earlier ones and their offsets keep the
+/// pause gap.
+#[derive(Clone, Copy, Debug)]
+pub struct CaptureConfig {
+    /// Samples per block (spec: 60 s at 16 kHz).
+    pub block_samples: usize,
+    /// Monotonic instant block offsets are measured from.
+    pub time_base: Instant,
+    /// 1-based next block index for the mic track.
+    pub next_mic_index: u32,
+    /// 1-based next block index for the system track.
+    pub next_system_index: u32,
+}
+
+impl Default for CaptureConfig {
+    fn default() -> Self {
+        Self {
+            block_samples: BLOCK_DURATION.as_secs() as usize * WHISPER_SAMPLE_RATE as usize,
+            time_base: Instant::now(),
+            next_mic_index: 1,
+            next_system_index: 1,
+        }
+    }
+}
+
 /// Spawn a writer thread for `track`. A `WriteFailed` event is emitted per
 /// failed write; the writer keeps retrying on later pushes (the unsealed
 /// samples are not dropped).
@@ -117,9 +145,10 @@ fn spawn_track_writer(
     track: Track,
     block_samples: usize,
     t0: Instant,
+    next_index: u32,
     events: mpsc::Sender<MeetingCaptureEvent>,
 ) -> Result<TrackPipeline> {
-    let writer = BlockWriter::with_block_samples(&dir, track, t0, block_samples)?;
+    let writer = BlockWriter::with_start_index(&dir, track, t0, block_samples, next_index)?;
     let (tx, rx) = mpsc::channel::<TrackMsg>();
     let handle = std::thread::Builder::new()
         .name(format!("meeting-{}-writer", track.label()))
@@ -201,13 +230,7 @@ impl MeetingCapture {
         system: SystemSource,
         events: mpsc::Sender<MeetingCaptureEvent>,
     ) -> Result<Self> {
-        Self::start_with_block_samples(
-            audio_dir,
-            mic,
-            system,
-            events,
-            BLOCK_DURATION.as_secs() as usize * WHISPER_SAMPLE_RATE as usize,
-        )
+        Self::start_with_config(audio_dir, mic, system, events, CaptureConfig::default())
     }
 
     /// Same as [`Self::start`] with an explicit block size — tests rotate
@@ -219,10 +242,32 @@ impl MeetingCapture {
         events: mpsc::Sender<MeetingCaptureEvent>,
         block_samples: usize,
     ) -> Result<Self> {
+        Self::start_with_config(
+            audio_dir,
+            mic,
+            system,
+            events,
+            CaptureConfig {
+                block_samples,
+                ..CaptureConfig::default()
+            },
+        )
+    }
+
+    /// Full start: `config` carries the block size, the shared monotonic base
+    /// and the resume indices (FR-009-06 pause/resume).
+    pub fn start_with_config(
+        audio_dir: PathBuf,
+        mic: Option<MicTap>,
+        system: SystemSource,
+        events: mpsc::Sender<MeetingCaptureEvent>,
+        config: CaptureConfig,
+    ) -> Result<Self> {
         std::fs::create_dir_all(&audio_dir)?;
         // Shared monotonic base: `start_offset_ms` of mic and system blocks
         // are comparable across tracks (FR-009-03).
-        let t0 = Instant::now();
+        let t0 = config.time_base;
+        let block_samples = config.block_samples;
 
         let (mic_writer, mic_subscriber_id, mic_unsubscribe) = match mic {
             Some(tap) => {
@@ -231,6 +276,7 @@ impl MeetingCapture {
                     Track::Mic,
                     block_samples,
                     t0,
+                    config.next_mic_index,
                     events.clone(),
                 ) {
                     Ok(pipeline) => {
@@ -273,6 +319,7 @@ impl MeetingCapture {
                     Track::System,
                     block_samples,
                     t0,
+                    config.next_system_index,
                     events.clone(),
                 ) {
                     Ok(pipeline) => {
@@ -356,6 +403,14 @@ impl MeetingCapture {
     /// Directory holding this capture's blocks.
     pub fn audio_dir(&self) -> &std::path::Path {
         &self.audio_dir
+    }
+
+    /// Whether at least one track is capturing. When both tracks are
+    /// unavailable (mic held exclusively AND loopback failed — e.g. an
+    /// in-person meeting with no usable microphone) the meeting records
+    /// nothing and the session layer refuses the start instead.
+    pub fn is_capturing(&self) -> bool {
+        self.mic_writer.is_some() || self.system_writer.is_some()
     }
 }
 

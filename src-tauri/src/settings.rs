@@ -719,6 +719,27 @@ pub struct AppSettings {
     /// the detector (T-061).
     #[serde(default)]
     pub meeting_detection_paused_until_ms: Option<i64>,
+    /// FR-009-08: maximum meeting length in minutes — the spec options are
+    /// 30/60/120/180/240 (default 120); `meeting::session` clamps other values
+    /// onto the nearest option when the session starts.
+    #[serde(default = "default_meeting_max_minutes")]
+    pub meeting_max_minutes: u64,
+    /// FR-009-02: the first-use consent modal was acknowledged. Until this is
+    /// true `meeting_start` fails with `consent_required` so the frontend can
+    /// show the modal.
+    #[serde(default)]
+    pub meeting_consent_acknowledged: bool,
+    /// FR-009-02: the configurable text behind "Copiar aviso para o chat".
+    #[serde(default = "default_meeting_consent_text")]
+    pub meeting_consent_text: String,
+    /// FR-009-02: show the discreet consent reminder toast on every meeting
+    /// start (the modal itself is first-use only).
+    #[serde(default = "default_meeting_consent_reminder")]
+    pub meeting_consent_reminder: bool,
+    /// FR-009-09 / AC-009-08: after 10 min without speech on every track, ask
+    /// "Ainda em reunião?"; unanswered for 2 min stops the meeting.
+    #[serde(default = "default_meeting_silence_checkin_enabled")]
+    pub meeting_silence_checkin_enabled: bool,
 }
 
 fn default_model() -> String {
@@ -1065,6 +1086,25 @@ fn default_typing_tool() -> TypingTool {
     TypingTool::Auto
 }
 
+fn default_meeting_max_minutes() -> u64 {
+    // FR-009-08: 2 h default.
+    120
+}
+
+fn default_meeting_consent_text() -> String {
+    // FR-009-02's example text.
+    "Estou usando um app local para transcrever esta reunião.".to_string()
+}
+
+fn default_meeting_consent_reminder() -> bool {
+    true
+}
+
+fn default_meeting_silence_checkin_enabled() -> bool {
+    // FR-009-09: the check-in is on by default.
+    true
+}
+
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
     for provider in default_post_process_providers() {
@@ -1284,6 +1324,11 @@ pub fn get_default_settings() -> AppSettings {
         fallback_provider_id: None,
         offline_mode: false,
         meeting_detection_paused_until_ms: None,
+        meeting_max_minutes: default_meeting_max_minutes(),
+        meeting_consent_acknowledged: false,
+        meeting_consent_text: default_meeting_consent_text(),
+        meeting_consent_reminder: default_meeting_consent_reminder(),
+        meeting_silence_checkin_enabled: default_meeting_silence_checkin_enabled(),
     }
 }
 

@@ -338,9 +338,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 signal_handle::send_transcription_input(app, "transcribe", "Tray");
             }
             "toggle_meeting" => {
-                // Unreachable while the item ships disabled (T-064 wires the
-                // real start/stop).
-                log::warn!("Meeting toggle invoked before the meeting session exists");
+                // FR-010-14 "Iniciar/Parar reunião": same funnel as the Flow
+                // Bar ◉ and detector toast — the session gate serializes
+                // concurrent start requests.
+                toggle_meeting_from_surface(app);
             }
             "toggle_flowbar" => {
                 // "Ocultar até reiniciar o app" (FR-001-07): runtime-only,
@@ -458,6 +459,118 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // meeting-app detections. T-061 builds the detector state machine
     // (debounce, title memory, `detector://meeting` events) on top of it.
     meeting::start(app_handle);
+
+    // F009/T-064: the meeting session — one active meeting at a time,
+    // reached from the `meeting_*` commands, the tray toggle, the Flow Bar ◉
+    // button and the detector toast.
+    app_handle.manage(meeting::session::MeetingSessionManager::new(
+        app_handle.clone(),
+    ));
+    {
+        let app = app_handle.clone();
+        app_handle.listen(
+            meeting::session::DETECTOR_START_REQUESTED_EVENT,
+            move |event| {
+                // `{ detection_id, app_label, exe, mic_only }` (T-061/T-062
+                // contract). `detection_id` correlates the detector's own
+                // bookkeeping; the meeting row only needs the app fields.
+                #[derive(serde::Deserialize)]
+                struct DetectorStartPayload {
+                    app_label: Option<String>,
+                    exe: Option<String>,
+                    mic_only: Option<bool>,
+                }
+                match serde_json::from_str::<DetectorStartPayload>(event.payload()) {
+                    Ok(payload) => start_meeting_from_surface(
+                        &app,
+                        meeting::session::StartRequest {
+                            detection: "auto_prompt".to_string(),
+                            app_label: payload.app_label,
+                            app_exe: payload.exe,
+                            mic_only: payload.mic_only.unwrap_or(false),
+                        },
+                    ),
+                    Err(e) => log::warn!(
+                        "Ignoring malformed {} payload: {e}",
+                        meeting::session::DETECTOR_START_REQUESTED_EVENT
+                    ),
+                }
+            },
+        );
+        let app = app_handle.clone();
+        app_handle.listen(
+            commands::flowbar::NOTETAKER_START_REQUESTED_EVENT,
+            move |_| {
+                start_meeting_from_surface(&app, meeting::session::StartRequest::manual());
+            },
+        );
+    }
+}
+
+/// Meeting starts that arrive outside the `meeting_start` command — the
+/// Flow Bar ◉ (`notetaker://start-requested`) and the detector toast
+/// (`detector://start-requested`). There is no caller to return a
+/// `CommandError` to, so refusals (consent gate, busy, no audio source)
+/// surface as `toast://show`.
+fn start_meeting_from_surface(app: &AppHandle, req: meeting::session::StartRequest) {
+    use crate::commands::CommandErrorCode;
+    use crate::meeting::session::{MeetingSessionManager, ToastPayload, TOAST_SHOW_EVENT};
+
+    let Some(manager) = app.try_state::<MeetingSessionManager>() else {
+        log::warn!("Meeting start requested before the session manager is up");
+        return;
+    };
+    if let Err(e) = manager.request_start(req) {
+        log::warn!("Meeting start refused ({:?}): {}", e.code, e.message);
+        let (kind, action) = if e.code == CommandErrorCode::ConsentRequired {
+            ("meeting_consent", Some("open_consent"))
+        } else {
+            ("meeting_error", None)
+        };
+        let _ = app.emit(
+            TOAST_SHOW_EVENT,
+            ToastPayload {
+                kind: kind.to_string(),
+                message: e.message,
+                action: action.map(str::to_string),
+            },
+        );
+    }
+}
+
+/// FR-010-14 tray "Iniciar/Parar reunião": toggle — stop when a meeting is
+/// active, start a manual call-mode meeting otherwise. Failures get the same
+/// `toast://show` treatment as the other surfaces.
+fn toggle_meeting_from_surface(app: &AppHandle) {
+    use crate::commands::CommandErrorCode;
+    use crate::meeting::session::{
+        MeetingSessionManager, StartRequest, ToastPayload, TOAST_SHOW_EVENT,
+    };
+
+    let Some(manager) = app.try_state::<MeetingSessionManager>() else {
+        return;
+    };
+    let result = if manager.is_active() {
+        manager.request_stop()
+    } else {
+        manager.request_start(StartRequest::manual()).map(|_| ())
+    };
+    if let Err(e) = result {
+        log::warn!("Tray meeting toggle refused ({:?}): {}", e.code, e.message);
+        let (kind, action) = if e.code == CommandErrorCode::ConsentRequired {
+            ("meeting_consent", Some("open_consent"))
+        } else {
+            ("meeting_error", None)
+        };
+        let _ = app.emit(
+            TOAST_SHOW_EVENT,
+            ToastPayload {
+                kind: kind.to_string(),
+                message: e.message,
+                action: action.map(str::to_string),
+            },
+        );
+    }
 }
 
 #[tauri::command]
@@ -857,6 +970,18 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::flowbar::flowbar_toggle_dictation,
             commands::flowbar::flowbar_start_notetaker,
             commands::flowbar::flowbar_retry_last_failed,
+            commands::meeting::meeting_start,
+            commands::meeting::meeting_pause,
+            commands::meeting::meeting_resume,
+            commands::meeting::meeting_stop,
+            commands::meeting::meeting_extend_30,
+            commands::meeting::meeting_checkin_respond,
+            commands::meeting::meeting_current,
+            commands::meeting::meeting_get,
+            commands::meeting::meeting_list,
+            commands::meeting::meeting_delete,
+            commands::meeting::meeting_consent_accept,
+            commands::meeting::meeting_consent_copy,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

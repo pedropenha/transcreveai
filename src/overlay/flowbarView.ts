@@ -42,11 +42,16 @@ export type FlowbarView =
   | "idle" // 48x8 slit (FR-001-01)
   | "hover" // 88x36 card, two actions + tooltip (FR-001-02..04)
   | "recording" // ✕ | waveform | ■ (FR-001-05/06, AC-001-07)
+  | "meeting-recording" // pause/resume | timer | ■ — the meeting pill (FR-009-07)
   | "streaming" // live transcription panel (pre-existing)
   | "working" // transcribing/processing/inserting dots (AC-001-08)
   | "done" // ✓ flash
   | "error" // ⚠ pill; hover shows cause + retry (AC-001-08)
   | "nothing-heard"; // "Nada ouvido" flash (FR-002-14)
+
+/** `meeting://state.status` reduced to what the bar needs (T-064).
+ * `processing`/`error`/absent all collapse into "idle". */
+export type MeetingStatus = "idle" | "recording" | "paused";
 
 export interface FlowbarViewInput {
   /** `flowbar_visibility === "always"` && overlay enabled — the slit lives
@@ -56,6 +61,8 @@ export interface FlowbarViewInput {
   windowActive: boolean;
   /** Latest coordinator `session://state`. */
   phase: SessionPhase;
+  /** Latest `meeting://state` status (T-064), "idle" when no meeting runs. */
+  meeting: MeetingStatus;
   /** Latest `session://state.notice` (e.g. "nothing_heard"). */
   notice: string | null;
   /** Latest `show-overlay` hint, `null` after `hide-overlay`. */
@@ -67,8 +74,16 @@ export interface FlowbarViewInput {
 }
 
 export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
-  const { alwaysOn, windowActive, phase, notice, hint, hovered, retrying } =
-    input;
+  const {
+    alwaysOn,
+    windowActive,
+    phase,
+    meeting,
+    notice,
+    hint,
+    hovered,
+    retrying,
+  } = input;
 
   // An in-flight retry outranks the stored error state so the user sees the
   // bar working instead of a stale ⚠ while the wav re-transcribes.
@@ -88,6 +103,14 @@ export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
   // it — the coordinator reports the same phases for streaming models.
   if (phase === "arming" || phase === "recording") {
     return hint === "streaming" ? "streaming" : "recording";
+  }
+
+  // FR-009-07: a recording/paused meeting claims the pill while the
+  // dictation session is idle — its ■ stops the *meeting*, so it must not
+  // impersonate the dictation pill (whose ■ ends-and-inserts). Any dictation
+  // face wins during the overlap; the red tray icon still marks the meeting.
+  if (meeting !== "idle" && phase === "idle") {
+    return "meeting-recording";
   }
   if (
     phase === "transcribing" ||
