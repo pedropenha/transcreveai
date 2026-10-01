@@ -557,11 +557,8 @@ mod tests {
         assert_eq!(status, "inserted");
 
         // The widened CHECK accepts 'routed'…
-        conn.execute(
-            "UPDATE dictations SET status = 'routed' WHERE id = 1",
-            [],
-        )
-        .expect("routed status must be accepted after migration 14");
+        conn.execute("UPDATE dictations SET status = 'routed' WHERE id = 1", [])
+            .expect("routed status must be accepted after migration 14");
 
         // …the index is back…
         let index_exists: bool = conn
