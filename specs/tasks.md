@@ -143,7 +143,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 Spec: [F012](features/012-voice-assistant/spec.md). Chat completo no Hub fica
 fora; contexto de reunião é P2.
 
-- [ ] **T-090** Providers `cli_agent` no router do `LlmProvider` (T-050): adaptadores Codex (`codex exec`), Claude Code (`claude -p`), Devin (headless) e Cursor (`cursor-agent -p`) por subprocesso com argv direto (sem shell), detecção no `PATH`, timeout/cancel e ambiente sanitizado. Autenticação = sessão do CLI (assinatura), sem keyring. Serve ao resumo de reunião e ao assistente. Passa por `ecc:security-reviewer`. — Refs: FR-012-01..05, NFR-012-02
+- [x] **T-090** Providers `cli_agent` no router do `LlmProvider` (T-050): adaptadores Codex (`codex exec`), Claude Code (`claude -p`), Devin (headless) e Cursor (`cursor-agent -p`) por subprocesso com argv direto (sem shell), detecção no `PATH`, timeout/cancel e ambiente sanitizado. Autenticação = sessão do CLI (assinatura), sem keyring. Serve ao resumo de reunião e ao assistente. Passa por `ecc:security-reviewer`. — Refs: FR-012-01..05, NFR-012-02
 - [x] **T-091** Overlay do assistente: binding `assistant` (atalho global configurável + terceiro botão na Flow Bar), painel `topmost` com transcrição ao vivo no campo de entrada, envio por `Enter`/botão/segunda pressão do atalho, resposta em Markdown, `thinking` cancelável e multi-turn na sessão. Depende de: T-090. — Refs: FR-012-10..15, FR-012-17..18, NFR-012-01, NFR-012-03
 - [ ] **T-092** [P] Painel arrastável/fixável: arrastar pela área de título, posição persistida e restaurada, toggle Fixar, topmost, limites de monitor e fallback para o primário. Depende de: T-091. — Refs: FR-012-16, AC-012-04
 
