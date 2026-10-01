@@ -19,14 +19,13 @@
     "secureInputWarning": "⚠ Atalhos bloqueados pelo Secure Input"
   },
   "sidebar": {
-    "general": "Geral",
-    "models": "Modelos e Provedores",
-    "advanced": "Avançado",
-    "postProcessing": "Pós-Processamento",
-    "history": "Histórico",
+    "label": "Seções do Hub",
+    "productName": "Transcreve.ai",
+    "home": "Início",
     "meetings": "Reuniões",
-    "debug": "Depuração",
-    "about": "Sobre"
+    "dictionary": "Dicionário",
+    "models": "Modelos",
+    "settings": "Configurações"
   },
   "onboarding": {
     "subtitle": "Para começar, escolha um modelo de transcrição",
@@ -490,19 +489,87 @@
     },
     "history": {
       "title": "Histórico",
-      "openFolder": "Abrir Pasta de Gravações",
+      "today": "Hoje",
+      "subtitle": "Seu histórico local de ditados",
+      "openFolder": "Gravações",
       "loading": "Carregando histórico...",
-      "empty": "Nenhuma transcrição ainda. Comece a gravar para construir seu histórico!",
-      "copyToClipboard": "Copiar transcrição para área de transferência",
-      "copyError": "Não foi possível copiar a transcrição para a área de transferência.",
-      "save": "Salvar transcrição",
-      "unsave": "Remover dos salvos",
+      "loadingMore": "Carregando mais...",
+      "loadError": "Não foi possível carregar o histórico. Altere um filtro ou reabra a seção para tentar novamente.",
+      "empty": "Nenhum ditado corresponde a esta visualização.",
+      "listLabel": "Histórico de ditados",
+      "resultCount_one": "{{count}} ditado",
+      "resultCount_other": "{{count}} ditados",
+      "searchLabel": "Buscar no histórico",
+      "searchPlaceholder": "Busque o que você ditou...",
+      "unknownApp": "Aplicativo desconhecido",
+      "copyToClipboard": "Copiar transcrição",
+      "copied": "Copiado para a área de transferência",
+      "copyError": "Não foi possível copiar a transcrição.",
+      "save": "Sinalizar transcrição",
+      "unsave": "Remover sinalização",
+      "flag": "Sinalizar entrada",
       "delete": "Excluir entrada",
-      "deleteError": "Falha ao excluir entrada. Por favor, tente novamente.",
-      "retranscribe": "Re-transcrever",
-      "retranscribeError": "Falha ao re-transcrever. Por favor, tente novamente.",
+      "deleteConfirm": "Excluir esta entrada do histórico e o áudio preservado? Esta ação não pode ser desfeita.",
+      "deleted": "Entrada do histórico excluída",
+      "deleteError": "Falha ao excluir entrada. Tente novamente.",
+      "retranscribe": "Tentar transcrição novamente",
+      "retryModel": "Modelo usado ao tentar novamente",
+      "retranscribeError": "Falha ao transcrever novamente. O áudio pode não estar mais disponível.",
+      "reinsert": "Reinserir no aplicativo em foco",
+      "reinserted": "Texto reinserido",
+      "reinsertError": "Não foi possível inserir o texto no aplicativo em foco.",
       "transcribing": "Transcrevendo...",
-      "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente."
+      "transcriptionFailed": "Falha na transcrição",
+      "addDictionary": "Adicionar ao dicionário",
+      "dictionaryTermLabel": "Palavra ou expressão para adicionar ao dicionário",
+      "dictionaryTermPlaceholder": "Palavra ou expressão selecionada",
+      "selectDictionaryText": "Selecione uma palavra ou expressão primeiro.",
+      "dictionaryAdded": "“{{term}}” foi adicionado ao dicionário",
+      "localProvider": "Modelo local",
+      "filters": {
+        "app": "Todos os apps",
+        "mode": "Todos os modos",
+        "status": "Todos os status",
+        "period": "Qualquer período"
+      },
+      "modes": { "dictation": "Ditado", "command": "Comando", "note": "Nota" },
+      "status": {
+        "inserted": "Inserido",
+        "copied": "Copiado",
+        "failed": "Falhou",
+        "cancelled": "Cancelado",
+        "saved_note": "Nota salva"
+      },
+      "periods": {
+        "day": "Últimas 24 horas",
+        "week": "Últimos 7 dias",
+        "month": "Últimos 30 dias"
+      },
+      "statistics": {
+        "label": "Estatísticas de ditado",
+        "today": "palavras hoje",
+        "week": "palavras na semana",
+        "total": "palavras no total",
+        "wpm": "palavras/min",
+        "saved": "tempo economizado",
+        "providerUsage": "{{provider}} · {{cost}} estimado"
+      },
+      "detail": {
+        "label": "Detalhes do ditado selecionado",
+        "empty": "Selecione um ditado para ver os detalhes.",
+        "selected": "Selecionado",
+        "final": "Texto final",
+        "diff": "Cru × final",
+        "pipeline": "Pipeline",
+        "provider": "Provedor / modelo",
+        "language": "Idioma",
+        "insertion": "Inserção",
+        "duration": "Tempo de fala",
+        "milliseconds": "{{value}} ms",
+        "unavailable": "Indisponível",
+        "added": "Adicionado",
+        "removed": "Removido"
+      }
     },
     "meetings": {
       "title": "Reuniões",
@@ -869,6 +936,57 @@
         "view": "Visualizar",
         "savedAt": "Salvo às {{time}}",
         "editHint": "O resumo é editável — alterações aqui nunca tocam suas notas."
+      }
+    }
+  },
+  "dictionary": {
+    "title": "Dicionário",
+    "subtitle": "Ensine seu vocabulário ao Transcreve.ai e escolha quais muletas a limpeza leve remove.",
+    "add": "Adicionar",
+    "remove": "Remover {{term}}",
+    "vocabulary": {
+      "title": "Vocabulário",
+      "description": "Nomes e termos que a transcrição deve reconhecer exatamente.",
+      "inputLabel": "Novo termo de vocabulário",
+      "placeholder": "Adicione um nome ou termo"
+    },
+    "fillers": {
+      "title": "Muletas",
+      "description": "Lista pt-BR editável removida pela limpeza leve quando o contexto permite.",
+      "inputLabel": "Nova muleta ou expressão",
+      "placeholder": "Adicione uma muleta ou expressão",
+      "reset": "Restaurar padrão",
+      "saveError": "Não foi possível atualizar as muletas."
+    }
+  },
+  "settingsHub": {
+    "title": "Configurações",
+    "subtitle": "As alterações são aplicadas imediatamente.",
+    "sectionsLabel": "Seções das configurações",
+    "tabs": {
+      "general": "Geral",
+      "system": "Sistema",
+      "privacy": "Privacidade",
+      "advanced": "Avançado"
+    },
+    "groups": {
+      "startup": "Inicialização e bandeja",
+      "flowbar": "Flow Bar",
+      "retention": "Histórico local",
+      "clipboard": "Área de transferência",
+      "insertion": "Inserção de texto",
+      "performance": "Desempenho",
+      "diagnostics": "Diagnóstico e dados"
+    },
+    "limits": {
+      "duration": {
+        "title": "Duração máxima do ditado",
+        "description": "Interrompe e processa o ditado automaticamente ao atingir este limite.",
+        "value": "{{value}} min"
+      },
+      "queue": {
+        "title": "Tamanho da fila de sessões",
+        "description": "Ditados pendentes mantidos enquanto outra sessão está em processamento."
       }
     }
   },

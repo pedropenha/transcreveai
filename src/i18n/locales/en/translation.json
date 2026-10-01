@@ -19,14 +19,13 @@
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
   },
   "sidebar": {
-    "general": "General",
-    "models": "Models & Providers",
-    "advanced": "Advanced",
-    "postProcessing": "Post Process",
-    "history": "History",
+    "label": "Hub sections",
+    "productName": "Transcreve.ai",
+    "home": "Home",
     "meetings": "Meetings",
-    "debug": "Debug",
-    "about": "About"
+    "dictionary": "Dictionary",
+    "models": "Models",
+    "settings": "Settings"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -490,19 +489,91 @@
     },
     "history": {
       "title": "History",
-      "openFolder": "Open Recordings Folder",
+      "today": "Today",
+      "subtitle": "Your local dictation history",
+      "openFolder": "Recordings",
       "loading": "Loading history...",
-      "empty": "No transcriptions yet. Start recording to build your history!",
-      "copyToClipboard": "Copy transcription to clipboard",
-      "copyError": "Failed to copy transcription to clipboard.",
-      "save": "Save transcription",
-      "unsave": "Remove from saved",
+      "loadingMore": "Loading more...",
+      "loadError": "Could not load history. Change a filter or reopen the section to try again.",
+      "empty": "No dictations match this view.",
+      "listLabel": "Dictation history",
+      "resultCount_one": "{{count}} dictation",
+      "resultCount_other": "{{count}} dictations",
+      "searchLabel": "Search history",
+      "searchPlaceholder": "Search what you dictated...",
+      "unknownApp": "Unknown app",
+      "copyToClipboard": "Copy transcription",
+      "copied": "Copied to clipboard",
+      "copyError": "Failed to copy transcription.",
+      "save": "Flag transcription",
+      "unsave": "Remove flag",
+      "flag": "Flag entry",
       "delete": "Delete entry",
+      "deleteConfirm": "Delete this history entry and its retained audio? This cannot be undone.",
+      "deleted": "History entry deleted",
       "deleteError": "Failed to delete entry. Please try again.",
-      "retranscribe": "Re-transcribe",
-      "retranscribeError": "Failed to re-transcribe. Please try again.",
+      "retranscribe": "Try transcription again",
+      "retryModel": "Model used when trying again",
+      "retranscribeError": "Failed to transcribe again. The audio may no longer be available.",
+      "reinsert": "Insert in the focused app",
+      "reinserted": "Text inserted",
+      "reinsertError": "Could not insert the text in the focused app.",
       "transcribing": "Transcribing...",
-      "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon."
+      "transcriptionFailed": "Transcription failed",
+      "addDictionary": "Add to dictionary",
+      "dictionaryTermLabel": "Word or phrase to add to the dictionary",
+      "dictionaryTermPlaceholder": "Selected word or phrase",
+      "selectDictionaryText": "Select a word or phrase first.",
+      "dictionaryAdded": "“{{term}}” added to the dictionary",
+      "localProvider": "Local model",
+      "filters": {
+        "app": "All apps",
+        "mode": "All modes",
+        "status": "All statuses",
+        "period": "Any time"
+      },
+      "modes": {
+        "dictation": "Dictation",
+        "command": "Command",
+        "note": "Note"
+      },
+      "status": {
+        "inserted": "Inserted",
+        "copied": "Copied",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "saved_note": "Saved note"
+      },
+      "periods": {
+        "day": "Last 24 hours",
+        "week": "Last 7 days",
+        "month": "Last 30 days"
+      },
+      "statistics": {
+        "label": "Dictation statistics",
+        "today": "words today",
+        "week": "words this week",
+        "total": "words total",
+        "wpm": "words/min",
+        "saved": "time saved",
+        "providerUsage": "{{provider}} · {{cost}} estimated"
+      },
+      "detail": {
+        "label": "Selected dictation details",
+        "empty": "Select a dictation to see its details.",
+        "selected": "Selected",
+        "final": "Final text",
+        "diff": "Raw × final",
+        "pipeline": "Pipeline",
+        "provider": "Provider / model",
+        "language": "Language",
+        "insertion": "Insertion",
+        "duration": "Speaking time",
+        "milliseconds": "{{value}} ms",
+        "unavailable": "Not available",
+        "added": "Added",
+        "removed": "Removed"
+      }
     },
     "meetings": {
       "title": "Meetings",
@@ -871,6 +942,57 @@
     "retryProcessing": "Try again",
     "openSettings": "Open settings",
     "copyNotice": "Copy notice"
+  },
+  "dictionary": {
+    "title": "Dictionary",
+    "subtitle": "Teach Transcreve.ai your vocabulary and which filler words light cleanup removes.",
+    "add": "Add",
+    "remove": "Remove {{term}}",
+    "vocabulary": {
+      "title": "Vocabulary",
+      "description": "Names and terms that transcription should recognize exactly.",
+      "inputLabel": "New vocabulary term",
+      "placeholder": "Add a name or term"
+    },
+    "fillers": {
+      "title": "Filler words",
+      "description": "Editable pt-BR list removed by light cleanup when context allows.",
+      "inputLabel": "New filler word or phrase",
+      "placeholder": "Add a filler word or phrase",
+      "reset": "Restore defaults",
+      "saveError": "Could not update filler words."
+    }
+  },
+  "settingsHub": {
+    "title": "Settings",
+    "subtitle": "Changes apply immediately.",
+    "sectionsLabel": "Settings sections",
+    "tabs": {
+      "general": "General",
+      "system": "System",
+      "privacy": "Privacy",
+      "advanced": "Advanced"
+    },
+    "groups": {
+      "startup": "Startup and tray",
+      "flowbar": "Flow Bar",
+      "retention": "Local history",
+      "clipboard": "Clipboard",
+      "insertion": "Text insertion",
+      "performance": "Performance",
+      "diagnostics": "Diagnostics and data"
+    },
+    "limits": {
+      "duration": {
+        "title": "Maximum dictation length",
+        "description": "Stop and process a dictation automatically at this limit.",
+        "value": "{{value}} min"
+      },
+      "queue": {
+        "title": "Session queue size",
+        "description": "Pending dictations kept while another session is processing."
+      }
+    }
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",

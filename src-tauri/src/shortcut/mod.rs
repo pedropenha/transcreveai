@@ -881,6 +881,36 @@ pub fn change_extra_recording_buffer_setting(app: AppHandle, ms: u64) -> Command
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_max_dictation_minutes_setting(app: AppHandle, minutes: u64) -> CommandResult<()> {
+    if !(1..=20).contains(&minutes) {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "Dictation limit must be between 1 and 20 minutes",
+        ));
+    }
+    let mut settings = settings::get_settings(&app);
+    settings.max_dictation_minutes = minutes;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_session_queue_size_setting(app: AppHandle, size: usize) -> CommandResult<()> {
+    if !(1..=20).contains(&size) {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "Session queue size must be between 1 and 20",
+        ));
+    }
+    let mut settings = settings::get_settings(&app);
+    settings.session_queue_size = size;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_paste_delay_ms_setting(app: AppHandle, ms: u64) -> CommandResult<()> {
     let mut settings = settings::get_settings(&app);
     settings.paste_delay_ms = ms;

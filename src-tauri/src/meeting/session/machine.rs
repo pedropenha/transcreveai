@@ -951,9 +951,7 @@ mod tests {
         // Timeout → stop: the check-in notice closes with the meeting.
         m.tick(t0 + SILENCE_CHECKIN_AFTER + CHECKIN_RESPONSE_WINDOW);
         assert!(!m.is_active());
-        assert!(
-            effects(&mut m).contains(&Effect::DismissToast(ToastKind::SilenceCheckin))
-        );
+        assert!(effects(&mut m).contains(&Effect::DismissToast(ToastKind::SilenceCheckin)));
 
         // Speech resuming clears a pending check-in the same way.
         let mut m2 = detected_machine(t0);
@@ -965,21 +963,14 @@ mod tests {
             t0 + SILENCE_CHECKIN_AFTER + Duration::from_secs(10),
         );
         assert!(!m2.checkin_pending());
-        assert!(
-            effects(&mut m2).contains(&Effect::DismissToast(ToastKind::SilenceCheckin))
-        );
+        assert!(effects(&mut m2).contains(&Effect::DismissToast(ToastKind::SilenceCheckin)));
 
         // An explicit "Continuar" clears it too — even if a non-toast
         // surface answered.
         let mut m3 = detected_machine(t0);
         m3.tick(t0 + SILENCE_CHECKIN_AFTER);
-        m3.checkin_respond(
-            true,
-            t0 + SILENCE_CHECKIN_AFTER + Duration::from_secs(20),
-        );
-        assert!(
-            effects(&mut m3).contains(&Effect::DismissToast(ToastKind::SilenceCheckin))
-        );
+        m3.checkin_respond(true, t0 + SILENCE_CHECKIN_AFTER + Duration::from_secs(20));
+        assert!(effects(&mut m3).contains(&Effect::DismissToast(ToastKind::SilenceCheckin)));
     }
 
     #[test]

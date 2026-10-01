@@ -1,11 +1,13 @@
 use crate::actions::process_transcription_output;
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::managers::{
-    history::{HistoryManager, PaginatedHistory},
+    history::{
+        HistoryFilterOptions, HistoryManager, HistoryQuery, HistoryStatistics, PaginatedHistory,
+    },
     transcription::TranscriptionManager,
 };
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
 #[specta::specta]
@@ -25,6 +27,97 @@ pub async fn get_history_entries(
                 e,
             )
         })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn search_history_entries(
+    history_manager: State<'_, Arc<HistoryManager>>,
+    query: HistoryQuery,
+) -> CommandResult<PaginatedHistory> {
+    history_manager.search_history(query).await.map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to search history entries",
+            e,
+        )
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_history_statistics(
+    history_manager: State<'_, Arc<HistoryManager>>,
+) -> CommandResult<HistoryStatistics> {
+    history_manager.history_statistics().await.map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to load history statistics",
+            e,
+        )
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_history_filter_options(
+    history_manager: State<'_, Arc<HistoryManager>>,
+) -> CommandResult<HistoryFilterOptions> {
+    history_manager.history_filter_options().await.map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to load history filters",
+            e,
+        )
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reinsert_history_entry(
+    app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    id: i64,
+) -> CommandResult<String> {
+    let entry = history_manager
+        .get_entry_by_id(id)
+        .await
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to load history entry",
+                e,
+            )
+        })?
+        .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "History entry not found"))?;
+    if entry.final_text.trim().is_empty() {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "History entry has no text to insert",
+        ));
+    }
+    let hub = app.get_webview_window(crate::window_labels::HUB);
+    if let Some(window) = &hub {
+        window.hide().map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Failed to release Hub focus", e)
+        })?;
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+    let report = crate::clipboard::paste(entry.final_text, app);
+    if let Some(window) = hub {
+        if let Err(error) = window.show() {
+            log::warn!("Failed to restore Hub after reinsertion: {error}");
+        }
+    }
+    if report.status == crate::insertion::InsertionStatus::Failed {
+        return Err(CommandError::new(
+            CommandErrorCode::Internal,
+            report
+                .error
+                .unwrap_or_else(|| "Text insertion failed".to_string()),
+        ));
+    }
+    Ok(report.status.as_str().to_string())
 }
 
 #[tauri::command]

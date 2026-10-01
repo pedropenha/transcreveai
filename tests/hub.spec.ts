@@ -6,13 +6,14 @@ test.describe("hub webview (mocked Tauri IPC)", () => {
     const mock = await installTauriMock(page);
     await page.goto("/");
 
-    // With onboarding_completed=true the app renders the hub: the sidebar
-    // lists the always-on sections (sidebar items carry their label in
-    // `title`; the content area shows a heading).
-    await expect(page.getByTitle("General")).toBeVisible();
-    await expect(page.getByTitle("Advanced")).toBeVisible();
-    await expect(page.getByTitle("About")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "General" })).toBeVisible();
+    // With onboarding_completed=true the app renders the Hub's v1 information
+    // architecture and lands on the history view.
+    await expect(page.getByTitle("Home")).toBeVisible();
+    await expect(page.getByTitle("Meetings")).toBeVisible();
+    await expect(page.getByTitle("Dictionary")).toBeVisible();
+    await expect(page.getByTitle("Models")).toBeVisible();
+    await expect(page.getByTitle("Settings")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
 
     // The IPC mock actually got exercised by startup.
     expect(mock.calls.map((c) => c.cmd)).toContain("get_app_settings");
@@ -21,17 +22,18 @@ test.describe("hub webview (mocked Tauri IPC)", () => {
   test("clicking a sidebar section switches the content", async ({ page }) => {
     await installTauriMock(page);
     await page.goto("/");
-    await expect(page.getByTitle("General")).toBeVisible();
+    await expect(page.getByTitle("Home")).toBeVisible();
 
-    await page.getByTitle("About").click();
-    // AboutSettings shows the app name/version block.
-    await expect(page.getByText("Transcreve.ai").first()).toBeVisible();
+    await page.getByTitle("Dictionary").click();
+    await expect(
+      page.getByRole("heading", { name: "Dictionary" }),
+    ).toBeVisible();
   });
 
   test("backend recording-error event surfaces a toast", async ({ page }) => {
     const mock = await installTauriMock(page);
     await page.goto("/");
-    await expect(page.getByTitle("General")).toBeVisible();
+    await expect(page.getByTitle("Home")).toBeVisible();
     // Wait for the app's useEffects to have registered the event listeners.
     await expect
       .poll(

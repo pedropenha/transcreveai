@@ -199,6 +199,10 @@ const settingUpdaters: {
     commands.changeTranscribeGpuDevice(value as string | null),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
+  max_dictation_minutes: (value) =>
+    commands.changeMaxDictationMinutesSetting(value as number),
+  session_queue_size: (value) =>
+    commands.changeSessionQueueSizeSetting(value as number),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

@@ -20,3 +20,5 @@ src-tauri/src/catalog/catalog.json
 .DS_Store
 *.log
 .playwright-mcp/
+session-report.html
+videos/**

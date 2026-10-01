@@ -11,7 +11,9 @@ import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
-import { ModelSettingsCard } from "./ModelSettingsCard";
+import { LanguageSelector } from "../LanguageSelector";
+import { AppLanguageSelector } from "../AppLanguageSelector";
+import { ThemeSelector } from "../ThemeSelector";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -25,7 +27,11 @@ export const GeneralSettings: React.FC = () => {
         {/* Cancel shortcut remains hidden on Linux because of dynamic shortcut instability. */}
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped={true} />}
       </SettingsGroup>
-      <ModelSettingsCard />
+      <SettingsGroup title={t("settings.general.language.title")}>
+        <LanguageSelector descriptionMode="tooltip" grouped />
+        <AppLanguageSelector descriptionMode="tooltip" grouped />
+        <ThemeSelector descriptionMode="tooltip" grouped />
+      </SettingsGroup>
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <ChannelSelector descriptionMode="tooltip" grouped={true} />

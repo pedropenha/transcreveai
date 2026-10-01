@@ -153,6 +153,22 @@ async changeExtraRecordingBufferSetting(ms: number) : Promise<Result<null, Comma
     else return { status: "error", error: e  as any };
 }
 },
+async changeMaxDictationMinutesSetting(minutes: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_max_dictation_minutes_setting", { minutes }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeSessionQueueSizeSetting(size: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_session_queue_size_setting", { size }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePasteDelayMsSetting(ms: number) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_paste_delay_ms_setting", { ms }) };
@@ -1096,6 +1112,38 @@ async unloadModelManually() : Promise<Result<null, CommandError>> {
 async getHistoryEntries(cursor: number | null, limit: number | null) : Promise<Result<PaginatedHistory, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_history_entries", { cursor, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async searchHistoryEntries(query: HistoryQuery) : Promise<Result<PaginatedHistory, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_history_entries", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getHistoryStatistics() : Promise<Result<HistoryStatistics, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_history_statistics") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getHistoryFilterOptions() : Promise<Result<HistoryFilterOptions, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_history_filter_options") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async reinsertHistoryEntry(id: number) : Promise<Result<string, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reinsert_history_entry", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2127,7 +2175,11 @@ export type HardwareTier =
  * Below 8 GB RAM — the UI also surfaces this as a "weak hardware" warning.
  */
 "weak"
-export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
+export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; mode: string; duration_ms: number; app_exe: string | null; app_name: string | null; stt_provider_id: string | null; llm_provider_id: string | null; language: string | null; raw_text: string; final_text: string; status: string; error_code: string | null; latency_json: string; audio_available: boolean; word_count: number }
+export type HistoryFilterOptions = { apps: string[] }
+export type HistoryProviderUsage = { provider_id: string; duration_ms: number; estimated_cost: number }
+export type HistoryQuery = { search: string | null; app: string | null; mode: string | null; status: string | null; from_timestamp: number | null; to_timestamp: number | null; cursor: number | null; limit: number | null }
+export type HistoryStatistics = { words_today: number; words_week: number; words_total: number; duration_ms_total: number; words_per_minute: number; seconds_saved: number; provider_usage: HistoryProviderUsage[] }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
  * Result of changing keyboard implementation

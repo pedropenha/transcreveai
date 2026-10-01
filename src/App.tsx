@@ -19,10 +19,7 @@ import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
 import Footer from "./components/footer";
 import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
-import {
-  DebugSettings,
-  type OnboardingPreviewStep,
-} from "./components/settings";
+import { type OnboardingPreviewStep } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { WhatsNewGate } from "./components/whats-new";
@@ -37,16 +34,9 @@ type OnboardingStep = "accessibility" | "model" | "done";
 // Stable identity so preview effects do not re-run due to callback changes.
 const NOOP = () => {};
 
-const renderSettingsContent = (
-  section: SidebarSection,
-  onPreviewOnboarding: (step: OnboardingPreviewStep) => void,
-) => {
-  if (section === "debug") {
-    return <DebugSettings onPreviewOnboarding={onPreviewOnboarding} />;
-  }
-
+const renderSettingsContent = (section: SidebarSection) => {
   const ActiveComponent =
-    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
+    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.home.component;
   return <ActiveComponent />;
 };
 
@@ -60,8 +50,7 @@ function App() {
   // Track if this is a returning user who just needs to grant permissions
   // (vs a new user who needs full onboarding including model selection)
   const [isReturningUser, setIsReturningUser] = useState(false);
-  const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+  const [currentSection, setCurrentSection] = useState<SidebarSection>("home");
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
@@ -221,11 +210,7 @@ function App() {
   useEffect(() => {
     const unlisten = listen<{ section?: string }>("hub://navigate", (event) => {
       const section = event.payload.section;
-      if (
-        section !== undefined &&
-        section in SECTIONS_CONFIG &&
-        SECTIONS_CONFIG[section as SidebarSection].enabled(settings)
-      ) {
+      if (section !== undefined && section in SECTIONS_CONFIG) {
         setCurrentSection(section as SidebarSection);
       }
     });
@@ -390,11 +375,26 @@ function App() {
           />
           {/* Scrollable content area */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div ref={settingsScrollRef} className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center p-4 gap-4">
-                <AccessibilityPermissions />
-                <SecureInputWarning />
-                {renderSettingsContent(currentSection, setOnboardingPreview)}
+            <div
+              ref={settingsScrollRef}
+              className={
+                currentSection === "home"
+                  ? "flex-1 overflow-hidden"
+                  : "flex-1 overflow-y-auto"
+              }
+            >
+              <div
+                className={
+                  currentSection === "home"
+                    ? "h-full"
+                    : "flex flex-col items-center p-4 gap-4"
+                }
+              >
+                {currentSection !== "home" ? (
+                  <AccessibilityPermissions />
+                ) : null}
+                {currentSection !== "home" ? <SecureInputWarning /> : null}
+                {renderSettingsContent(currentSection)}
               </div>
             </div>
           </div>

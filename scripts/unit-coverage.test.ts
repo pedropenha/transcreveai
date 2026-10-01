@@ -5,6 +5,7 @@ const standaloneTests = [
   "../src/components/icons/soundBars.test.ts",
   "../src/components/update-checker/portableInstaller.test.ts",
   "../src/components/settings/history/clipboard.test.ts",
+  "../src/components/settings/history/historyView.test.ts",
 ];
 
 for (const standaloneTest of standaloneTests) {

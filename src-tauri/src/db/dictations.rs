@@ -7,7 +7,7 @@
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension, Row};
 
 /// Full column list in schema order — used by every SELECT so `from_row` is the
 /// only place that knows the mapping.
@@ -108,6 +108,36 @@ impl NewDictation {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DictationQuery {
+    pub search: Option<String>,
+    pub app: Option<String>,
+    pub mode: Option<String>,
+    pub status: Option<String>,
+    pub from_timestamp: Option<i64>,
+    pub to_timestamp: Option<i64>,
+    pub cursor: Option<i64>,
+    pub limit: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DictationProviderUsage {
+    pub provider_id: String,
+    pub duration_ms: i64,
+    pub estimated_cost: f64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DictationStatistics {
+    pub words_today: i64,
+    pub words_week: i64,
+    pub words_total: i64,
+    pub duration_ms_total: i64,
+    pub words_per_minute: f64,
+    pub seconds_saved: f64,
+    pub provider_usage: Vec<DictationProviderUsage>,
+}
+
 /// Persistence operations over `dictations`.
 pub trait DictationRepository {
     /// Insert a new entry and return the stored row (id/created_at resolved).
@@ -144,6 +174,9 @@ pub trait DictationRepository {
     /// Newest-first listing; `cursor` is exclusive (`id < cursor`).
     /// `limit: None` means no LIMIT clause.
     fn list_desc(&self, cursor: Option<i64>, limit: Option<i64>) -> Result<Vec<Dictation>>;
+    fn search(&self, query: &DictationQuery) -> Result<Vec<Dictation>>;
+    fn statistics(&self, today_start: i64) -> Result<DictationStatistics>;
+    fn distinct_apps(&self) -> Result<Vec<String>>;
     /// Latest entry regardless of content.
     fn latest(&self) -> Result<Option<Dictation>>;
     /// Latest entry with non-empty `raw_text`.
@@ -354,6 +387,135 @@ impl DictationRepository for SqliteDictationRepository<'_> {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![cursor, limit.unwrap_or(-1)], Self::map_row)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn search(&self, query: &DictationQuery) -> Result<Vec<Dictation>> {
+        let mut clauses = Vec::new();
+        let mut values = Vec::<Value>::new();
+        let fts = query.search.as_deref().and_then(crate::db::fts_match_query);
+        let join = if let Some(match_query) = fts {
+            values.push(match_query.into());
+            clauses.push(format!("dictations_fts MATCH ?{}", values.len()));
+            " JOIN dictations_fts ON dictations_fts.rowid = d.rowid"
+        } else {
+            ""
+        };
+
+        if let Some(app) = query.app.as_deref().filter(|value| !value.is_empty()) {
+            values.push(app.to_string().into());
+            let index = values.len();
+            clauses.push(format!("(d.app_exe = ?{index} OR d.app_name = ?{index})"));
+        }
+        for (column, value) in [
+            ("mode", query.mode.as_deref()),
+            ("status", query.status.as_deref()),
+        ] {
+            if let Some(value) = value.filter(|value| !value.is_empty()) {
+                values.push(value.to_string().into());
+                clauses.push(format!("d.{column} = ?{}", values.len()));
+            }
+        }
+        for (operator, value) in [(">=", query.from_timestamp), ("<=", query.to_timestamp)] {
+            if let Some(value) = value {
+                values.push(value.into());
+                clauses.push(format!("d.created_at {operator} ?{}", values.len()));
+            }
+        }
+        if let Some(cursor) = query.cursor {
+            let cursor_timestamp = self
+                .conn
+                .query_row(
+                    "SELECT created_at FROM dictations WHERE id = ?1",
+                    params![cursor],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?;
+            if let Some(timestamp) = cursor_timestamp {
+                values.push(timestamp.into());
+                let timestamp_index = values.len();
+                values.push(cursor.into());
+                let id_index = values.len();
+                clauses.push(format!(
+                    "(d.created_at < ?{timestamp_index} OR (d.created_at = ?{timestamp_index} AND d.id < ?{id_index}))"
+                ));
+            }
+        }
+
+        let where_clause = if clauses.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", clauses.join(" AND "))
+        };
+        values.push((query.limit.clamp(1, 101) as i64).into());
+        let qualified_columns = COLUMNS
+            .split(',')
+            .map(|column| format!("d.{}", column.trim()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT {qualified_columns} FROM dictations d{join}{where_clause} \
+             ORDER BY d.created_at DESC, d.id DESC LIMIT ?{}",
+            values.len()
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values), Self::map_row)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn statistics(&self, today_start: i64) -> Result<DictationStatistics> {
+        let week = today_start - 6 * 86_400;
+        let (words_today, words_week, words_total, duration_ms_total): (i64, i64, i64, i64) =
+            self.conn.query_row(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN created_at >= ?1 THEN word_count ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN created_at >= ?2 THEN word_count ELSE 0 END), 0),
+                    COALESCE(SUM(word_count), 0),
+                    COALESCE(SUM(duration_ms), 0)
+                 FROM dictations",
+                params![today_start, week],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )?;
+        let words_per_minute = if duration_ms_total > 0 {
+            words_total as f64 * 60_000.0 / duration_ms_total as f64
+        } else {
+            0.0
+        };
+        let seconds_saved =
+            (words_total as f64 * 60.0 / 40.0 - duration_ms_total as f64 / 1_000.0).max(0.0);
+        let mut stmt = self.conn.prepare(
+            "SELECT COALESCE(stt_provider_id, 'local'), COALESCE(SUM(duration_ms), 0)
+             FROM dictations GROUP BY COALESCE(stt_provider_id, 'local') ORDER BY 1",
+        )?;
+        let provider_usage = stmt
+            .query_map([], |row| {
+                Ok(DictationProviderUsage {
+                    provider_id: row.get(0)?,
+                    duration_ms: row.get(1)?,
+                    estimated_cost: 0.0,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(DictationStatistics {
+            words_today,
+            words_week,
+            words_total,
+            duration_ms_total,
+            words_per_minute,
+            seconds_saved,
+            provider_usage,
+        })
+    }
+
+    fn distinct_apps(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT app FROM (
+                SELECT app_name AS app FROM dictations WHERE app_name IS NOT NULL AND app_name != ''
+                UNION
+                SELECT app_exe AS app FROM dictations WHERE app_exe IS NOT NULL AND app_exe != ''
+             ) ORDER BY app COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -640,5 +802,113 @@ mod tests {
             .expect("insert");
         repo.delete(d.id).expect("delete");
         assert!(repo.get(d.id).expect("get").is_none());
+    }
+
+    #[test]
+    fn search_uses_fts_and_combines_filters() {
+        let conn = setup();
+        let repo = repo(&conn);
+
+        let mut matching = NewDictation::new("plano bruto".to_string(), None);
+        matching.created_at = Some(200);
+        matching.mode = "command".to_string();
+        matching.app_name = Some("Visual Studio Code".to_string());
+        matching.app_exe = Some("Code.exe".to_string());
+        matching.status = "copied".to_string();
+        matching.post_processed_text = Some("Plano da entrega revisado".to_string());
+        repo.insert(&matching).expect("insert matching");
+
+        let mut wrong_status = NewDictation::new("Plano da entrega antigo".to_string(), None);
+        wrong_status.created_at = Some(150);
+        wrong_status.mode = "command".to_string();
+        wrong_status.app_name = Some("Visual Studio Code".to_string());
+        wrong_status.status = "failed".to_string();
+        repo.insert(&wrong_status).expect("insert wrong status");
+
+        let rows = repo
+            .search(&DictationQuery {
+                search: Some("entrega revis".to_string()),
+                app: Some("Code.exe".to_string()),
+                mode: Some("command".to_string()),
+                status: Some("copied".to_string()),
+                from_timestamp: Some(180),
+                to_timestamp: Some(220),
+                cursor: None,
+                limit: 20,
+            })
+            .expect("search");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].final_text, "Plano da entrega revisado");
+    }
+
+    #[test]
+    fn search_cursor_follows_created_at_then_id_order() {
+        let conn = setup();
+        let repo = repo(&conn);
+        for (created_at, text) in [(300, "newest"), (100, "oldest"), (200, "middle")] {
+            let mut entry = NewDictation::new(text.to_string(), None);
+            entry.created_at = Some(created_at);
+            repo.insert(&entry).expect("insert cursor row");
+        }
+
+        let first = repo
+            .search(&DictationQuery {
+                limit: 2,
+                ..DictationQuery::default()
+            })
+            .expect("first page");
+        assert_eq!(
+            first
+                .iter()
+                .map(|row| row.raw_text.as_str())
+                .collect::<Vec<_>>(),
+            ["newest", "middle"]
+        );
+        let second = repo
+            .search(&DictationQuery {
+                cursor: Some(first[1].id),
+                limit: 2,
+                ..DictationQuery::default()
+            })
+            .expect("second page");
+        assert_eq!(
+            second
+                .iter()
+                .map(|row| row.raw_text.as_str())
+                .collect::<Vec<_>>(),
+            ["oldest"]
+        );
+    }
+
+    #[test]
+    fn statistics_cover_today_week_total_and_speaking_speed() {
+        let conn = setup();
+        let repo = repo(&conn);
+        let now = 1_700_000_000;
+
+        for (created_at, words, duration_ms) in [
+            (now - 60, "um dois tres quatro", 2_000),
+            (now - 3 * 86_400, "cinco seis", 3_000),
+            (now - 20 * 86_400, "sete oito nove", 4_000),
+        ] {
+            let mut entry = NewDictation::new(words.to_string(), None);
+            entry.created_at = Some(created_at);
+            entry.duration_ms = duration_ms;
+            repo.insert(&entry).expect("insert stats row");
+        }
+
+        let today_start = now - now.rem_euclid(86_400);
+        let stats = repo.statistics(today_start).expect("statistics");
+        assert_eq!(stats.words_today, 4);
+        assert_eq!(stats.words_week, 6);
+        assert_eq!(stats.words_total, 9);
+        assert_eq!(stats.duration_ms_total, 9_000);
+        assert!((stats.words_per_minute - 60.0).abs() < f64::EPSILON);
+        assert!(stats.seconds_saved > 4.0);
+        assert_eq!(stats.provider_usage.len(), 1);
+        assert_eq!(stats.provider_usage[0].provider_id, "local");
+        assert_eq!(stats.provider_usage[0].duration_ms, 9_000);
+        assert_eq!(stats.provider_usage[0].estimated_cost, 0.0);
     }
 }

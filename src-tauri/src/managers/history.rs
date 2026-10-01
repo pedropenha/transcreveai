@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local, TimeZone, Utc};
 use log::{debug, error, info};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,8 @@ use tauri::AppHandle;
 use tauri_specta::Event;
 
 use crate::db::dictations::{
-    Dictation, DictationRepository, NewDictation, SqliteDictationRepository,
+    Dictation, DictationProviderUsage, DictationQuery, DictationRepository, DictationStatistics,
+    NewDictation, SqliteDictationRepository,
 };
 
 /// IPC shape of a dictation row, kept stable for the frontend.
@@ -47,22 +48,110 @@ pub struct HistoryEntry {
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
     pub post_process_requested: bool,
+    pub mode: String,
+    pub duration_ms: i64,
+    pub app_exe: Option<String>,
+    pub app_name: Option<String>,
+    pub stt_provider_id: Option<String>,
+    pub llm_provider_id: Option<String>,
+    pub language: Option<String>,
+    pub raw_text: String,
+    pub final_text: String,
+    pub status: String,
+    pub error_code: Option<String>,
+    pub latency_json: String,
+    pub audio_available: bool,
+    pub word_count: i64,
 }
 
 impl From<Dictation> for HistoryEntry {
     fn from(d: Dictation) -> Self {
+        let audio_available = d.audio_path.is_some();
         Self {
             id: d.id,
             file_name: d.audio_path.unwrap_or_default(),
             timestamp: d.created_at,
             saved: d.flagged,
             title: d.title,
-            transcription_text: d.raw_text,
+            transcription_text: d.raw_text.clone(),
             post_processed_text: d.post_processed_text,
             post_process_prompt: d.instruction,
             post_process_requested: d.post_process_requested,
+            mode: d.mode,
+            duration_ms: d.duration_ms,
+            app_exe: d.app_exe,
+            app_name: d.app_name,
+            stt_provider_id: d.stt_provider_id,
+            llm_provider_id: d.llm_provider_id,
+            language: d.language,
+            raw_text: d.raw_text,
+            final_text: d.final_text,
+            status: d.status,
+            error_code: d.error_code,
+            latency_json: d.latency_json,
+            audio_available,
+            word_count: d.word_count,
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Type)]
+pub struct HistoryQuery {
+    pub search: Option<String>,
+    pub app: Option<String>,
+    pub mode: Option<String>,
+    pub status: Option<String>,
+    pub from_timestamp: Option<i64>,
+    pub to_timestamp: Option<i64>,
+    pub cursor: Option<i64>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct HistoryProviderUsage {
+    pub provider_id: String,
+    pub duration_ms: i64,
+    pub estimated_cost: f64,
+}
+
+impl From<DictationProviderUsage> for HistoryProviderUsage {
+    fn from(usage: DictationProviderUsage) -> Self {
+        Self {
+            provider_id: usage.provider_id,
+            duration_ms: usage.duration_ms,
+            estimated_cost: usage.estimated_cost,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct HistoryStatistics {
+    pub words_today: i64,
+    pub words_week: i64,
+    pub words_total: i64,
+    pub duration_ms_total: i64,
+    pub words_per_minute: f64,
+    pub seconds_saved: f64,
+    pub provider_usage: Vec<HistoryProviderUsage>,
+}
+
+impl From<DictationStatistics> for HistoryStatistics {
+    fn from(stats: DictationStatistics) -> Self {
+        Self {
+            words_today: stats.words_today,
+            words_week: stats.words_week,
+            words_total: stats.words_total,
+            duration_ms_total: stats.duration_ms_total,
+            words_per_minute: stats.words_per_minute,
+            seconds_saved: stats.seconds_saved,
+            provider_usage: stats.provider_usage.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct HistoryFilterOptions {
+    pub apps: Vec<String>,
 }
 
 /// Full dictation-session row (FR-002-18, AC-002-09): a `failed` session
@@ -401,6 +490,53 @@ impl HistoryManager {
         }
 
         Ok(PaginatedHistory { entries, has_more })
+    }
+
+    pub async fn search_history(&self, query: HistoryQuery) -> Result<PaginatedHistory> {
+        let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
+        let limit = query.limit.unwrap_or(50).clamp(1, 100);
+        let rows = repo.search(&DictationQuery {
+            search: query.search,
+            app: query.app,
+            mode: query.mode,
+            status: query.status,
+            from_timestamp: query.from_timestamp,
+            to_timestamp: query.to_timestamp,
+            cursor: query.cursor,
+            limit: limit + 1,
+        })?;
+        let has_more = rows.len() > limit;
+        let entries = rows
+            .into_iter()
+            .take(limit)
+            .map(HistoryEntry::from)
+            .collect();
+        Ok(PaginatedHistory { entries, has_more })
+    }
+
+    pub async fn history_statistics(&self) -> Result<HistoryStatistics> {
+        let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
+        let now = Local::now();
+        let today_start = now
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .and_then(|midnight| Local.from_local_datetime(&midnight).earliest())
+            .map(|midnight| midnight.timestamp())
+            .unwrap_or_else(|| {
+                let timestamp = Utc::now().timestamp();
+                timestamp - timestamp.rem_euclid(86_400)
+            });
+        Ok(repo.statistics(today_start)?.into())
+    }
+
+    pub async fn history_filter_options(&self) -> Result<HistoryFilterOptions> {
+        let conn = self.get_connection()?;
+        let repo = SqliteDictationRepository::new(&conn);
+        Ok(HistoryFilterOptions {
+            apps: repo.distinct_apps()?,
+        })
     }
 
     #[cfg(test)]
