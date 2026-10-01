@@ -1327,11 +1327,61 @@ async meetingCurrent() : Promise<Result<MeetingStateEvent | null, CommandError>>
 }
 },
 /**
- * One meeting row (hub detail / meeting window).
+ * One meeting with its segments and notes body (meeting window hydration).
  */
-async meetingGet(id: string) : Promise<Result<Meeting | null, CommandError>> {
+async meetingGet(id: string) : Promise<Result<MeetingDetail | null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("meeting_get", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-12: inline title edit. Rejects blank/oversized input at the
+ * boundary and retitles the native window when it is showing this meeting.
+ */
+async meetingRename(id: string, title: string) : Promise<Result<Meeting, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_rename", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-13 "Minhas notas" debounced autosave. Writes ONLY the note row's
+ * `body_md` — FR-009-19: this text is user-owned and never touched by the
+ * summary pipeline. The row is created at meeting start (T-064); it is
+ * recreated defensively when absent (e.g. meetings that predate it).
+ */
+async meetingNotesUpdate(id: string, bodyMd: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_notes_update", { id, bodyMd }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-13: "Resumo" is user-editable after generation — writes only
+ * `summary_md`, never the notes row (FR-009-19).
+ */
+async meetingSummaryUpdate(id: string, summaryMd: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_summary_update", { id, summaryMd }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * FR-009-14: open (or focus) the meeting window. `meeting_id` omitted → the
+ * active session, else the most recent meeting.
+ */
+async meetingWindowOpen(meetingId: string | null) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_window_open", { meetingId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2080,6 +2130,46 @@ action: string;
  * Shipped with the app; not user-deletable.
  */
 builtin: boolean }
+/**
+ * Hydration payload for the meeting window (T-066): the row plus everything
+ * its three tabs render — transcript segments and the "Minhas notas" body.
+ * `meeting://segment` events append live on top of this snapshot.
+ */
+export type MeetingDetail = { meeting: Meeting; 
+/**
+ * Ordered by `start_ms`.
+ */
+segments: MeetingSegment[]; 
+/**
+ * The meeting note row's markdown body ("" when the row is missing —
+ * e.g. a meeting that predates the notes-row creation).
+ */
+notes_md: string }
+export type MeetingSegment = { 
+/**
+ * uuid
+ */
+id: string; meeting_id: string; 
+/**
+ * 'mic' | 'system'
+ */
+track: string; 
+/**
+ * "Você", "Outros", "Falante 1"…
+ */
+speaker: string | null; 
+/**
+ * Milliseconds relative to the meeting's `started_at`.
+ */
+start_ms: number; end_ms: number; text: string; 
+/**
+ * 'speech' | 'dictation_marker' | 'gap_marker'
+ */
+kind: string; 
+/**
+ * false while the segment is still a partial transcript.
+ */
+is_final: boolean }
 /**
  * `meeting://state` payload (contracts.md §5).
  */

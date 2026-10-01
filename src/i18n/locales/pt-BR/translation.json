@@ -5,6 +5,7 @@
     "stopDictation": "Parar ditado",
     "startMeeting": "Iniciar reunião",
     "stopMeeting": "Parar reunião",
+    "openMeeting": "Abrir reunião",
     "showFlowbar": "Mostrar Flow Bar",
     "hideFlowbar": "Ocultar Flow Bar",
     "pauseMeetingDetection": "Pausar detecção de reuniões por 1 h",
@@ -754,7 +755,8 @@
     "resume": "Retomar",
     "stopMeeting": "Parar reunião",
     "meetingRecording": "Gravando reunião",
-    "meetingPaused": "Reunião pausada"
+    "meetingPaused": "Reunião pausada",
+    "openMeeting": "Abrir janela da reunião"
   },
   "toast": {
     "meetingDetected": "Reunião detectada",
@@ -782,6 +784,61 @@
       "copyFailed": "Não foi possível copiar o aviso",
       "accept": "Entendi",
       "acceptedHint": "Consentimento registrado — você já pode iniciar a reunião."
+    },
+    "new": "Nova reunião",
+    "newOptions": "Opções de nova reunião",
+    "startCall": "Chamada no computador",
+    "startCallHint": "Microfone + áudio do sistema",
+    "startInPerson": "Presencial",
+    "startInPersonHint": "Só microfone",
+    "startFailed": "Não foi possível iniciar a reunião",
+    "window": {
+      "notFound": "Esta reunião não existe mais.",
+      "noMeeting": "Nenhuma reunião para exibir. Inicie uma pelo Hub, pela Flow Bar ou pela bandeja.",
+      "editTitle": "Editar título da reunião",
+      "titlePlaceholder": "Título da reunião",
+      "app": "Aplicativo",
+      "inPerson": "Presencial",
+      "status": {
+        "recording": "Gravando",
+        "paused": "Pausada",
+        "processing": "Processando",
+        "ready": "Pronta",
+        "error": "Erro",
+        "recovered": "Recuperada"
+      },
+      "pause": "Pausar",
+      "resume": "Retomar",
+      "stop": "Parar",
+      "stopHint": "Encerra a gravação e inicia o processamento",
+      "tabs": {
+        "notes": "Minhas notas",
+        "transcript": "Transcrição",
+        "summary": "Resumo"
+      },
+      "notesPlaceholder": "Escreva suas anotações em Markdown…",
+      "notesHint": "Suas notas são salvas automaticamente e nunca são sobrescritas pelo resumo.",
+      "saving": "Salvando…",
+      "savedAt": "Salvo às {{time}}",
+      "saveFailed": "Não foi possível salvar suas notas",
+      "transcriptEmpty": "Nenhuma transcrição ainda — os trechos aparecem aqui enquanto a reunião é transcrita.",
+      "transcriptNotFinal": "rascunho",
+      "you": "Você",
+      "others": "Outros",
+      "dictationMarker": "Ditado",
+      "gapMarker": "Lacuna",
+      "summary": {
+        "pending": "O resumo é gerado ao parar a reunião.",
+        "disabled": "Configure uma chave de provedor de IA nas Configurações para habilitar resumos de reunião. A transcrição e suas notas não dependem disso.",
+        "generating": "Gerando resumo…",
+        "error": "Falha ao gerar o resumo.",
+        "retry": "Tentar novamente",
+        "empty": "Nenhum resumo ainda.",
+        "edit": "Editar",
+        "view": "Visualizar",
+        "savedAt": "Salvo às {{time}}",
+        "editHint": "O resumo é editável — alterações aqui nunca tocam suas notas."
+      }
     }
   },
   "secureInput": {

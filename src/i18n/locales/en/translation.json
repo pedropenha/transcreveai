@@ -5,6 +5,7 @@
     "stopDictation": "Stop Dictation",
     "startMeeting": "Start Meeting",
     "stopMeeting": "Stop Meeting",
+    "openMeeting": "Open meeting",
     "showFlowbar": "Show Flow Bar",
     "hideFlowbar": "Hide Flow Bar",
     "pauseMeetingDetection": "Pause meeting detection for 1 hour",
@@ -705,6 +706,61 @@
       "copyFailed": "Could not copy the notice",
       "accept": "Got it",
       "acceptedHint": "Consent acknowledged — you can start the meeting again."
+    },
+    "new": "New meeting",
+    "newOptions": "New meeting options",
+    "startCall": "Computer call",
+    "startCallHint": "Microphone + system audio",
+    "startInPerson": "In person",
+    "startInPersonHint": "Microphone only",
+    "startFailed": "Could not start the meeting",
+    "window": {
+      "notFound": "This meeting does not exist anymore.",
+      "noMeeting": "No meeting to show. Start one from the Hub, the Flow Bar or the tray.",
+      "editTitle": "Edit meeting title",
+      "titlePlaceholder": "Meeting title",
+      "app": "App",
+      "inPerson": "In person",
+      "status": {
+        "recording": "Recording",
+        "paused": "Paused",
+        "processing": "Processing",
+        "ready": "Ready",
+        "error": "Error",
+        "recovered": "Recovered"
+      },
+      "pause": "Pause",
+      "resume": "Resume",
+      "stop": "Stop",
+      "stopHint": "Stops the recording and starts processing",
+      "tabs": {
+        "notes": "My notes",
+        "transcript": "Transcript",
+        "summary": "Summary"
+      },
+      "notesPlaceholder": "Write your notes in Markdown…",
+      "notesHint": "Your notes are saved automatically and never overwritten by the summary.",
+      "saving": "Saving…",
+      "savedAt": "Saved at {{time}}",
+      "saveFailed": "Could not save your notes",
+      "transcriptEmpty": "No transcript yet — segments appear here while the meeting is being transcribed.",
+      "transcriptNotFinal": "draft",
+      "you": "You",
+      "others": "Others",
+      "dictationMarker": "Dictation",
+      "gapMarker": "Gap",
+      "summary": {
+        "pending": "The summary is generated when the meeting stops.",
+        "disabled": "Configure an AI provider key in Settings to enable meeting summaries. Transcription and your notes do not depend on it.",
+        "generating": "Generating summary…",
+        "error": "Summary generation failed.",
+        "retry": "Try again",
+        "empty": "No summary yet.",
+        "edit": "Edit",
+        "view": "Preview",
+        "savedAt": "Saved at {{time}}",
+        "editHint": "The summary is editable — changes here never touch your notes."
+      }
     }
   },
   "common": {
@@ -769,7 +825,8 @@
     "resume": "Resume",
     "stopMeeting": "Stop meeting",
     "meetingRecording": "Recording meeting",
-    "meetingPaused": "Meeting paused"
+    "meetingPaused": "Meeting paused",
+    "openMeeting": "Open meeting window"
   },
   "toast": {
     "meetingDetected": "Meeting detected",
