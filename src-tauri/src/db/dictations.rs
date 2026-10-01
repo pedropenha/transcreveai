@@ -125,6 +125,20 @@ pub trait DictationRepository {
         instruction: Option<&str>,
         status: &str,
     ) -> Result<()>;
+    /// Patch the insertion outcome of a provisional row (FR-005-11): the real
+    /// `status` (`inserted`/`copied`/`failed`/`cancelled`), `error_code`, and
+    /// insertion telemetry merged into `latency_json` (`insert_ms`,
+    /// `insert_method`, `insert_fallback`). `None` telemetry fields leave the
+    /// existing keys untouched.
+    fn update_insertion_outcome(
+        &self,
+        id: i64,
+        status: &str,
+        error_code: Option<&str>,
+        insert_ms: Option<i64>,
+        insert_method: Option<&str>,
+        insert_fallback: Option<&str>,
+    ) -> Result<()>;
     fn set_flagged(&self, id: i64, flagged: bool) -> Result<()>;
     fn delete(&self, id: i64) -> Result<()>;
     /// Newest-first listing; `cursor` is exclusive (`id < cursor`).
@@ -261,6 +275,47 @@ impl DictationRepository for SqliteDictationRepository<'_> {
                 status,
                 id
             ],
+        )?;
+        if updated == 0 {
+            return Err(anyhow!("Dictation {} not found", id));
+        }
+        Ok(())
+    }
+
+    fn update_insertion_outcome(
+        &self,
+        id: i64,
+        status: &str,
+        error_code: Option<&str>,
+        insert_ms: Option<i64>,
+        insert_method: Option<&str>,
+        insert_fallback: Option<&str>,
+    ) -> Result<()> {
+        let row = self
+            .get(id)?
+            .ok_or_else(|| anyhow!("Dictation {} not found", id))?;
+        // Merge into the existing latency object instead of overwriting —
+        // `stt_ms`/`llm_ms` may already be there (or the whole value may be
+        // absent/legacy garbage, in which case we start from `{}`).
+        let mut latency: serde_json::Value =
+            serde_json::from_str::<serde_json::Value>(&row.latency_json)
+                .ok()
+                .filter(|v| v.is_object())
+                .unwrap_or_else(|| serde_json::json!({}));
+        if let Some(ms) = insert_ms {
+            latency["insert_ms"] = ms.into();
+        }
+        if let Some(method) = insert_method {
+            latency["insert_method"] = method.into();
+        }
+        if let Some(fallback) = insert_fallback {
+            latency["insert_fallback"] = fallback.into();
+        }
+        let updated = self.conn.execute(
+            "UPDATE dictations
+             SET status = ?1, error_code = ?2, latency_json = ?3
+             WHERE id = ?4",
+            params![status, error_code, latency.to_string(), id],
         )?;
         if updated == 0 {
             return Err(anyhow!("Dictation {} not found", id));
@@ -418,6 +473,89 @@ mod tests {
         assert_eq!(d.status, "inserted");
         assert_eq!(d.error_code, None);
         assert_eq!(d.final_text, "cheguei");
+    }
+
+    /// FR-005-11: the provisional `inserted` row is patched with the real
+    /// insertion outcome, and telemetry lands in `latency_json` without
+    /// clobbering pre-existing keys.
+    #[test]
+    fn update_insertion_outcome_patches_status_and_latency() {
+        let conn = setup();
+        let repo = repo(&conn);
+        let mut n = NewDictation::new("ola".to_string(), None);
+        n.latency_json = r#"{"stt_ms":123}"#.to_string();
+        let d = repo.insert(&n).expect("insert");
+        assert_eq!(d.status, "inserted");
+
+        repo.update_insertion_outcome(
+            d.id,
+            "copied",
+            None,
+            Some(7),
+            Some("clipboard_only"),
+            Some("elevated_target"),
+        )
+        .expect("update outcome");
+
+        let d = repo.get(d.id).expect("get").expect("exists");
+        assert_eq!(d.status, "copied");
+        assert_eq!(d.error_code, None);
+        let latency: serde_json::Value =
+            serde_json::from_str(&d.latency_json).expect("valid latency_json");
+        assert_eq!(latency["stt_ms"], 123); // pre-existing key survives
+        assert_eq!(latency["insert_ms"], 7);
+        assert_eq!(latency["insert_method"], "clipboard_only");
+        assert_eq!(latency["insert_fallback"], "elevated_target");
+    }
+
+    #[test]
+    fn update_insertion_outcome_records_failure() {
+        let conn = setup();
+        let repo = repo(&conn);
+        let d = repo
+            .insert(&NewDictation::new("ola".to_string(), None))
+            .expect("insert");
+
+        repo.update_insertion_outcome(
+            d.id,
+            "failed",
+            Some("clipboard locked"),
+            Some(42),
+            Some("paste"),
+            None,
+        )
+        .expect("update outcome");
+
+        let d = repo.get(d.id).expect("get").expect("exists");
+        assert_eq!(d.status, "failed");
+        assert_eq!(d.error_code.as_deref(), Some("clipboard locked"));
+        let latency: serde_json::Value =
+            serde_json::from_str(&d.latency_json).expect("valid latency_json");
+        assert_eq!(latency["insert_ms"], 42);
+        assert_eq!(latency["insert_method"], "paste");
+        assert!(latency.get("insert_fallback").is_none());
+
+        assert!(repo
+            .update_insertion_outcome(999, "failed", None, None, None, None)
+            .is_err());
+    }
+
+    /// A row whose `latency_json` is not a JSON object (legacy garbage)
+    /// still gets patched — telemetry starts from `{}`.
+    #[test]
+    fn update_insertion_outcome_tolerates_non_object_latency() {
+        let conn = setup();
+        let repo = repo(&conn);
+        let mut n = NewDictation::new("ola".to_string(), None);
+        n.latency_json = "not json".to_string();
+        let d = repo.insert(&n).expect("insert");
+
+        repo.update_insertion_outcome(d.id, "inserted", None, Some(3), Some("type"), None)
+            .expect("update outcome");
+        let d = repo.get(d.id).expect("get").expect("exists");
+        let latency: serde_json::Value =
+            serde_json::from_str(&d.latency_json).expect("valid latency_json");
+        assert_eq!(latency["insert_method"], "type");
     }
 
     #[test]

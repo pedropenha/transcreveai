@@ -185,6 +185,43 @@ async changePasteMethodSetting(method: string) : Promise<Result<null, CommandErr
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * F005 / ADR-0002: `insertion_method` is the authoritative delivery
+ * setting. `change_paste_method_setting` stays for legacy UI stores (the
+ * migration keeps both in sync for readers that only know the old key).
+ */
+async changeInsertionMethodSetting(method: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_insertion_method_setting", { method }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeNewlineModeSetting(mode: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_newline_mode_setting", { mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTypeCharDelayMsSetting(ms: number) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_type_char_delay_ms_setting", { ms }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeClipboardOnlyOnWindowChangeSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_clipboard_only_on_window_change_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAvailableTypingTools() : Promise<Result<string[], CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_typing_tools") };
@@ -1167,9 +1204,31 @@ vad_backend?: VadBackend;
 overlay_style?: OverlayStyle; 
 /**
  * Default insertion method for finished transcriptions (FR-005). `Auto` is
- * the v1 default (ADR-0002 / data-model). Consumers land with T-031.
+ * the v1 default (ADR-0002 / data-model). Drives the insertion dispatcher
+ * in `insertion.rs` (T-031); legacy `paste_method` values are migrated
+ * onto it by `apply_settings_migrations` when this key is absent.
  */
 insertion_method?: InsertionMethod; 
+/**
+ * How `\n` is sent when the `type` insertion method types directly
+ * (`raw` = Enter, `shift_enter` = Shift+Enter; FR-005-05, AC-005-07).
+ * Global default — per-app `app_profiles.newline_mode` overrides arrive
+ * with the profiles feature (T-054, v1.1+).
+ */
+newline_mode?: NewlineMode; 
+/**
+ * Per-character delay in ms for `type` insertion (FR-005-05: "taxa
+ * configurável"). 0 = no delay; remote-desktop targets selected by `auto`
+ * enforce a 5 ms floor.
+ */
+type_char_delay_ms?: number; 
+/**
+ * FR-005-09: when on, a session whose foreground window changed between
+ * recording start and insertion only copies the text (`clipboard_only`)
+ * instead of typing into the new window. Default off — inserting into the
+ * *current* window is the natural "where the cursor is" behavior.
+ */
+clipboard_only_on_window_change?: boolean; 
 /**
  * Maximum hands-free dictation length in minutes (FR-002-13). The spec
  * range is 1–20; enforcement lives with the session consumer (T-022).
@@ -1400,8 +1459,10 @@ export type ImportedModel = { model: ModelInfo; sha256: string }
 /**
  * How a finished transcription reaches the target app (data-model
  * `insertion_method`; FR-005). `Auto` is the v1 default (ADR-0002): the
- * insertion layer picks per context. Schema only for now — the consumers are
- * wired by T-031; until then the existing `paste_method` keeps driving paste.
+ * insertion layer picks per context. This field drives the insertion
+ * dispatcher (`insertion.rs`, T-031); the legacy `paste_method` only selects
+ * *which paste chord* a clipboard paste sends and keeps the `external_script`
+ * escape hatch — see [`insertion_method_from_legacy`].
  */
 export type InsertionMethod = "auto" | "paste" | "paste_shift_insert" | "type" | "clipboard_only"
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
@@ -1453,6 +1514,12 @@ sha256: string | null } } |
  */
 export type ModelSuitabilityEntry = { model_id: string; label: Suitability }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
+/**
+ * How `\n` is delivered while typing directly (`newline_mode`,
+ * data-model/app_profiles; FR-005-05, AC-005-07). `Raw` sends `Enter`;
+ * `ShiftEnter` sends `Shift+Enter` for chat boxes where Enter submits.
+ */
+export type NewlineMode = "raw" | "shift_enter"
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
 /**

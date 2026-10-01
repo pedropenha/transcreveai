@@ -150,8 +150,10 @@ pub enum OverlayStyle {
 
 /// How a finished transcription reaches the target app (data-model
 /// `insertion_method`; FR-005). `Auto` is the v1 default (ADR-0002): the
-/// insertion layer picks per context. Schema only for now — the consumers are
-/// wired by T-031; until then the existing `paste_method` keeps driving paste.
+/// insertion layer picks per context. This field drives the insertion
+/// dispatcher (`insertion.rs`, T-031); the legacy `paste_method` only selects
+/// *which paste chord* a clipboard paste sends and keeps the `external_script`
+/// escape hatch — see [`insertion_method_from_legacy`].
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum InsertionMethod {
@@ -161,6 +163,40 @@ pub enum InsertionMethod {
     PasteShiftInsert,
     Type,
     ClipboardOnly,
+}
+
+/// How `\n` is delivered while typing directly (`newline_mode`,
+/// data-model/app_profiles; FR-005-05, AC-005-07). `Raw` sends `Enter`;
+/// `ShiftEnter` sends `Shift+Enter` for chat boxes where Enter submits.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NewlineMode {
+    #[default]
+    Raw,
+    ShiftEnter,
+}
+
+/// Maps the legacy Handy `paste_method` onto the v1 `insertion_method`
+/// (FR-005). Used by the store migration (when the `insertion_method` key is
+/// absent) and by `change_paste_method_setting` so the legacy Advanced UI
+/// keeps working until the new settings screen lands.
+///
+/// `CtrlV` maps to `Paste` (not `Auto`): the upgrade path preserves exactly
+/// the behavior the store already had, while fresh installs get `Auto` from
+/// the serde default. `CtrlShiftV` keeps working because `Paste` delegates
+/// the chord choice to `paste_method` — see `insertion::resolve_plan`.
+/// `None` maps to `ClipboardOnly`: the closest spec method (the text still
+/// lands on the clipboard, now with a warning event). `ExternalScript` maps
+/// to `Auto`; the dispatcher keeps honoring `paste_method == ExternalScript`
+/// as an escape hatch, so the script keeps running.
+pub(crate) fn insertion_method_from_legacy(paste_method: PasteMethod) -> InsertionMethod {
+    match paste_method {
+        PasteMethod::CtrlV | PasteMethod::CtrlShiftV => InsertionMethod::Paste,
+        PasteMethod::ShiftInsert => InsertionMethod::PasteShiftInsert,
+        PasteMethod::Direct => InsertionMethod::Type,
+        PasteMethod::None => InsertionMethod::ClipboardOnly,
+        PasteMethod::ExternalScript => InsertionMethod::Auto,
+    }
 }
 
 /// When the Flow Bar is on screen (FR-001-10).
@@ -569,9 +605,28 @@ pub struct AppSettings {
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
     /// Default insertion method for finished transcriptions (FR-005). `Auto` is
-    /// the v1 default (ADR-0002 / data-model). Consumers land with T-031.
+    /// the v1 default (ADR-0002 / data-model). Drives the insertion dispatcher
+    /// in `insertion.rs` (T-031); legacy `paste_method` values are migrated
+    /// onto it by `apply_settings_migrations` when this key is absent.
     #[serde(default)]
     pub insertion_method: InsertionMethod,
+    /// How `\n` is sent when the `type` insertion method types directly
+    /// (`raw` = Enter, `shift_enter` = Shift+Enter; FR-005-05, AC-005-07).
+    /// Global default — per-app `app_profiles.newline_mode` overrides arrive
+    /// with the profiles feature (T-054, v1.1+).
+    #[serde(default)]
+    pub newline_mode: NewlineMode,
+    /// Per-character delay in ms for `type` insertion (FR-005-05: "taxa
+    /// configurável"). 0 = no delay; remote-desktop targets selected by `auto`
+    /// enforce a 5 ms floor.
+    #[serde(default)]
+    pub type_char_delay_ms: u64,
+    /// FR-005-09: when on, a session whose foreground window changed between
+    /// recording start and insertion only copies the text (`clipboard_only`)
+    /// instead of typing into the new window. Default off — inserting into the
+    /// *current* window is the natural "where the cursor is" behavior.
+    #[serde(default)]
+    pub clipboard_only_on_window_change: bool,
     /// Maximum hands-free dictation length in minutes (FR-002-13). The spec
     /// range is 1–20; enforcement lives with the session consumer (T-022).
     #[serde(default = "default_max_dictation_minutes")]
@@ -1176,6 +1231,9 @@ pub fn get_default_settings() -> AppSettings {
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
         insertion_method: InsertionMethod::default(),
+        newline_mode: NewlineMode::default(),
+        type_char_delay_ms: 0,
+        clipboard_only_on_window_change: false,
         max_dictation_minutes: default_max_dictation_minutes(),
         session_queue_size: default_session_queue_size(),
         voice_submit_phrases: default_voice_submit_phrases(),
@@ -1460,6 +1518,21 @@ fn apply_settings_migrations(
             OverlayStyle::Live
         };
         updated = true;
+    }
+
+    // One-time insertion-method migration (T-031): stores predating the
+    // `insertion_method` key keep driving paste through the legacy
+    // `paste_method` — map it onto the new field so `insertion_method` is the
+    // single driver afterwards. `paste_method` itself is *not* cleared: it
+    // still selects the chord a `Paste` insertion sends (e.g. a stored
+    // `ctrl_shift_v` keeps producing Ctrl+Shift+V) and carries the
+    // `external_script` escape hatch.
+    if settings_value.get("insertion_method").is_none() {
+        let migrated = insertion_method_from_legacy(settings.paste_method);
+        if migrated != settings.insertion_method {
+            settings.insertion_method = migrated;
+            updated = true;
+        }
     }
 
     // Stamp the current schema version once, after all migration blocks.
@@ -1982,6 +2055,8 @@ mod tests {
             "onboarding_completed": false,
             "whats_new_last_seen_version": default_whats_new_last_seen_version(),
             "overlay_style": "live",
+            "insertion_method": "auto",
+            "paste_method": "ctrl_v",
             "transcribe_accelerator": "gpu",
             "transcribe_gpu_device": null
         });
@@ -2006,6 +2081,8 @@ mod tests {
             "onboarding_completed": false,
             "whats_new_last_seen_version": default_whats_new_last_seen_version(),
             "overlay_style": "live",
+            "insertion_method": "auto",
+            "paste_method": "ctrl_v",
             "transcribe_accelerator": "gpu",
             "transcribe_gpu_device": settings.transcribe_gpu_device
         });
@@ -2107,11 +2184,56 @@ mod tests {
         // Pre-existing choices survive.
         assert_eq!(settings.selected_model, "whisper-large-v3-turbo");
         assert!(!settings.audio_feedback);
-        // New fields get their v1 defaults.
-        assert_eq!(settings.insertion_method, InsertionMethod::Auto);
+        // New fields get their v1 defaults — except `insertion_method`, which
+        // is derived from the persisted `paste_method` ("ctrl_v" → `paste`)
+        // so the upgraded store keeps the exact delivery it already had.
+        assert_eq!(settings.insertion_method, InsertionMethod::Paste);
         assert_eq!(settings.max_dictation_minutes, 5);
         assert_eq!(settings.session_queue_size, 5);
         assert_eq!(settings.dictation_provider_id, None);
+    }
+
+    /// T-031: a store that never saw `insertion_method` migrates from the
+    /// legacy `paste_method` so the new field becomes the single driver
+    /// without changing delivered behavior.
+    #[test]
+    fn insertion_method_migrates_from_legacy_paste_method() {
+        for (paste_method, expected) in [
+            ("ctrl_v", InsertionMethod::Paste),
+            ("ctrl_shift_v", InsertionMethod::Paste),
+            ("shift_insert", InsertionMethod::PasteShiftInsert),
+            ("direct", InsertionMethod::Type),
+            ("none", InsertionMethod::ClipboardOnly),
+            ("external_script", InsertionMethod::Auto),
+        ] {
+            let mut stored = default_settings_json();
+            let map = stored.as_object_mut().unwrap();
+            map.remove("insertion_method");
+            map.insert("paste_method".into(), serde_json::json!(paste_method));
+
+            let mut settings: AppSettings =
+                serde_json::from_value(stored.clone()).expect("store must parse");
+            apply_settings_migrations(&mut settings, &stored);
+            assert_eq!(
+                settings.insertion_method, expected,
+                "paste_method={paste_method}"
+            );
+        }
+    }
+
+    /// An explicit `insertion_method` in the store always wins over the
+    /// legacy `paste_method` — the migration never overrides a set new key.
+    #[test]
+    fn insertion_method_explicit_key_is_not_migrated() {
+        let mut stored = default_settings_json();
+        let map = stored.as_object_mut().unwrap();
+        map.insert("insertion_method".into(), serde_json::json!("type"));
+        map.insert("paste_method".into(), serde_json::json!("ctrl_v"));
+
+        let mut settings: AppSettings =
+            serde_json::from_value(stored.clone()).expect("store must parse");
+        apply_settings_migrations(&mut settings, &stored);
+        assert_eq!(settings.insertion_method, InsertionMethod::Type);
     }
 
     /// Users on a removed locale (e.g. the retired bare `pt`, or `de`) are
