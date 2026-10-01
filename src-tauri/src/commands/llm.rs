@@ -343,11 +343,21 @@ pub fn cli_agent_update_config(
     let provider = settings.post_process_provider(&provider_id).cloned();
     match provider {
         Some(provider) if cli_agent::is_cli_agent(&provider.id) => {
-            let spec =
-                cli_agent::adapter_for(&provider.id).expect("is_cli_agent guarantees an adapter");
+            // `is_cli_agent` implies an adapter entry, but that coupling is
+            // not worth a panic in a command — degrade to a clean error.
+            let spec = cli_agent::adapter_for(&provider.id).ok_or_else(|| {
+                CommandError::new(
+                    CommandErrorCode::Internal,
+                    format!("No CLI agent adapter for provider '{provider_id}'"),
+                )
+            })?;
             let config = normalize_cli_agent_config(spec, config)?;
             settings.cli_agent_configs.insert(provider_id, config);
             settings::write_settings(&app, settings);
+            // FR-012-17: an open panel reflects the new enabled/detected
+            // state on its next snapshot (the settings fingerprint also
+            // invalidates its cached provider resolution).
+            crate::assistant::emit_state(&app);
             Ok(())
         }
         Some(_) => Err(CommandError::new(

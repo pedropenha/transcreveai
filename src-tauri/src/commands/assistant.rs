@@ -8,6 +8,7 @@
 
 use super::{CommandError, CommandErrorCode, CommandResult};
 use crate::assistant::{self, AssistantStateEvent};
+use crate::llm::cli_agent;
 use crate::settings;
 use tauri::AppHandle;
 
@@ -80,19 +81,14 @@ pub fn assistant_focus(app: AppHandle) -> CommandResult<()> {
 /// FR-012-16: live title-strip drag — repositions the panel clamped onto
 /// the monitor under the cursor. Fires at pointer-move rate and persists
 /// nothing; drag end goes through `assistant_save_panel_position`.
-/// `screen_*` are the event's `screenX/Y`, `grab_*` the `clientX/Y`
-/// captured where the drag started (the pointer's offset inside the
-/// window, constant while the window tracks the cursor).
+/// `grab_*` are the `clientX/Y` captured where the drag started (the
+/// pointer's offset inside the window, constant while the window tracks
+/// the cursor); the cursor itself is read OS-side in physical px — a
+/// webview `screenX/Y` is DIP and ambiguous on mixed-DPI layouts.
 #[tauri::command]
 #[specta::specta]
-pub fn assistant_move_panel(
-    app: AppHandle,
-    screen_x: f64,
-    screen_y: f64,
-    grab_x: f64,
-    grab_y: f64,
-) -> CommandResult<()> {
-    assistant::move_panel(&app, screen_x, screen_y, grab_x, grab_y, false);
+pub fn assistant_move_panel(app: AppHandle, grab_x: f64, grab_y: f64) -> CommandResult<()> {
+    assistant::move_panel(&app, grab_x, grab_y, false);
     Ok(())
 }
 
@@ -103,12 +99,10 @@ pub fn assistant_move_panel(
 #[specta::specta]
 pub fn assistant_save_panel_position(
     app: AppHandle,
-    screen_x: f64,
-    screen_y: f64,
     grab_x: f64,
     grab_y: f64,
 ) -> CommandResult<()> {
-    assistant::move_panel(&app, screen_x, screen_y, grab_x, grab_y, true);
+    assistant::move_panel(&app, grab_x, grab_y, true);
     Ok(())
 }
 
@@ -126,7 +120,9 @@ pub fn assistant_set_panel_pinned(app: AppHandle, pinned: bool) -> CommandResult
 }
 
 /// FR-012-04: persist the assistant provider choice (`None` resets to auto).
-/// Accepts any known `post_process_providers` id, including `cli_agent/*`.
+/// Accepts any known `post_process_providers` id, including `cli_agent/*` —
+/// except experimental adapters, which have no verified non-mutating mode
+/// and are refused outright (NFR-012-02).
 #[tauri::command]
 #[specta::specta]
 pub fn set_assistant_provider(app: AppHandle, provider_id: Option<String>) -> CommandResult<()> {
@@ -140,6 +136,12 @@ pub fn set_assistant_provider(app: AppHandle, provider_id: Option<String>) -> Co
                 return Err(CommandError::new(
                     CommandErrorCode::NotFound,
                     format!("Provider '{id}' not found"),
+                ));
+            }
+            if cli_agent::adapter_for(id).is_some_and(|spec| spec.experimental) {
+                return Err(CommandError::new(
+                    CommandErrorCode::InvalidInput,
+                    format!("Provider '{id}' is experimental and cannot answer the assistant yet"),
                 ));
             }
             settings.assistant_provider_id = Some(id.to_string());
