@@ -61,8 +61,12 @@ mod macos {
     /// the service is already in the requested state (unregistering a
     /// never-registered service returns an error on every launch otherwise).
     pub fn set_login_item(enabled: bool) {
-        let service = unsafe { SMAppService::mainAppService() };
-        let status = unsafe { service.status() };
+        // SAFETY: both are plain framework accessors on the main app service.
+        let (service, status) = unsafe {
+            let service = SMAppService::mainAppService();
+            let status = service.status();
+            (service, status)
+        };
 
         if enabled {
             if status == SMAppServiceStatus::Enabled {

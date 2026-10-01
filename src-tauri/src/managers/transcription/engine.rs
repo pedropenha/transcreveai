@@ -119,7 +119,10 @@ impl TranscriptionManager {
             *engine = None;
         }
         {
-            let mut current_model = self.current_model_id.lock().unwrap();
+            let mut current_model = self
+                .current_model_id
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             *current_model = None;
         }
 
@@ -283,7 +286,10 @@ impl TranscriptionManager {
             *engine = Some(loaded_engine);
         }
         {
-            let mut current_model = self.current_model_id.lock().unwrap();
+            let mut current_model = self
+                .current_model_id
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             *current_model = Some(model_id.to_string());
         }
 

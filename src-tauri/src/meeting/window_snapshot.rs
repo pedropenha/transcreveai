@@ -65,8 +65,10 @@ mod imp {
     }
 
     unsafe extern "system" fn enum_wnd_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let list = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
-        if unsafe { IsWindowVisible(hwnd) }.as_bool() {
+        // lparam is the `&mut Vec<HWND>` `snapshot` passed to EnumWindows; the
+        // callback runs on the calling thread for the duration of that call.
+        let list = &mut *(lparam.0 as *mut Vec<HWND>);
+        if IsWindowVisible(hwnd).as_bool() {
             list.push(hwnd);
         }
         BOOL(1) // continue enumeration
@@ -74,7 +76,13 @@ mod imp {
 
     fn read_window(hwnd: HWND) -> Option<WindowInfo> {
         let mut buf = vec![0u16; 512];
-        let len = unsafe { GetWindowTextW(hwnd, &mut buf) };
+        // `buf` is a valid 512-u16 out-buffer and `pid` a valid out-param.
+        let (len, pid) = unsafe {
+            let len = GetWindowTextW(hwnd, &mut buf);
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            (len, pid)
+        };
         if len <= 0 {
             return None;
         }
@@ -82,9 +90,6 @@ mod imp {
         if title.trim().is_empty() {
             return None;
         }
-
-        let mut pid: u32 = 0;
-        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
         if pid == 0 {
             return None;
         }

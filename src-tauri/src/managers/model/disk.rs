@@ -107,9 +107,12 @@ mod imp {
     /// actually use (reserved blocks excluded).
     pub fn available_space(dir: &Path) -> Option<u64> {
         let c_path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
-        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
         // SAFETY: `stat` is a valid statvfs out-param; `c_path` is NUL-terminated.
-        let rc = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
+        let (rc, stat) = unsafe {
+            let mut stat: libc::statvfs = std::mem::zeroed();
+            let rc = libc::statvfs(c_path.as_ptr(), &mut stat);
+            (rc, stat)
+        };
         if rc != 0 {
             return None;
         }

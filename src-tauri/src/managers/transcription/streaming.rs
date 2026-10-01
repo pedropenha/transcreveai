@@ -109,7 +109,7 @@ impl StreamRouter {
     /// still open.
     fn open(&self) -> mpsc::Receiver<StreamCmd> {
         let (tx, rx) = mpsc::channel::<StreamCmd>();
-        *self.tx.lock().unwrap() = Some(tx);
+        *self.tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
         self.open.store(true, Ordering::Relaxed);
         rx
     }
@@ -118,14 +118,14 @@ impl StreamRouter {
     /// sender so the caller can send the final `Finalize`/`Cancel` command.
     fn take(&self) -> Option<mpsc::Sender<StreamCmd>> {
         self.open.store(false, Ordering::Relaxed);
-        self.tx.lock().unwrap().take()
+        self.tx.lock().unwrap_or_else(|e| e.into_inner()).take()
     }
 
     /// Drop the channel and mark closed without sending a final command (used
     /// when the worker exits without a finalize/cancel handshake).
     fn clear(&self) {
         self.open.store(false, Ordering::Relaxed);
-        *self.tx.lock().unwrap() = None;
+        *self.tx.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     /// Forward a 16 kHz frame to the active streaming worker. Cheap no-op (a
@@ -134,7 +134,7 @@ impl StreamRouter {
         if !self.open.load(Ordering::Relaxed) {
             return;
         }
-        if let Some(tx) = self.tx.lock().unwrap().as_ref() {
+        if let Some(tx) = self.tx.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             let _ = tx.send(StreamCmd::Feed(frame.to_vec()));
         }
     }
@@ -230,9 +230,12 @@ impl TranscriptionManager {
         // Wait for any in-progress model load to finish (start_stream races the
         // background load kicked off when recording starts).
         {
-            let mut is_loading = self.is_loading.lock().unwrap();
+            let mut is_loading = self.is_loading.lock().unwrap_or_else(|e| e.into_inner());
             while *is_loading {
-                is_loading = self.loading_condvar.wait(is_loading).unwrap();
+                is_loading = self
+                    .loading_condvar
+                    .wait(is_loading)
+                    .unwrap_or_else(|e| e.into_inner());
             }
         }
 

@@ -86,10 +86,6 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-unsafe fn shared_ptr(hwnd: HWND) -> *const WinTxShared {
-    GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WinTxShared
-}
-
 /// Sends the auto-submit Enter. Uses `try_lock` because the paste caller may
 /// currently hold the enigo lock while waiting for this worker.
 fn send_auto_submit(shared: &WinTxShared) {
@@ -143,7 +139,7 @@ unsafe extern "system" fn paste_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let shared = shared_ptr(hwnd);
+    let shared = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WinTxShared;
     match msg {
         WM_RENDERFORMAT => {
             if !shared.is_null() {
@@ -232,10 +228,13 @@ fn flush_pending() {
     if previous.auto_submit && receipt {
         send_auto_submit(&previous);
     }
-    let sequence = *previous.sequence.lock().unwrap();
-    let still_ours = unsafe { GetClipboardSequenceNumber() } == sequence;
-    if still_ours {
-        unsafe { settle_clipboard(&previous) };
+    let sequence = *previous.sequence.lock().unwrap_or_else(|e| e.into_inner());
+    // SAFETY: sequence number query is side-effect free; settle_clipboard is
+    // only invoked while the clipboard is still ours.
+    unsafe {
+        if GetClipboardSequenceNumber() == sequence {
+            settle_clipboard(&previous);
+        }
     }
 }
 
@@ -460,31 +459,33 @@ fn on_timer(_hwnd: HWND, shared: &WinTxShared) {
         send_auto_submit(shared);
     }
 
-    let sequence = *shared.sequence.lock().unwrap();
-    let still_ours = !ownership_lost && unsafe { GetClipboardSequenceNumber() } == sequence;
-    if still_ours {
-        unsafe { settle_clipboard(shared) };
-    } else {
-        info!("[reliable-paste] clipboard changed externally; leaving it untouched");
-    }
-
-    if let Ok(mut slot) = PENDING.lock() {
-        let is_us = slot
-            .as_ref()
-            .map(|pending| std::ptr::eq(Arc::as_ptr(pending), shared))
-            .unwrap_or(false);
-        if is_us {
-            *slot = None;
-        }
-    }
-
+    let sequence = *shared.sequence.lock().unwrap_or_else(|e| e.into_inner());
+    // SAFETY: teardown FFI cluster — the sequence check is side-effect free,
+    // settle_clipboard runs only while we still own the clipboard, and
+    // PostQuitMessage ends this thread's own message pump.
     unsafe {
+        if !ownership_lost && GetClipboardSequenceNumber() == sequence {
+            settle_clipboard(shared);
+        } else {
+            info!("[reliable-paste] clipboard changed externally; leaving it untouched");
+        }
+
+        if let Ok(mut slot) = PENDING.lock() {
+            let is_us = slot
+                .as_ref()
+                .map(|pending| std::ptr::eq(Arc::as_ptr(pending), shared))
+                .unwrap_or(false);
+            if is_us {
+                *slot = None;
+            }
+        }
+
         PostQuitMessage(0);
     }
 }
 
 unsafe fn destroy_window_and_shared(hwnd: HWND) {
-    let ptr = shared_ptr(hwnd);
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WinTxShared;
     let _ = DestroyWindow(hwnd);
     if !ptr.is_null() {
         drop(Arc::from_raw(ptr));
@@ -553,8 +554,12 @@ fn pump_thread(shared: Arc<WinTxShared>, ready: Sender<Result<(), String>>) {
                 return;
             }
         };
-        *shared.sequence.lock().unwrap() = sequence;
-        shared.state.lock().unwrap().published_at = Instant::now();
+        *shared.sequence.lock().unwrap_or_else(|e| e.into_inner()) = sequence;
+        shared
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .published_at = Instant::now();
         if let Ok(mut slot) = PENDING.lock() {
             *slot = Some(shared.clone());
         }
@@ -607,7 +612,11 @@ pub(super) fn run(
 
     // Mark injection *before* sending: enigo holds the chord for ~100ms and a
     // fast target may legitimately read while the chord is still held.
-    shared.state.lock().unwrap().injected_at = Some(Instant::now());
+    shared
+        .state
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .injected_at = Some(Instant::now());
     match send_chord(enigo, paste_method) {
         Ok(()) => {
             info!("[reliable-paste] paste chord sent ({paste_method:?})");
@@ -615,7 +624,11 @@ pub(super) fn run(
         Err(e) => {
             // Keep the transaction alive: the worker restores the clipboard
             // after the short failed-injection timeout.
-            shared.state.lock().unwrap().injection_failed = true;
+            shared
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .injection_failed = true;
             error!("[reliable-paste] failed to send paste chord: {e}");
         }
     }

@@ -57,7 +57,7 @@ mod macos {
     const COMMAND_MODIFIER_STATE: u32 = 1;
 
     #[link(name = "Carbon", kind = "framework")]
-    unsafe extern "C" {
+    extern "C" {
         fn TISCopyCurrentKeyboardLayoutInputSource() -> TisInputSourceRef;
         fn TISGetInputSourceProperty(
             input_source: TisInputSourceRef,
@@ -80,7 +80,7 @@ mod macos {
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
-    unsafe extern "C" {
+    extern "C" {
         fn CFDataGetBytePtr(data: CfDataRef) -> *const u8;
         fn CFRelease(value: *const c_void);
     }
@@ -110,29 +110,25 @@ mod macos {
     fn resolve_command_v_keycode() -> Result<u16, String> {
         // SAFETY: This function is called on the macOS main thread. The returned
         // source follows the Create Rule and is released by InputSource::drop.
-        let source = InputSource(unsafe { TISCopyCurrentKeyboardLayoutInputSource() });
-        if source.0.is_null() {
-            return Err("macOS returned no current keyboard layout input source".into());
-        }
-
-        // SAFETY: The source remains retained for the duration of the scan and
-        // the property constant is provided by Carbon.
-        let layout_data =
-            unsafe { TISGetInputSourceProperty(source.0, kTISPropertyUnicodeKeyLayoutData) };
-        if layout_data.is_null() {
-            return Err("current macOS keyboard layout has no Unicode layout data".into());
-        }
-
-        // SAFETY: layout_data is a CFData owned by the retained input source and
-        // remains valid until source is dropped after the scan.
-        let layout = unsafe { CFDataGetBytePtr(layout_data) };
-        if layout.is_null() {
-            return Err("current macOS keyboard layout data is empty".into());
-        }
-
-        // SAFETY: LMGetKbdType has no arguments and returns the current physical
-        // keyboard type used by UCKeyTranslate.
-        let keyboard_type = unsafe { LMGetKbdType() } as u32;
+        // The property constant is provided by Carbon; layout_data is a CFData
+        // owned by the retained input source and stays valid until source is
+        // dropped after the scan. LMGetKbdType has no arguments and returns the
+        // physical keyboard type used by UCKeyTranslate.
+        let (source, layout, keyboard_type) = unsafe {
+            let source = InputSource(TISCopyCurrentKeyboardLayoutInputSource());
+            if source.0.is_null() {
+                return Err("macOS returned no current keyboard layout input source".into());
+            }
+            let layout_data = TISGetInputSourceProperty(source.0, kTISPropertyUnicodeKeyLayoutData);
+            if layout_data.is_null() {
+                return Err("current macOS keyboard layout has no Unicode layout data".into());
+            }
+            let layout = CFDataGetBytePtr(layout_data);
+            if layout.is_null() {
+                return Err("current macOS keyboard layout data is empty".into());
+            }
+            (source, layout, LMGetKbdType() as u32)
+        };
         let keycode = find_keycode(|keycode| {
             let mut dead_key_state = 0;
             let mut chars = [0_u16; 4];

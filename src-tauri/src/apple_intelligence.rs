@@ -38,36 +38,40 @@ pub fn process_text_with_system_prompt(
     let system_cstr = CString::new(system_prompt).map_err(|e| e.to_string())?;
     let user_cstr = CString::new(user_content).map_err(|e| e.to_string())?;
 
-    let response_ptr = unsafe {
-        process_text_with_system_prompt_apple(system_cstr.as_ptr(), user_cstr.as_ptr(), max_tokens)
-    };
-
-    if response_ptr.is_null() {
-        return Err("Null response from Apple LLM".to_string());
-    }
-
-    let response = unsafe { &*response_ptr };
-
-    let result = if response.success == 1 {
-        if response.response.is_null() {
-            Ok(String::new())
-        } else {
-            let c_str = unsafe { CStr::from_ptr(response.response) };
-            let rust_str = c_str.to_string_lossy().into_owned();
-            Ok(rust_str)
+    // SAFETY: `system_cstr`/`user_cstr` are valid NUL-terminated strings for the
+    // call. A non-null response is a valid AppleLLMResponse we own; `response`
+    // and `error_message` are C strings valid until free_apple_llm_response.
+    let result = unsafe {
+        let response_ptr = process_text_with_system_prompt_apple(
+            system_cstr.as_ptr(),
+            user_cstr.as_ptr(),
+            max_tokens,
+        );
+        if response_ptr.is_null() {
+            return Err("Null response from Apple LLM".to_string());
         }
-    } else {
-        let error_c_str = if !response.error_message.is_null() {
-            unsafe { CStr::from_ptr(response.error_message) }
-        } else {
-            c"Unknown error"
-        };
-        let error_msg = error_c_str.to_string_lossy().into_owned();
-        Err(error_msg)
-    };
+        let response = &*response_ptr;
 
-    // Clean up the response
-    unsafe { free_apple_llm_response(response_ptr) };
+        let result = if response.success == 1 {
+            if response.response.is_null() {
+                Ok(String::new())
+            } else {
+                Ok(CStr::from_ptr(response.response)
+                    .to_string_lossy()
+                    .into_owned())
+            }
+        } else {
+            let error_c_str = if !response.error_message.is_null() {
+                CStr::from_ptr(response.error_message)
+            } else {
+                c"Unknown error"
+            };
+            Err(error_c_str.to_string_lossy().into_owned())
+        };
+
+        free_apple_llm_response(response_ptr);
+        result
+    };
 
     result
 }

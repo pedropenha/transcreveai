@@ -146,23 +146,33 @@ mod imp {
     /// RAII wrapper for the `windows`-crate HKEY + event used by
     /// `RegNotifyChangeKeyValue`. Kept separate from the winreg handles so the
     /// two crates never share ownership of a handle.
+    ///
+    /// The handles are stored as `isize` so the source stays auto-`Send`
+    /// without an unsafe impl (the `windows`-crate handle types wrap
+    /// `*mut c_void`, which is `!Send`); the owning monitor thread is the only
+    /// one that ever uses them, and each use reconstructs the typed handle.
     struct NotifyKey {
-        key: HKEY,
-        event: windows::Win32::Foundation::HANDLE,
+        key: isize,
+        event: isize,
+    }
+
+    impl NotifyKey {
+        fn key(&self) -> HKEY {
+            HKEY(self.key as *mut _)
+        }
+        fn event(&self) -> windows::Win32::Foundation::HANDLE {
+            windows::Win32::Foundation::HANDLE(self.event as *mut _)
+        }
     }
 
     impl Drop for NotifyKey {
         fn drop(&mut self) {
             unsafe {
-                let _ = CloseHandle(self.event);
-                let _ = RegCloseKey(self.key);
+                let _ = CloseHandle(self.event());
+                let _ = RegCloseKey(self.key());
             }
         }
     }
-
-    // HKEY/HANDLE are raw handles; the thread that owns the source uses them
-    // exclusively. Required because `windows` 0.61 handle types are not Sync.
-    unsafe impl Send for NotifyKey {}
 
     impl ConsentStoreSource {
         pub fn new() -> Self {
@@ -198,11 +208,18 @@ mod imp {
             if status.0 != 0 {
                 return Err(io::Error::from_raw_os_error(status.0 as i32));
             }
-            let event = CreateEventW(None, true, false, PCWSTR::null()).map_err(|e| {
+            // Auto-reset: WaitForSingleObject consumes the signal, so the
+            // event must be re-armed via RegNotifyChangeKeyValue each loop —
+            // which it already is. A manual-reset event would stay signaled
+            // after the first change and turn the monitor into a busy loop.
+            let event = CreateEventW(None, false, false, PCWSTR::null()).map_err(|e| {
                 let _ = RegCloseKey(key);
                 io::Error::other(format!("CreateEventW failed: {e}"))
             })?;
-            Ok(NotifyKey { key, event })
+            Ok(NotifyKey {
+                key: key.0 as isize,
+                event: event.0 as isize,
+            })
         }
     }
 
@@ -241,10 +258,10 @@ mod imp {
                     // Watch subkey create/delete AND value writes (the
                     // LastUsedTimeStop flip is a value write).
                     let status = RegNotifyChangeKeyValue(
-                        notify.key,
+                        notify.key(),
                         true,
                         REG_NOTIFY_FILTER(REG_NOTIFY_CHANGE_NAME.0 | REG_NOTIFY_CHANGE_LAST_SET.0),
-                        Some(notify.event),
+                        Some(notify.event()),
                         true,
                     );
                     if status.0 != 0 {
@@ -258,7 +275,7 @@ mod imp {
                         .min(INFINITE as u128 - 1)
                         .try_into()
                         .unwrap_or(INFINITE - 1);
-                    let _ = WaitForSingleObject(notify.event, ms); // timeout is a normal outcome
+                    let _ = WaitForSingleObject(notify.event(), ms); // timeout is a normal outcome
                     Ok(())
                 },
                 None => {
