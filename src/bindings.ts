@@ -37,6 +37,18 @@ async changeHoldThresholdMsSetting(ms: number) : Promise<Result<null, CommandErr
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * FR-002-07: whether a double-tap on the push-to-talk shortcut starts a
+ * hands-free session. Read at dispatch time; no re-registration needed.
+ */
+async changeDoubleTapEnabledSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_double_tap_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAudioFeedbackSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_audio_feedback_setting", { enabled }) };
@@ -245,6 +257,12 @@ async changePostProcessBaseUrlSetting(providerId: string, baseUrl: string) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Store a provider API key in the OS credential vault. An empty value means
+ * "remove the key" (the same thing clearing the field did when keys lived in
+ * `settings.json`). Returns an optional non-blocking format warning
+ * (FR-011-05); the key is saved regardless.
+ */
 async secretSet(providerId: string, secret: string) : Promise<Result<string | null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("secret_set", { providerId, secret }) };
@@ -253,6 +271,10 @@ async secretSet(providerId: string, secret: string) : Promise<Result<string | nu
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Delete a provider's key — vault entry plus any plaintext leftover still
+ * pending migration (FR-011-04).
+ */
 async secretClear(providerId: string) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("secret_clear", { providerId }) };
@@ -261,6 +283,10 @@ async secretClear(providerId: string) : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Masked presence hint (`••••` + a short trailing suffix) — never the key
+ * itself (FR-011-02).
+ */
 async secretHint(providerId: string) : Promise<Result<string | null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("secret_hint", { providerId }) };
@@ -1087,7 +1113,20 @@ shortcut_activation?: ShortcutActivation;
  * Hold-or-toggle only: a press held at least this long is push-to-talk,
  * anything shorter is a tap that locks recording on.
  */
-hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; show_whats_new_on_update?: boolean; 
+hold_threshold_ms?: number; 
+/**
+ * FR-002-07: two short taps (< 250 ms each, gap ≤ 350 ms) on the
+ * push-to-talk shortcut start a hands-free session. Only meaningful
+ * under `ShortcutActivation::PushToTalk` — toggle mode is hands-free
+ * on every press and hold-or-toggle already locks on a single tap.
+ */
+double_tap_enabled?: boolean; 
+/**
+ * Start/stop recording sounds. On by default per FR-001-13; users who
+ * already turned it off keep their stored `false` (migrations never
+ * overwrite an explicit preference).
+ */
+audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; show_whats_new_on_update?: boolean; 
 /**
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
@@ -1099,7 +1138,7 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number;
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1151,8 +1190,7 @@ flowbar_follow?: FlowbarFollow;
  * (0–1, FR-001-08). Persisted per position; multi-monitor placement is
  * derived from `flowbar_follow`.
  */
-flowbar_position_edge?: FlowbarEdge; 
-flowbar_position_offset?: number; 
+flowbar_position_edge?: FlowbarEdge; flowbar_position_offset?: number; 
 /**
  * Hide the Flow Bar while the foreground window covers the whole monitor
  * (FR-001-11), except during an active recording.
@@ -1180,23 +1218,86 @@ meeting_provider_id?: string | null;
  * Fallback STT provider tried when the primary fails (data-model
  * `transcription.fallback_provider`).
  */
-fallback_provider_id?: string | null }
+fallback_provider_id?: string | null; 
+/**
+ * Blocks every cloud-provider network call (FR-010-09 / FR-011-08;
+ * data-model `privacy.offline_mode`). Toggled from the tray menu
+ * (FR-010-14) and Privacy settings; the actual network gate lands with
+ * T-046.
+ */
+offline_mode?: boolean; 
+/**
+ * Meeting detection paused until this unix-ms timestamp (tray "Pausar
+ * detecção de reuniões por 1 h", FR-010-14); `None` when detection runs
+ * normally. A timestamp in the past counts as not paused. Consumed by
+ * the detector (T-061).
+ */
+meeting_detection_paused_until_ms?: number | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 /**
- * Serializable command error — the `error` half of the IPC envelope
- * (`contracts.md` §5). `code` is a stable, machine-readable identifier;
- * `message` is user-facing and never contains paths, stack traces, or
- * secrets.
+ * The error half of the IPC envelope — a stable `code` plus a
+ * user-friendly `message` (no paths, stack traces, or secrets).
  */
 export type CommandError = { code: CommandErrorCode; message: string }
 /**
- * Stable, machine-readable error codes for the IPC envelope.
+ * Stable, machine-readable error codes for the IPC envelope's `code`
+ * field. Serialized in `snake_case` (e.g. `secure_input_active`).
  */
-export type CommandErrorCode = "internal" | "not_found" | "invalid_input" | "unsupported" | "permission_denied" | "busy" | "secure_input_active" | "missing_api_key" | "audio_device" | "model" | "keyring" | "provider"
+export type CommandErrorCode = 
+/**
+ * Catch-all for failures that do not fit a more specific code.
+ */
+"internal" | 
+/**
+ * A referenced entity (provider, model, binding, prompt, history entry)
+ * does not exist.
+ */
+"not_found" | 
+/**
+ * Input rejected by validation at the system boundary.
+ */
+"invalid_input" | 
+/**
+ * Operation unsupported on this platform, build, or configuration.
+ */
+"unsupported" | 
+/**
+ * Missing an OS-level permission (accessibility, microphone, ...).
+ */
+"permission_denied" | 
+/**
+ * A mutually exclusive operation is already in progress.
+ */
+"busy" | 
+/**
+ * macOS Secure Input is active; the frontend maps this marker to a
+ * localized explanation.
+ */
+"secure_input_active" | 
+/**
+ * An API key is required but none is configured.
+ */
+"missing_api_key" | 
+/**
+ * Audio device/stream failures.
+ */
+"audio_device" | 
+/**
+ * Model download/load/unload/delete failures.
+ */
+"model" | 
+/**
+ * OS credential vault (keyring) failures.
+ */
+"keyring" | 
+/**
+ * External provider (HTTP) request failures.
+ */
+"provider"
 export type CustomSounds = { start: boolean; stop: boolean }
 export type EngineType = 
 /**
@@ -1205,7 +1306,13 @@ export type EngineType =
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
+/**
+ * Screen edge the Flow Bar is docked to (FR-001-08).
+ */
 export type FlowbarEdge = "bottom" | "left" | "right"
+/**
+ * Which monitor hosts the Flow Bar (FR-001-09).
+ */
 export type FlowbarFollow = 
 /**
  * Monitor of the foreground window (data-model `foreground_monitor`).
@@ -1219,12 +1326,11 @@ export type FlowbarFollow =
  * Always the primary monitor.
  */
 "primary_monitor"
+/**
+ * When the Flow Bar is on screen (FR-001-10).
+ */
 export type FlowbarVisibility = "always" | "during_recording" | "never"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
-/**
- * Coarse machine class, the row selector of FR-003-05's table.
- */
-export type HardwareTier = "gpu" | "capable_cpu" | "modest" | "weak"
 /**
  * What the OS probe found. Serialized to the frontend for diagnostics and the
  * suitability labels' tooltips.
@@ -1245,6 +1351,26 @@ gpu_names: string[];
  * report capacity (e.g. Metal on unified-memory Apple Silicon).
  */
 max_gpu_vram_mb: number; tier: HardwareTier }
+/**
+ * Coarse machine class, the row selector of FR-003-05's table.
+ */
+export type HardwareTier = 
+/**
+ * A GPU usable by transcribe.cpp (Vulkan/Metal) with >= 4 GB VRAM.
+ */
+"gpu" | 
+/**
+ * Modern CPU (AVX2-class SIMD) with >= 16 GB RAM.
+ */
+"capable_cpu" | 
+/**
+ * >= 8 GB RAM but neither of the above.
+ */
+"modest" | 
+/**
+ * Below 8 GB RAM — the UI also surfaces this as a "weak hardware" warning.
+ */
+"weak"
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
@@ -1255,12 +1381,18 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
-export type InsertionMethod = "auto" | "paste" | "paste_shift_insert" | "type" | "clipboard_only"
 /**
- * What `import_custom_model` returns: the registered entry plus the copied
- * file's hash for the UI to display (FR-003-07).
+ * Result of importing a user-provided model file (FR-003-07): the registry
+ * entry plus the file's SHA-256, which the UI displays for transparency.
  */
 export type ImportedModel = { model: ModelInfo; sha256: string }
+/**
+ * How a finished transcription reaches the target app (data-model
+ * `insertion_method`; FR-005). `Auto` is the v1 default (ADR-0002): the
+ * insertion layer picks per context. Schema only for now — the consumers are
+ * wired by T-031; until then the existing `paste_method` keeps driving paste.
+ */
+export type InsertionMethod = "auto" | "paste" | "paste_shift_insert" | "type" | "clipboard_only"
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -1319,6 +1451,12 @@ export type OverlayPosition = "top" | "bottom"
  * streaming mode (that is driven purely by model capability).
  */
 export type OverlayStyle = "none" | "minimal" | "live"
+/**
+ * IPC shape of a dictation row, kept stable for the frontend.
+ * Field names map onto the `dictations` table:
+ * `file_name`→`audio_path`, `timestamp`→`created_at`, `saved`→`flagged`,
+ * `transcription_text`→`raw_text`, `post_process_prompt`→`instruction`.
+ */
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
@@ -1408,7 +1546,27 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
-export type Suitability = "recommended" | "good_fit" | "heavy" | "not_advised"
+/**
+ * The per-model label FR-003-05 defines. Rendered as a badge/hint; it never
+ * blocks selection.
+ */
+export type Suitability = 
+/**
+ * The machine-appropriate default pick.
+ */
+"recommended" | 
+/**
+ * Expected to run well.
+ */
+"good_fit" | 
+/**
+ * Runs, but heavy for this machine.
+ */
+"heavy" | 
+/**
+ * Unlikely to run acceptably here.
+ */
+"not_advised"
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.
