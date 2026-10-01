@@ -120,6 +120,15 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       // FR-012-02 / AC-012-02: absent CLI agents stay listed but disabled,
       // with the install command as the hint.
       const status = cliAgents[provider.id];
+      // Experimental adapters can never run (the backend refuses to enable
+      // them) — listed, but permanently disabled.
+      if (status?.experimental) {
+        return {
+          value: provider.id,
+          label: `${provider.label} — ${t("settings.postProcessing.cliAgent.status.experimental")}`,
+          disabled: true,
+        };
+      }
       if (status && !status.detected) {
         return {
           value: provider.id,
@@ -131,10 +140,11 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
         };
       }
       if (status && !status.enabled) {
+        // A user-disabled agent stays *selectable* — its Enable toggle lives
+        // in the CliAgentFields that only render for the selected provider.
         return {
           value: provider.id,
           label: `${provider.label} — ${t("settings.postProcessing.cliAgent.status.disabled")}`,
-          disabled: true,
         };
       }
       return {

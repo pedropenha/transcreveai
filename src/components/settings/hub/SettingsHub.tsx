@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { GeneralSettings } from "../general/GeneralSettings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -19,9 +18,12 @@ import { LogLevelSelector } from "../debug/LogLevelSelector";
 import { RecordingBuffer } from "../debug/RecordingBuffer";
 import { SessionLimits } from "../SessionLimits";
 import { AssistantProvider } from "../AssistantProvider";
-
-const TABS = ["general", "system", "privacy", "advanced"] as const;
-type SettingsTab = (typeof TABS)[number];
+import {
+  onSettingsTabNavigate,
+  SETTINGS_TABS as TABS,
+  takePendingSettingsTab,
+  type SettingsTab,
+} from "./pendingSettingsTab";
 
 export const SettingsHub: React.FC = () => {
   const { t } = useTranslation();
@@ -30,19 +32,13 @@ export const SettingsHub: React.FC = () => {
   // F012: deep-linkable tab — the assistant panel's "Abrir configurações"
   // emits `hub://navigate` with `settingsTab` to land directly on the
   // tab carrying the assistant controls (App.tsx handles `section`).
+  // The same event is what navigates the sidebar here, so a mount-time
+  // listener can never see its own deep-link: `pendingSettingsTab` listens
+  // from module load and stashes the tab until this first effect drains it.
   useEffect(() => {
-    const unlisten = listen<{ settingsTab?: string }>(
-      "hub://navigate",
-      (event) => {
-        const settingsTab = event.payload.settingsTab;
-        if (settingsTab && (TABS as readonly string[]).includes(settingsTab)) {
-          setTab(settingsTab as SettingsTab);
-        }
-      },
-    );
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
+    const stashed = takePendingSettingsTab();
+    if (stashed) setTab(stashed);
+    return onSettingsTabNavigate(setTab);
   }, []);
 
   return (
