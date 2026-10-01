@@ -681,16 +681,22 @@ pub struct AppSettings {
     #[serde(default)]
     pub flowbar_snoozed_until_ms: Option<i64>,
     /// STT provider used for dictation (data-model `transcription.dictation_provider`).
-    /// `None` resolves to the local `selected_model` until the provider
-    /// registry (T-004) lands.
+    /// Stays `None` in v1: the dictation model is `selected_model` (the real
+    /// engine switch — `commands::models::set_stt_provider` writes it via
+    /// `switch_active_model`). Values use the `local_model:<model_id>`
+    /// pseudo-id for installed local models or a `providers` row id (v1.1+);
+    /// resolution lives in `stt::selection`.
     #[serde(default)]
     pub dictation_provider_id: Option<String>,
     /// STT provider used for meeting transcription (data-model
-    /// `transcription.meeting_provider`); `None` inherits `dictation_provider_id`.
+    /// `transcription.meeting_provider`); `None` inherits `dictation_provider_id`
+    /// (and thus `selected_model` in v1). `local_model:<model_id>` pins a
+    /// different local model for meetings (FR-003-03).
     #[serde(default)]
     pub meeting_provider_id: Option<String>,
     /// Fallback STT provider tried when the primary fails (data-model
-    /// `transcription.fallback_provider`).
+    /// `transcription.fallback_provider`). `local_model:<model_id>` in v1;
+    /// consumed when the orchestrator wires a real fallback.
     #[serde(default)]
     pub fallback_provider_id: Option<String>,
     /// Blocks every cloud-provider network call (FR-010-09 / FR-011-08;

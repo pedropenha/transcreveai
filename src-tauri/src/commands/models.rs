@@ -3,7 +3,10 @@ use crate::managers::hardware::ModelRecommendations;
 use crate::managers::model::{ImportedModel, ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
 use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
+use crate::stt::selection;
 use log::error;
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -120,15 +123,31 @@ pub async fn delete_model(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
     model_id: String,
 ) -> CommandResult<()> {
-    // If deleting the active model, unload it and clear the setting
-    let settings = get_settings(&app_handle);
+    // If deleting the active model, unload it and clear the setting. Any
+    // provider selection pointing at this model is cleared too (FR-003-08:
+    // "se era o provedor em uso, pedir outro" — the UI then asks for a new
+    // pick instead of silently keeping a dead reference).
+    let mut settings = get_settings(&app_handle);
+    let mut dirty = false;
+
     if settings.selected_model == model_id {
         transcription_manager
             .unload_model()
             .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))?;
-
-        let mut settings = get_settings(&app_handle);
         settings.selected_model = String::new();
+        dirty = true;
+    }
+    for field in [
+        &mut settings.dictation_provider_id,
+        &mut settings.meeting_provider_id,
+        &mut settings.fallback_provider_id,
+    ] {
+        if selection::provider_is_local_model(field.as_deref(), &model_id) {
+            *field = None;
+            dirty = true;
+        }
+    }
+    if dirty {
         write_settings(&app_handle, settings);
     }
 
@@ -224,6 +243,106 @@ pub async fn set_active_model(
     model_id: String,
 ) -> CommandResult<()> {
     switch_active_model(&app_handle, &model_id)
+}
+
+/// Which slot a STT provider selection fills (FR-003-03): dictation, meeting,
+/// or the optional fallback.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SttUsage {
+    Dictation,
+    Meeting,
+    Fallback,
+}
+
+/// Select the STT provider for a usage slot (FR-003-03).
+///
+/// In v1 the selectable providers are the installed local models, addressed as
+/// `local_model:<model_id>` (see `stt::selection`):
+/// - `Dictation` requires a `local_model:` id and is the real engine switch —
+///   it delegates to [`switch_active_model`] so the model is loaded and
+///   `selected_model` stays the single source of truth.
+/// - `Meeting`/`Fallback` accept `null` (meeting inherits dictation; fallback
+///   becomes unset) or a `local_model:` id persisted verbatim.
+/// - Any other id is a `providers`-table reference and is rejected with
+///   `NotFound` until cloud providers land in v1.1+.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_stt_provider(
+    app_handle: AppHandle,
+    model_manager: State<'_, Arc<ModelManager>>,
+    usage: SttUsage,
+    provider_id: Option<String>,
+) -> CommandResult<()> {
+    let model_id = provider_id
+        .as_deref()
+        .map(|id| {
+            selection::local_model_id(id).ok_or_else(|| {
+                CommandError::new(
+                    CommandErrorCode::NotFound,
+                    "Provider not found (v1 only supports local models)",
+                )
+            })
+        })
+        .transpose()?;
+
+    if let Some(model_id) = model_id {
+        let info = model_manager.get_model_info(model_id).ok_or_else(|| {
+            CommandError::new(
+                CommandErrorCode::NotFound,
+                format!("Model not found: {model_id}"),
+            )
+        })?;
+        if !info.is_downloaded {
+            return Err(CommandError::new(
+                CommandErrorCode::Model,
+                format!("Model not downloaded: {model_id}"),
+            ));
+        }
+    }
+
+    match (usage, model_id) {
+        (SttUsage::Dictation, Some(model_id)) => switch_active_model(&app_handle, model_id),
+        (SttUsage::Dictation, None) => Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "Dictation always needs a model — pick one instead of clearing it",
+        )),
+        (SttUsage::Meeting, model_id) => {
+            let mut settings = get_settings(&app_handle);
+            settings.meeting_provider_id = model_id.map(selection::local_model_provider_id);
+            write_settings(&app_handle, settings);
+            Ok(())
+        }
+        (SttUsage::Fallback, model_id) => {
+            let mut settings = get_settings(&app_handle);
+            settings.fallback_provider_id = model_id.map(selection::local_model_provider_id);
+            write_settings(&app_handle, settings);
+            Ok(())
+        }
+    }
+}
+
+/// Effective local model id per usage slot after inheritance is applied
+/// (FR-003-03): the `local_model:` ids in the `*_provider_id` settings decoded
+/// back to model ids, with meeting falling back to the dictation pick.
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct EffectiveSttModels {
+    pub dictation: Option<String>,
+    pub meeting: Option<String>,
+    pub fallback: Option<String>,
+}
+
+/// Read the effective per-usage model picks in one call — the same resolution
+/// the backend applies, so the UI does not have to reimplement inheritance.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_effective_stt_models(app_handle: AppHandle) -> CommandResult<EffectiveSttModels> {
+    let settings = get_settings(&app_handle);
+    Ok(EffectiveSttModels {
+        dictation: selection::effective_dictation_model_id(&settings),
+        meeting: selection::effective_meeting_model_id(&settings),
+        fallback: selection::effective_fallback_model_id(&settings),
+    })
 }
 
 #[tauri::command]

@@ -35,6 +35,7 @@ Catálogo (`resources/catalog.json`) guarda para cada modelo: id, motor, URL de 
 - **FR-003-01** Tela "Modelos & Provedores" lista provedores configurados com: tipo, modelo, local/nuvem, status (pronto, baixando, erro, sem chave), uso (ditado/reunião/fallback). Na v1 só há modelos locais.
 - **FR-003-02** (v1.1+) Adicionar provedor em nuvem: escolher tipo → colar chave (campo mascarado) → escolher/digitar modelo → **Testar conexão** (envia áudio embutido de ~2 s "teste de transcrição" e mostra texto retornado + latência) → salvar. Chave vai direto para o cofre (F011).
 - **FR-003-03** Selecionar, separadamente: provedor de **ditado**, provedor de **reuniões** e provedor de **fallback** (opcional). Na v1 a seleção escolhe entre os modelos locais instalados.
+  - _Nota de implementação (v1):_ sem linhas na tabela `providers`, a seleção usa o pseudo-id `local_model:<model_id>` nos campos `dictation_provider_id` / `meeting_provider_id` / `fallback_provider_id` das settings (`stt/selection.rs`). `meeting_provider_id` vazio herda a seleção de ditado; ditado sem provider próprio cai em `selected_model` (trocar o modelo de ditado é a troca real do motor). Ids sem o prefixo `local_model:` são chaves da tabela `providers` (v1.1+).
 - **FR-003-04** Com o **modo offline** ligado (F011), provedores em nuvem ficam desabilitados e a seleção cai no local; se não houver local, a UI avisa.
 
 ### Modelos locais
