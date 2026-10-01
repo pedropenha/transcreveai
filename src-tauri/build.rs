@@ -34,20 +34,33 @@ fn main() {
     // Must run after transcribe staging because that helper recreates transcribe-libs/.
     stage_vc_runtime_dlls();
 
-    embed_common_controls_manifest_for_tests();
+    // On Windows the manifest is emitted as a linker option (not inside
+    // tauri-build's resource.lib) so it reaches the lib's unit-test binary
+    // too — see embed_common_controls_manifest below.
+    embed_common_controls_manifest();
 
-    tauri_build::build()
+    let attributes = tauri_build::Attributes::new()
+        .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
+    tauri_build::try_build(attributes).expect("error while running tauri-build")
 }
 
-/// The app exe gets the Common Controls v6 manifest through tauri-build's
-/// `resource.rc`, but `cargo::rustc-link-arg-bins` does not cover the lib's
-/// unit-test binary — so `cargo test` produces an exe with no manifest. The
-/// loader then binds System32's comctl32 v5, which lacks `TaskDialogIndirect`,
-/// and the test binary dies on startup (STATUS_ENTRYPOINT_NOT_FOUND,
-/// 0xc0000139). Merging a minimal v6 manifest into test targets via the
-/// linker's /MANIFESTINPUT fixes `cargo test` on Windows.
+/// tauri-build embeds the app manifest (the Common-Controls v6 dependency)
+/// into `resource.lib`, but only links that lib into `bin` targets via
+/// `cargo:rustc-link-arg-bins` — the lib's unit-test binary gets nothing, so
+/// `cargo test` produces an exe with no manifest. The loader then binds
+/// System32's comctl32 v5, which lacks `TaskDialogIndirect`, and the test
+/// binary dies on startup (STATUS_ENTRYPOINT_NOT_FOUND, 0xc0000139).
+///
+/// Scoping the manifest with `rustc-link-arg-tests` does not fix this: cargo
+/// rejects the directive for crates without a `[[test]]` target and, even
+/// with one, does not apply it to the lib's unit-test binary. Instead the
+/// manifest is kept out of resource.lib (WindowsAttributes::
+/// new_without_app_manifest above — the default manifest content is exactly
+/// this comctl-v6 dependency) and handed to every linked target through the
+/// linker's /MANIFEST:EMBED + /MANIFESTINPUT options. Same bytes end up in
+/// the app exe and the test binary, with no duplicate RT_MANIFEST.
 #[cfg(target_os = "windows")]
-fn embed_common_controls_manifest_for_tests() {
+fn embed_common_controls_manifest() {
     const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <dependency>
@@ -59,17 +72,14 @@ fn embed_common_controls_manifest_for_tests() {
 </assembly>
 "#;
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let manifest = out_dir.join("test-manifest.xml");
-    std::fs::write(&manifest, MANIFEST).expect("write test manifest");
-    // Global link arg (bins AND the lib unit-test binary — `-tests` would
-    // only apply to explicit [[test]] targets, which this crate lacks). The
-    // linker merges it with tauri-build's embedded manifest for the app.
+    let manifest = out_dir.join("app-manifest.xml");
+    std::fs::write(&manifest, MANIFEST).expect("write app manifest");
     println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
     println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
 }
 
 #[cfg(not(target_os = "windows"))]
-fn embed_common_controls_manifest_for_tests() {}
+fn embed_common_controls_manifest() {}
 
 /// Stage the MSVC runtime DLLs into `transcribe-libs/` for app-local deployment.
 ///

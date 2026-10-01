@@ -161,19 +161,24 @@ impl SecretStore for OsSecretStore {
 }
 
 /// In-memory store for unit tests and CI-only dev builds. State is process
-/// local and never touches disk or the OS vault.
+/// local and never touches disk or the OS vault. Only reachable under
+/// `debug_assertions` (see `secret_store`), so it is compiled out of release
+/// builds.
+#[cfg(debug_assertions)]
 #[derive(Default)]
 pub struct MemorySecretStore {
     inner: Mutex<HashMap<String, String>>,
 }
 
 // Manual Debug so a log/inspect slip can never dump stored key material.
+#[cfg(debug_assertions)]
 impl fmt::Debug for MemorySecretStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MemorySecretStore").finish_non_exhaustive()
     }
 }
 
+#[cfg(debug_assertions)]
 impl SecretStore for MemorySecretStore {
     fn get(&self, provider_id: &str) -> Result<Option<String>, SecretError> {
         validate_provider_id(provider_id)?;
