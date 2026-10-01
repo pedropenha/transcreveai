@@ -772,6 +772,44 @@ async rescanLocalModels() : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Import a local `.gguf`/`.bin` model file into the models directory
+ * (FR-003-07): the file is format-checked, disk space is verified before the
+ * copy, and the SHA-256 comes back for display.
+ */
+async importModel(path: string) : Promise<Result<ImportedModel, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_model", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Hardware probe + per-model suitability labels (FR-003-05). GPU enumeration
+ * goes through the transcription engine's device list, so first call may load
+ * backend libraries — hence the blocking pool.
+ */
+async getModelRecommendations() : Promise<Result<ModelRecommendations, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_model_recommendations") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * SHA-256 of a downloaded model's file, computed on demand (FR-003-07 shows
+ * it for imported models; usable for any file-based model).
+ */
+async getModelSha256(modelId: string) : Promise<Result<string, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_model_sha256", { modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async updateMicrophoneMode(alwaysOn: boolean) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_microphone_mode", { alwaysOn }) };
@@ -1183,6 +1221,30 @@ export type FlowbarFollow =
 "primary_monitor"
 export type FlowbarVisibility = "always" | "during_recording" | "never"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
+/**
+ * Coarse machine class, the row selector of FR-003-05's table.
+ */
+export type HardwareTier = "gpu" | "capable_cpu" | "modest" | "weak"
+/**
+ * What the OS probe found. Serialized to the frontend for diagnostics and the
+ * suitability labels' tooltips.
+ */
+export type HardwareReport = { total_ram_mb: number; cpu_cores: number; 
+/**
+ * AVX2 on x86 hosts. Reported as `true` on aarch64, where NEON is a
+ * baseline guarantee — the field answers "does this CPU have modern SIMD",
+ * which is what the tier table actually needs.
+ */
+has_avx2: boolean; 
+/**
+ * Names of the GPU devices transcribe.cpp can use (Vulkan/Metal).
+ */
+gpu_names: string[]; 
+/**
+ * VRAM of the largest usable GPU; 0 when no GPU or the backend does not
+ * report capacity (e.g. Metal on unified-memory Apple Silicon).
+ */
+max_gpu_vram_mb: number; tier: HardwareTier }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
 /**
@@ -1194,6 +1256,11 @@ export type ImplementationChangeResult = { success: boolean;
  */
 reset_bindings: string[] }
 export type InsertionMethod = "auto" | "paste" | "paste_shift_insert" | "type" | "clipboard_only"
+/**
+ * What `import_custom_model` returns: the registered entry plus the copied
+ * file's hash for the UI to display (FR-003-07).
+ */
+export type ImportedModel = { model: ModelInfo; sha256: string }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -1204,6 +1271,16 @@ export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
+/**
+ * The whole "what does this machine look like and what should it run" bundle
+ * the model picker consumes in a single call.
+ */
+export type ModelRecommendations = { hardware: HardwareReport; 
+/**
+ * The first-run default (`large-v3-turbo`) as a registry id, when the
+ * catalog knows it. The UI preselects this without ever being forced to.
+ */
+default_model_id: string | null; labels: ModelSuitabilityEntry[] }
 /**
  * Where a model comes from and how Handy obtains it — the routing discriminant
  * for downloading and on-disk resolution.
@@ -1228,6 +1305,10 @@ sha256: string | null } } |
  * in a shared cache. Nothing to download.
  */
 "Local"
+/**
+ * One model's suitability label, joined to the model list by `model_id`.
+ */
+export type ModelSuitabilityEntry = { model_id: string; label: Suitability }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
@@ -1327,6 +1408,7 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
+export type Suitability = "recommended" | "good_fit" | "heavy" | "not_advised"
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.

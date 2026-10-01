@@ -1,5 +1,6 @@
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
-use crate::managers::model::{ModelInfo, ModelManager};
+use crate::managers::hardware::ModelRecommendations;
+use crate::managers::model::{ImportedModel, ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
 use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
 use log::error;
@@ -34,6 +35,53 @@ pub async fn rescan_local_models(model_manager: State<'_, Arc<ModelManager>>) ->
         .map_err(|e| {
             CommandError::logged(CommandErrorCode::Internal, "Model rescan task failed", e)
         })?
+        .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))
+}
+
+/// Import a local `.gguf`/`.bin` model file into the models directory
+/// (FR-003-07): the file is format-checked, disk space is verified before the
+/// copy, and the SHA-256 comes back for display.
+#[tauri::command]
+#[specta::specta]
+pub async fn import_model(
+    model_manager: State<'_, Arc<ModelManager>>,
+    path: String,
+) -> CommandResult<ImportedModel> {
+    let mm = model_manager.inner().clone();
+    tokio::task::spawn_blocking(move || mm.import_custom_model(std::path::Path::new(&path)))
+        .await
+        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Model import task failed", e))?
+        .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))
+}
+
+/// Hardware probe + per-model suitability labels (FR-003-05). GPU enumeration
+/// goes through the transcription engine's device list, so first call may load
+/// backend libraries — hence the blocking pool.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_model_recommendations(
+    model_manager: State<'_, Arc<ModelManager>>,
+) -> CommandResult<ModelRecommendations> {
+    let mm = model_manager.inner().clone();
+    tokio::task::spawn_blocking(move || Ok(mm.model_recommendations()))
+        .await
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Hardware probe task failed", e)
+        })?
+}
+
+/// SHA-256 of a downloaded model's file, computed on demand (FR-003-07 shows
+/// it for imported models; usable for any file-based model).
+#[tauri::command]
+#[specta::specta]
+pub async fn get_model_sha256(
+    model_manager: State<'_, Arc<ModelManager>>,
+    model_id: String,
+) -> CommandResult<String> {
+    let mm = model_manager.inner().clone();
+    tokio::task::spawn_blocking(move || mm.model_file_sha256(&model_id))
+        .await
+        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Model hash task failed", e))?
         .map_err(|e| CommandError::new(CommandErrorCode::Model, e.to_string()))
 }
 
