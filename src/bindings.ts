@@ -2147,7 +2147,18 @@ meeting_toast_sound?: boolean;
  * still records the blocks — they stay pending in `meeting_blocks` for
  * T-067's post-processing pass.
  */
-meeting_live_transcript_enabled?: boolean }
+meeting_live_transcript_enabled?: boolean; 
+/**
+ * FR-012-16 / AC-012-04: the assistant panel's dragged position
+ * (physical px + monitor context). `None` → the default dock position
+ * on the cursor's monitor is used on every open.
+ */
+assistant_panel_position?: AssistantPanelPosition | null; 
+/**
+ * FR-012-16: the "Fixar" toggle — the panel stays visible but ignores
+ * drags. Persisted with the position.
+ */
+assistant_panel_pinned?: boolean }
 /**
  * One conversation turn as kept in memory and rendered by the panel.
  */
@@ -2157,6 +2168,26 @@ export type AssistantMessage = {
  * payload stays a plain string union in TypeScript.
  */
 role: string; content: string }
+/**
+ * Persisted assistant-panel placement (F012/T-092, FR-012-16 / AC-012-04):
+ * the window origin in **physical** pixels plus enough monitor context to
+ * land on the primary monitor's "same relative spot" when the saved monitor
+ * is gone. Per-field defaults keep a partially-stored object deserializable.
+ */
+export type AssistantPanelPosition = { 
+/**
+ * Window top-left corner in physical px at save time.
+ */
+x: number; y: number; 
+/**
+ * `x`/`y` as fractions of the containing monitor's work area (0–1) —
+ * the fallback anchor used when that monitor no longer exists.
+ */
+rel_x: number; rel_y: number; 
+/**
+ * The monitor the panel was on, when the OS reports a name.
+ */
+monitor_name: string | null }
 /**
  * Panel lifecycle phase. `cancelled` is a resting state (the last in-flight
  * call was aborted); the next send/dictation moves on.
@@ -2283,13 +2314,20 @@ binary: string;
  */
 detected: boolean; 
 /**
- * Per-provider enable flag (FR-012-05).
+ * Per-provider enable flag (FR-012-05); always `false` while
+ * `experimental` is set.
  */
 enabled: boolean; 
 /**
- * Resolved absolute path when detected — shown as a hint, never logged.
+ * File name of the resolved binary (`codex.cmd`, …) when detected —
+ * never the full path, which would leak the user's home dir/username.
  */
-binary_path?: string | null; 
+binary_name?: string | null; 
+/**
+ * No verified non-mutating headless mode — the UI should keep this
+ * adapter listed but disabled/experimental.
+ */
+experimental: boolean; 
 /**
  * Literal install command the UI shows when `detected` is false.
  */
