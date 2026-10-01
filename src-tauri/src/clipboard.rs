@@ -772,6 +772,17 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
     auto_submit && paste_method != PasteMethod::None
 }
 
+/// Send the configured auto-submit key (Enter / Ctrl+Enter / Cmd+Enter) on
+/// its own — no paste. Used by the spoken "enviar" command (FR-002-17,
+/// AC-002-10), which submits after the dictation text is inserted.
+pub fn send_auto_submit_key(app_handle: &AppHandle) -> Result<(), String> {
+    let settings = get_settings(app_handle);
+    std::thread::sleep(Duration::from_millis(50));
+    with_enigo(app_handle, |enigo| {
+        send_return_key(enigo, settings.auto_submit_key)
+    })
+}
+
 pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let settings = get_settings(&app_handle);
     let paste_method = settings.paste_method;

@@ -1158,6 +1158,18 @@ max_dictation_minutes?: number;
  */
 session_queue_size?: number; 
 /**
+ * Double tap on the push-to-talk shortcut starts hands-free dictation
+ * (FR-002-07).
+ */
+double_tap_enabled?: boolean; 
+/**
+ * Trailing voice "send" phrases per language (FR-002-17): a dictation
+ * ending in one of these is inserted followed by `auto_submit_key`.
+ * The `"default"` list always applies; a language key ("pt", "en") adds
+ * phrases for that language (the `pt` list also covers `pt-BR`).
+ */
+voice_submit_phrases?: Partial<{ [key in string]: string[] }>; 
+/**
  * Flow Bar visibility policy: always / only while recording / never
  * (FR-001-10). `Never` still leaves hotkeys and tray feedback working.
  */

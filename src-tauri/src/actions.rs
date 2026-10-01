@@ -3,12 +3,15 @@ use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
 use crate::managers::audio::AudioRecordingManager;
-use crate::managers::history::HistoryManager;
+use crate::managers::history::{HistoryManager, SessionEntry};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
+use crate::transcription_coordinator::{
+    PipelineOutcome, PipelinePhase, SessionResultEvent, SESSION_RESULT_EVENT,
+};
 use crate::tray::{set_tray_state, TrayIconState};
 use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
@@ -33,13 +36,32 @@ struct RecordingErrorEvent {
 }
 
 /// Drop guard that finishes the transcription pipeline, including immediate
-/// model unloading on early exits.
-struct FinishGuard(AppHandle, Arc<TranscriptionManager>);
+/// model unloading on early exits. `outcome` is what the pipeline reports to
+/// the coordinator — `Done` by default, set explicitly on the
+/// empty/failed/cancelled early-exit paths.
+struct FinishGuard {
+    app: AppHandle,
+    tm: Arc<TranscriptionManager>,
+    outcome: PipelineOutcome,
+}
+impl FinishGuard {
+    fn new(app: AppHandle, tm: Arc<TranscriptionManager>) -> Self {
+        Self {
+            app,
+            tm,
+            outcome: PipelineOutcome::Done,
+        }
+    }
+    /// Report how this pipeline run ended (FR-002-09 outcomes).
+    fn report(&mut self, outcome: PipelineOutcome) {
+        self.outcome = outcome;
+    }
+}
 impl Drop for FinishGuard {
     fn drop(&mut self) {
-        self.1.maybe_unload_immediately("transcription session");
-        if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
-            c.notify_processing_finished();
+        self.tm.maybe_unload_immediately("transcription session");
+        if let Some(c) = self.app.try_state::<TranscriptionCoordinator>() {
+            c.notify_pipeline_finished(self.outcome.clone());
         }
         // The pipeline just freed its large transient buffers (captured PCM,
         // WAV copy, engine scratch); hand the cached pages back to the OS so
@@ -93,6 +115,88 @@ fn build_system_prompt(prompt_template: &str) -> String {
 /// transcription".
 fn is_blank_transcription(transcription: &str) -> bool {
     transcription.trim().is_empty()
+}
+
+/// FR-002-14: captures shorter than this are discarded without calling the
+/// provider — the Flow Bar flashes "Nada ouvido" instead.
+const MIN_SESSION_DURATION: Duration = Duration::from_millis(300);
+
+/// FR-002-17 / AC-002-10: a spoken "send" command as the last words of a
+/// dictation ("… enviar", "… send", "… press enter") is a session command,
+/// not dictation text: it is stripped and the configured auto-submit key is
+/// sent after insertion. Returns the cleaned text when a trailing command
+/// was found, `None` otherwise (or when stripping would leave no text).
+///
+/// Phrase lists come from `settings.voice_submit_phrases`: the `"default"`
+/// list always applies, and a language key covers the matching language —
+/// `"pt"` also covers `"pt-BR"`.
+fn strip_voice_send_command(
+    text: &str,
+    language: &str,
+    phrases: &HashMap<String, Vec<String>>,
+) -> Option<String> {
+    let tail = text.trim_end();
+    if tail.is_empty() {
+        return None;
+    }
+    // Keep the terminal punctuation the model produced so the stripped text
+    // still ends a sentence ("… minutos enviar." → "… minutos.").
+    let terminal = tail.chars().last().filter(|c| matches!(c, '.' | '!' | '?'));
+    let tail = tail.trim_end_matches(['.', '!', '?', ',', ';', ':', '…', '"', '\'', ')', ']']);
+    if tail.is_empty() {
+        return None;
+    }
+
+    // Candidate phrases: longest first so "press enter" wins over "enter".
+    let lang_tag = language.to_lowercase();
+    let lang_prefix = lang_tag.split(['-', '_']).next().unwrap_or("");
+    let mut candidates: Vec<String> = Vec::new();
+    for key in ["default", lang_tag.as_str(), lang_prefix] {
+        if key.is_empty() {
+            continue;
+        }
+        if let Some(list) = phrases.get(key) {
+            candidates.extend(list.iter().map(|p| p.trim().to_lowercase()));
+        }
+    }
+    candidates.sort_by_key(|p| std::cmp::Reverse(p.chars().count()));
+    candidates.dedup();
+
+    let tail_lower_chars: Vec<char> = tail.to_lowercase().chars().collect();
+    for phrase in candidates {
+        if phrase.is_empty() {
+            continue;
+        }
+        let phrase_chars: Vec<char> = phrase.chars().collect();
+        if !tail_lower_chars.ends_with(&phrase_chars) {
+            continue;
+        }
+        // The command must start on a word boundary — preceded by whitespace
+        // or at the very start of the dictation.
+        let boundary = tail_lower_chars.len() - phrase_chars.len();
+        if boundary > 0 && !tail_lower_chars[boundary - 1].is_whitespace() {
+            continue;
+        }
+        let strip_chars = tail.chars().count() - phrase_chars.len();
+        let mut cleaned: String = tail.chars().take(strip_chars).collect();
+        cleaned = cleaned.trim_end().to_string();
+        if cleaned.is_empty() {
+            return None;
+        }
+        if let Some(punct) = terminal {
+            if !cleaned.ends_with(['.', '!', '?']) {
+                cleaned.push(punct);
+            }
+        }
+        return Some(cleaned);
+    }
+    None
+}
+
+/// Compact an error for the `session://state` `error` field and the
+/// dictation `error_code` column — never longer than needed for the UI.
+fn short_error(err: &impl std::fmt::Display) -> String {
+    err.to_string().chars().take(160).collect()
 }
 
 async fn complete_unless_cancelled<F, C>(operation: F, is_cancelled: C) -> Option<F::Output>
@@ -687,9 +791,15 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
+        // The session the pipeline is about to work: its id rides on
+        // `session://result` and its capture start feeds `duration_ms` and
+        // the FR-002-14 minimum-duration discard.
+        let session = app
+            .try_state::<TranscriptionCoordinator>()
+            .and_then(|c| c.current_session());
 
         tauri::async_runtime::spawn(async move {
-            let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
+            let mut finish = FinishGuard::new(ah.clone(), Arc::clone(&tm));
             debug!(
                 "Starting async transcription task for binding: {}",
                 binding_id
@@ -708,16 +818,25 @@ impl ShortcutAction for TranscribeAction {
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
+                    finish.report(PipelineOutcome::Cancelled);
                     return;
                 }
 
-                if samples.is_empty() {
-                    debug!("Recording produced no audio samples; skipping persistence");
+                // FR-002-14: a session shorter than 300 ms — or one the VAD
+                // left with no speech — is discarded without calling the
+                // provider; the coordinator shows "Nada ouvido" on the
+                // Flow Bar.
+                let too_short = session
+                    .as_ref()
+                    .is_some_and(|s| s.capture_started_at.elapsed() < MIN_SESSION_DURATION);
+                if samples.is_empty() || too_short {
+                    debug!("Recording produced nothing usable; discarding session");
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
+                    finish.report(PipelineOutcome::Empty);
                 } else {
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
@@ -773,8 +892,15 @@ impl ShortcutAction for TranscribeAction {
                         debug!("Transcription operation cancelled before output handling");
                         utils::hide_recording_overlay(&ah);
                         set_tray_state(&ah, TrayIconState::Idle);
+                        finish.report(PipelineOutcome::Cancelled);
                         return;
                     }
+
+                    let settings = get_settings(&ah);
+                    let session_duration_ms = session
+                        .as_ref()
+                        .map(|s| s.capture_started_at.elapsed().as_millis() as i64)
+                        .unwrap_or_default();
 
                     match transcription_result {
                         Ok(transcription) => {
@@ -783,6 +909,27 @@ impl ShortcutAction for TranscribeAction {
                                 transcription_time.elapsed(),
                                 utils::redact_text(&transcription)
                             );
+
+                            // Raw text exists — Transcribing → Processing
+                            // (FR-002-09), even when no post-processing runs.
+                            if let Some(c) = ah.try_state::<TranscriptionCoordinator>() {
+                                c.notify_pipeline_phase(PipelinePhase::Processing);
+                            }
+
+                            // FR-002-17 / AC-002-10: a trailing spoken "send"
+                            // command is a session command — strip it before
+                            // the text pipeline so post-processing and
+                            // history never see it; Enter goes out after the
+                            // insertion below.
+                            let language = resolve_effective_language(&ah, &settings);
+                            let (transcription, spoken_submit) = match strip_voice_send_command(
+                                &transcription,
+                                &language,
+                                &settings.voice_submit_phrases,
+                            ) {
+                                Some(cleaned) => (cleaned, true),
+                                None => (transcription, false),
+                            };
 
                             if post_process {
                                 if use_streaming_overlay {
@@ -800,6 +947,7 @@ impl ShortcutAction for TranscribeAction {
                                 debug!("Transcription operation cancelled during output handling");
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                finish.report(PipelineOutcome::Cancelled);
                                 return;
                             };
 
@@ -807,18 +955,24 @@ impl ShortcutAction for TranscribeAction {
                                 debug!("Transcription operation cancelled before paste");
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                finish.report(PipelineOutcome::Cancelled);
                                 return;
                             }
 
                             // Save to history if WAV was saved
                             if wav_saved {
-                                if let Err(err) = hm.save_entry(
-                                    file_name,
-                                    transcription,
-                                    post_process,
-                                    processed.post_processed_text.clone(),
-                                    processed.post_process_prompt.clone(),
-                                ) {
+                                if let Err(err) = hm.save_session_entry(SessionEntry {
+                                    file_name: Some(file_name.clone()),
+                                    raw_text: transcription.clone(),
+                                    post_processed_text: processed.post_processed_text.clone(),
+                                    post_process_prompt: processed.post_process_prompt.clone(),
+                                    post_process_requested: post_process,
+                                    status: "inserted".to_string(),
+                                    error_code: None,
+                                    duration_ms: session_duration_ms,
+                                    language: Some(settings.selected_language.clone()),
+                                    stt_provider_id: Some(settings.selected_model.clone()),
+                                }) {
                                     error!("Failed to save history entry: {}", err);
                                 }
                             }
@@ -826,11 +980,27 @@ impl ShortcutAction for TranscribeAction {
                             if processed.final_text.is_empty() {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                finish.report(PipelineOutcome::Empty);
                             } else {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
                                 let final_text = processed.final_text;
                                 let rm_for_paste = Arc::clone(&rm);
+                                // Final text exists — Processing → Inserting
+                                // (FR-002-09).
+                                if let Some(c) = ah.try_state::<TranscriptionCoordinator>() {
+                                    c.notify_pipeline_phase(PipelinePhase::Inserting);
+                                }
+                                let session_id =
+                                    session.as_ref().map(|s| s.id.clone()).unwrap_or_default();
+                                let can_insert =
+                                    settings.paste_method != crate::settings::PasteMethod::None;
+                                // The auto-submit setting already sends the
+                                // submit key after every insertion; the
+                                // spoken "enviar" only needs its own send
+                                // when that setting is off.
+                                let need_spoken_submit =
+                                    spoken_submit && !(settings.auto_submit && can_insert);
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");
@@ -839,16 +1009,45 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
-                                    match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(()) => debug!(
-                                            "Text pasted successfully in {:?}",
-                                            paste_time.elapsed()
-                                        ),
+                                    let inserted = match utils::paste(
+                                        final_text.clone(),
+                                        ah_clone.clone(),
+                                    ) {
+                                        Ok(()) => {
+                                            debug!(
+                                                "Text pasted successfully in {:?}",
+                                                paste_time.elapsed()
+                                            );
+                                            if need_spoken_submit {
+                                                // FR-002-17: the spoken
+                                                // "enviar" submits after the
+                                                // insertion (AC-002-10).
+                                                if let Err(e) =
+                                                    crate::clipboard::send_auto_submit_key(
+                                                        &ah_clone,
+                                                    )
+                                                {
+                                                    warn!(
+                                                        "Voice 'send' command: auto-submit failed: {e}"
+                                                    );
+                                                }
+                                            }
+                                            can_insert
+                                        }
                                         Err(e) => {
                                             error!("Failed to paste transcription: {}", e);
                                             let _ = ah_clone.emit("paste-error", ());
+                                            false
                                         }
-                                    }
+                                    };
+                                    let _ = ah_clone.emit(
+                                        SESSION_RESULT_EVENT,
+                                        SessionResultEvent {
+                                            session_id,
+                                            final_text,
+                                            inserted,
+                                        },
+                                    );
                                     utils::hide_recording_overlay(&ah_clone);
                                     set_tray_state(&ah_clone, TrayIconState::Idle);
                                 })
@@ -866,6 +1065,7 @@ impl ShortcutAction for TranscribeAction {
                                 );
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                finish.report(PipelineOutcome::Cancelled);
                                 return;
                             }
 
@@ -873,20 +1073,39 @@ impl ShortcutAction for TranscribeAction {
                             // Surface the failure to the UI (toast). The full
                             // message is also in transcreve-ai.log via the line above.
                             let _ = ah.emit("transcription-error", err.to_string());
-                            // Save entry with empty text so user can retry
+                            // AC-002-09 / FR-002-18: keep the WAV and record
+                            // the session as `failed` with its error so
+                            // history can offer "Tentar novamente".
                             if wav_saved {
-                                if let Err(save_err) = hm.save_entry(
-                                    file_name,
-                                    String::new(),
-                                    post_process,
-                                    None,
-                                    None,
-                                ) {
+                                if let Err(save_err) = hm.save_session_entry(SessionEntry {
+                                    file_name: Some(file_name.clone()),
+                                    raw_text: String::new(),
+                                    post_processed_text: None,
+                                    post_process_prompt: None,
+                                    post_process_requested: post_process,
+                                    status: "failed".to_string(),
+                                    error_code: Some(short_error(&err)),
+                                    duration_ms: session_duration_ms,
+                                    language: Some(settings.selected_language.clone()),
+                                    stt_provider_id: Some(settings.selected_model.clone()),
+                                }) {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }
                             }
+                            let _ = ah.emit(
+                                SESSION_RESULT_EVENT,
+                                SessionResultEvent {
+                                    session_id: session
+                                        .as_ref()
+                                        .map(|s| s.id.clone())
+                                        .unwrap_or_default(),
+                                    final_text: String::new(),
+                                    inserted: false,
+                                },
+                            );
                             utils::hide_recording_overlay(&ah);
                             set_tray_state(&ah, TrayIconState::Idle);
+                            finish.report(PipelineOutcome::Failed(short_error(&err)));
                         }
                     }
                 }
@@ -896,6 +1115,7 @@ impl ShortcutAction for TranscribeAction {
                 tm.cancel_stream();
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
+                finish.report(PipelineOutcome::Cancelled);
             }
         });
 
@@ -903,6 +1123,43 @@ impl ShortcutAction for TranscribeAction {
             "TranscribeAction::stop completed in {:?}",
             stop_time.elapsed()
         );
+    }
+}
+
+// Paste-Last Action (FR-002-19): re-insert the `final_text` of the most
+// recent delivered session (inserted / copied).
+struct PasteLastAction;
+
+impl ShortcutAction for PasteLastAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let hm = app.state::<Arc<HistoryManager>>();
+        match hm.get_latest_completed_entry() {
+            Ok(Some(entry)) => {
+                let text = entry
+                    .post_processed_text
+                    .unwrap_or(entry.transcription_text);
+                if text.trim().is_empty() {
+                    debug!("Paste-last requested but the last entry has no text");
+                    return;
+                }
+                let ah = app.clone();
+                let ah_for_paste = ah.clone();
+                if let Err(e) = ah.run_on_main_thread(move || {
+                    if let Err(e) = utils::paste(text, ah_for_paste.clone()) {
+                        error!("Failed to re-paste last transcription: {}", e);
+                        let _ = ah_for_paste.emit("paste-error", ());
+                    }
+                }) {
+                    error!("Failed to schedule paste-last: {:?}", e);
+                }
+            }
+            Ok(None) => debug!("Paste-last requested but history is empty"),
+            Err(e) => warn!("Failed to look up last transcription: {}", e),
+        }
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Nothing to do on release for paste-last
     }
 }
 
@@ -960,6 +1217,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
+        "paste_last".to_string(),
+        Arc::new(PasteLastAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
     );
@@ -970,9 +1231,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 mod tests {
     use super::{
         complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block,
+        strip_think_block, strip_voice_send_command,
     };
     use crate::settings::OverlayStyle;
+    use std::collections::HashMap;
     use std::future;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -1052,5 +1314,72 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::Live, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
+    }
+
+    fn voice_phrases() -> HashMap<String, Vec<String>> {
+        HashMap::from([
+            (
+                "default".to_string(),
+                vec!["send".into(), "press enter".into(), "enviar".into()],
+            ),
+            ("pt".to_string(), vec!["enviar".into()]),
+            ("en".to_string(), vec!["send".into(), "press enter".into()]),
+        ])
+    }
+
+    /// AC-002-10: "vou chegar em 5 minutos enviar" inserts "Vou chegar em 5
+    /// minutos." and queues the submit key.
+    #[test]
+    fn voice_send_command_is_stripped_and_punctuation_kept() {
+        let phrases = voice_phrases();
+        assert_eq!(
+            strip_voice_send_command("Vou chegar em 5 minutos enviar.", "pt-BR", &phrases),
+            Some("Vou chegar em 5 minutos.".to_string())
+        );
+        assert_eq!(
+            strip_voice_send_command("Vou chegar em 5 minutos enviar", "pt", &phrases),
+            Some("Vou chegar em 5 minutos".to_string())
+        );
+        assert_eq!(
+            strip_voice_send_command("see you soon send", "en", &phrases),
+            Some("see you soon".to_string())
+        );
+        // The default list applies to every language.
+        assert_eq!(
+            strip_voice_send_command("vou chegar enviar", "auto", &phrases),
+            Some("vou chegar".to_string())
+        );
+    }
+
+    #[test]
+    fn voice_send_command_requires_trailing_word_boundary() {
+        let phrases = voice_phrases();
+        // Not at the end of the dictation — plain dictation text.
+        assert_eq!(
+            strip_voice_send_command("enviar isso depois", "pt", &phrases),
+            None
+        );
+        // Mid-word: "enviarei" must not match "enviar".
+        assert_eq!(
+            strip_voice_send_command("vou enviarei", "pt", &phrases),
+            None
+        );
+        // No command at all.
+        assert_eq!(
+            strip_voice_send_command("vou chegar em 5 minutos", "pt", &phrases),
+            None
+        );
+        // A bare command word leaves nothing to insert.
+        assert_eq!(strip_voice_send_command("enviar", "pt", &phrases), None);
+        assert_eq!(strip_voice_send_command("", "pt", &phrases), None);
+    }
+
+    #[test]
+    fn voice_send_command_prefers_longest_phrase() {
+        let phrases = voice_phrases();
+        assert_eq!(
+            strip_voice_send_command("finish now press enter", "en", &phrases),
+            Some("finish now".to_string())
+        );
     }
 }

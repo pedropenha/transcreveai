@@ -65,6 +65,27 @@ impl From<Dictation> for HistoryEntry {
     }
 }
 
+/// Full dictation-session row (FR-002-18, AC-002-09): a `failed` session
+/// keeps `status = "failed"`, the `error_code`, and the preserved `file_name`
+/// so the history UI can offer a retry against the retained WAV.
+#[derive(Clone, Debug, Default)]
+pub struct SessionEntry {
+    /// WAV file name inside the recordings directory (`None` when no audio
+    /// was captured, e.g. a session aborted before recording started).
+    pub file_name: Option<String>,
+    pub raw_text: String,
+    pub post_processed_text: Option<String>,
+    pub post_process_prompt: Option<String>,
+    pub post_process_requested: bool,
+    /// `inserted` | `copied` | `failed` | `cancelled` | `saved_note`.
+    pub status: String,
+    pub error_code: Option<String>,
+    /// Captured audio duration in milliseconds (0 when unknown).
+    pub duration_ms: i64,
+    pub language: Option<String>,
+    pub stt_provider_id: Option<String>,
+}
+
 pub struct HistoryManager {
     app_handle: AppHandle,
     recordings_dir: PathBuf,
@@ -111,28 +132,27 @@ impl HistoryManager {
         &self.recordings_dir
     }
 
-    /// Save a new history entry to the database.
-    /// The WAV file should already have been written to the recordings directory.
-    pub fn save_entry(
-        &self,
-        file_name: String,
-        transcription_text: String,
-        post_process_requested: bool,
-        post_processed_text: Option<String>,
-        post_process_prompt: Option<String>,
-    ) -> Result<HistoryEntry> {
+    /// Persist a full session row — including `failed` sessions whose WAV is
+    /// kept for retry (AC-002-09). The WAV, when present, should already have
+    /// been written to the recordings directory.
+    pub fn save_session_entry(&self, session: SessionEntry) -> Result<HistoryEntry> {
         let timestamp = Utc::now().timestamp();
         let title = self.format_timestamp_title(timestamp);
 
         let conn = self.get_connection()?;
         let repo = SqliteDictationRepository::new(&conn);
 
-        let mut new = NewDictation::new(transcription_text, Some(file_name));
+        let mut new = NewDictation::new(session.raw_text, session.file_name);
         new.created_at = Some(timestamp);
         new.title = title;
-        new.post_processed_text = post_processed_text;
-        new.instruction = post_process_prompt;
-        new.post_process_requested = post_process_requested;
+        new.post_processed_text = session.post_processed_text;
+        new.instruction = session.post_process_prompt;
+        new.post_process_requested = session.post_process_requested;
+        new.status = session.status;
+        new.error_code = session.error_code;
+        new.duration_ms = session.duration_ms;
+        new.language = session.language;
+        new.stt_provider_id = session.stt_provider_id;
 
         let entry = HistoryEntry::from(repo.insert(&new)?);
 
@@ -168,6 +188,9 @@ impl HistoryManager {
             &transcription_text,
             post_processed_text.as_deref(),
             post_process_prompt.as_deref(),
+            // A successful retry resolves a previous `failed` status
+            // (AC-002-09) — the row rejoins the delivered history.
+            "inserted",
         )
         .map_err(|e| anyhow!("Failed to update history entry {}: {}", id, e))?;
 
@@ -317,12 +340,9 @@ impl HistoryManager {
         Ok(repo.latest()?.map(HistoryEntry::from))
     }
 
-    /// Get the latest entry with non-empty transcription text.
-    ///
-    /// No caller today: the tray's "copy last transcript" item was removed in
-    /// the FR-010-14 menu rework; the Flow Bar context menu ("Colar última
-    /// transcrição", FR-001-07, T-040) is its next consumer.
-    #[allow(dead_code)]
+    /// Get the latest entry with non-empty transcription text — used by the
+    /// "Colar última transcrição" shortcut (FR-002-19) to re-insert the most
+    /// recent delivered `final_text`.
     pub fn get_latest_completed_entry(&self) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
         Self::get_latest_completed_entry_with_conn(&conn)
