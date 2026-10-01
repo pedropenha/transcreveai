@@ -309,3 +309,50 @@ pub fn paste_text_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+/// FR-002-04 "menu mask key": inject an inert press+release of the
+/// unassigned virtual key `0xE8`. Windows opens the Start menu (or focuses
+/// the menu bar, for Alt) when a Win/Alt press→release pair passes with no
+/// intervening key; since modifier-only hotkeys must keep their edges
+/// flowing to the OS, firing the mask while such a hold is active makes
+/// the hold read as a chord instead of a tap.
+///
+/// The VK maps to nothing in handy-keys (`vk_to_modifier`/`map_key` both
+/// return `None`), so the injected events never reach the matcher and this
+/// needs no [`InjectionGuard`]. Called from the shortcut manager thread;
+/// a failure is benign — worst case is the pre-mask behavior, the shell
+/// menu opening on release.
+#[cfg(target_os = "windows")]
+pub fn send_menu_mask_key() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        VIRTUAL_KEY,
+    };
+
+    /// Unassigned VK; the same value AutoHotkey and handy-keys mask with.
+    const MENU_MASK_VK: u16 = 0xE8;
+    /// `dwExtraInfo` marker ("TCMK" in ASCII), distinct from handy-keys'
+    /// own so our injections stay attributable in hook logs.
+    const MENU_MASK_EXTRA_INFO: usize = 0x5443_4D4B;
+
+    let input = |flags: KEYBD_EVENT_FLAGS| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(MENU_MASK_VK),
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: MENU_MASK_EXTRA_INFO,
+            },
+        },
+    };
+    let inputs = [input(KEYBD_EVENT_FLAGS(0)), input(KEYEVENTF_KEYUP)];
+    // SAFETY: `inputs` is a valid stack array of INPUTs that outlives the call.
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        // Rare (e.g. UIPI filtering); the cost is the pre-mask behavior:
+        // the shell may open its menu when the modifier is released.
+        log::warn!("menu mask key injection failed");
+    }
+}

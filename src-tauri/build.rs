@@ -37,6 +37,7 @@ fn main() {
     embed_common_controls_manifest_for_tests();
 
     tauri_build::build()
+
 }
 
 /// The app exe gets the Common Controls v6 manifest through tauri-build's

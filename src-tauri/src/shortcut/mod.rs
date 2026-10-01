@@ -555,6 +555,17 @@ pub fn change_hold_threshold_ms_setting(app: AppHandle, ms: u64) -> CommandResul
     Ok(())
 }
 
+/// FR-002-07: whether a double-tap on the push-to-talk shortcut starts a
+/// hands-free session. Read at dispatch time; no re-registration needed.
+#[tauri::command]
+#[specta::specta]
+pub fn change_double_tap_enabled_setting(app: AppHandle, enabled: bool) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    settings.double_tap_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_audio_feedback_setting(app: AppHandle, enabled: bool) -> CommandResult<()> {

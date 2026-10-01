@@ -419,6 +419,12 @@ pub struct AppSettings {
     /// anything shorter is a tap that locks recording on.
     #[serde(default = "default_hold_threshold_ms")]
     pub hold_threshold_ms: u64,
+    /// FR-002-07: two short taps (< 250 ms each, gap ≤ 350 ms) on the
+    /// push-to-talk shortcut start a hands-free session. Only meaningful
+    /// under `ShortcutActivation::PushToTalk` — toggle mode is hands-free
+    /// on every press and hold-or-toggle already locks on a single tap.
+    #[serde(default = "default_double_tap_enabled")]
+    pub double_tap_enabled: bool,
     /// Start/stop recording sounds. On by default per FR-001-13; users who
     /// already turned it off keep their stored `false` (migrations never
     /// overwrite an explicit preference).
@@ -643,6 +649,12 @@ fn default_settings_schema_version() -> u32 {
 
 fn default_hold_threshold_ms() -> u64 {
     300
+}
+
+fn default_double_tap_enabled() -> bool {
+    // The spec's hands-free gesture is a double-tap on the PTT shortcut
+    // (F002 "Atalhos padrão"), so it is on by default.
+    true
 }
 
 fn default_always_on_microphone() -> bool {
@@ -1101,6 +1113,7 @@ pub fn get_default_settings() -> AppSettings {
         bindings,
         shortcut_activation: ShortcutActivation::default(),
         hold_threshold_ms: default_hold_threshold_ms(),
+        double_tap_enabled: default_double_tap_enabled(),
         audio_feedback: default_audio_feedback(),
         audio_feedback_volume: default_audio_feedback_volume(),
         sound_theme: default_sound_theme(),
