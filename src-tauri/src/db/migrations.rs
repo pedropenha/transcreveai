@@ -301,20 +301,31 @@ pub(crate) static MIGRATIONS: &[M] = &[
             ('builtin-webex-host',   'CiscoCollabHost.exe', NULL, 'Webex',          'ask', 1),
             ('builtin-webex-mta',    'webexmta.exe',        NULL, 'Webex',          'ask', 1);",
     ),
-    // --- Live transcription bookkeeping (11, T-065) ---------------------------
+    // --- Live transcription bookkeeping + summary state (11, T-065/T-067) ----
     // `meeting_segments.excluded` flags mic speech inside a dictation interval
     // (FR-009-10/AC-009-03: excluded from the transcript, represented by the
     // `dictation_marker` covering the same span).
     //
-    // `meeting_blocks` is the persisted pending queue: the session worker
-    // inserts one row per sealed block (`transcribed = 0`) and the live
-    // transcriber flips `transcribed` once the block is fully processed.
-    // Rows left at 0 after the meeting ends are exactly the work T-067's
-    // post-processing still owes — the WAV path is derived from
-    // `meetings.audio_dir` + the block naming convention
-    // (`<track>-<index:04>.wav`), so it is not stored here.
+    // `meeting_blocks` is the persisted per-block record: the session worker
+    // inserts one row per sealed block (`transcribed = 0`) — durable clock
+    // placement for post-processing AND the pending queue the live
+    // transcriber drains. Rows left at 0 after the meeting ends are exactly
+    // the work post-processing still owes. The WAV path is derived, not
+    // stored: `meetings.audio_dir` + `<track>-<index:04>.wav`.
+    //
+    // `summary_status` tracks FR-009-16 step (4) independently of the meeting
+    // status: FR-009-21 needs `ready` meetings whose summary is `disabled`
+    // (no BYOK key) to be distinguishable from `ready`+`error` (retryable).
+    // ADD COLUMN supports CHECK but forbids UNIQUE/PK; the default keeps
+    // existing rows at 'pending'.
+    //
+    // The pt-BR template is the spec's FR-009-17 default (fixed id so later
+    // migrations can UPDATE its text); `is_default` is what the pipeline reads
+    // when a meeting row carries no `template_id` override.
     M::up(
         "ALTER TABLE meeting_segments ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE meetings ADD COLUMN summary_status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (summary_status IN ('pending','ready','disabled','error'));
         CREATE TABLE meeting_blocks (
             meeting_id    TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
             track         TEXT NOT NULL CHECK (track IN ('mic','system')),
@@ -324,6 +335,30 @@ pub(crate) static MIGRATIONS: &[M] = &[
             transcribed   INTEGER NOT NULL DEFAULT 0,
             attempts      INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (meeting_id, track, block_index)
-        );",
+        );
+        INSERT OR IGNORE INTO summary_templates (id, name, prompt, is_default, builtin) VALUES (
+            'builtin-default',
+            'Padrão',
+            'Você é o assistente de atas do Transcreve.ai. Resuma a reunião seguindo exatamente esta estrutura Markdown:
+
+## Resumo
+
+(3 a 5 tópicos)
+
+## Decisões
+
+## Próximos passos
+
+- [ ] Tarefa — Responsável (ou Todos) — Prazo (se mencionado)
+
+## Pontos em aberto
+
+## Tópicos discutidos
+
+- Tópico (mm:ss)
+
+Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todos; trate Minhas notas do usuário como contexto prioritário; escreva no idioma predominante da reunião; cite horários (mm:ss) quando relevante.',
+            1,
+            1);",
     ),
 ];

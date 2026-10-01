@@ -3,9 +3,18 @@
 
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::Serialize;
+use specta::Type;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, PartialEq)]
+/// The seeded FR-009-17 pt-BR template (migration 11). `is_default` decides
+/// which row the pipeline uses when a meeting has no `template_id`; this id
+/// is the fixed fallback when no row is flagged default.
+pub const BUILTIN_DEFAULT_TEMPLATE_ID: &str = "builtin-default";
+
+/// Serialized+exported for the `meeting_summary_templates` IPC command —
+/// the meeting-window template picker binds straight to this shape.
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
 pub struct SummaryTemplate {
     /// uuid
     pub id: String,
@@ -42,6 +51,9 @@ pub trait SummaryTemplateRepository {
     fn create(&self, template: &SummaryTemplate) -> Result<()>;
     fn get(&self, id: &str) -> Result<Option<SummaryTemplate>>;
     fn list(&self) -> Result<Vec<SummaryTemplate>>;
+    /// The `is_default` row, falling back to [`BUILTIN_DEFAULT_TEMPLATE_ID`]
+    /// when nothing is flagged (e.g. after a user deleted the default).
+    fn resolve_default(&self) -> Result<Option<SummaryTemplate>>;
     /// Mark `id` as the default template, clearing every other one.
     fn set_default(&self, id: &str) -> Result<()>;
     fn delete(&self, id: &str) -> Result<()>;
@@ -89,6 +101,16 @@ impl SummaryTemplateRepository for SqliteSummaryTemplateRepository<'_> {
             .prepare("SELECT * FROM summary_templates ORDER BY name COLLATE NOCASE ASC")?;
         let rows = stmt.query_map([], SummaryTemplate::from_row)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn resolve_default(&self) -> Result<Option<SummaryTemplate>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM summary_templates WHERE is_default = 1 LIMIT 1")?;
+        if let Some(template) = stmt.query_row([], SummaryTemplate::from_row).optional()? {
+            return Ok(Some(template));
+        }
+        self.get(BUILTIN_DEFAULT_TEMPLATE_ID)
     }
 
     fn set_default(&self, id: &str) -> Result<()> {
@@ -139,6 +161,9 @@ mod tests {
         assert_eq!(defaults[0].id, b.id);
 
         repo.delete(&a.id).expect("delete");
-        assert_eq!(repo.list().expect("list").len(), 1);
+        // `b` plus the seeded `builtin-default` row (migration 11).
+        let remaining = repo.list().expect("list");
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining.iter().all(|t| t.id != a.id));
     }
 }

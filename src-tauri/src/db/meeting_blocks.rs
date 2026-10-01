@@ -45,6 +45,9 @@ pub trait MeetingBlockRepository {
     /// Blocks still owed transcription — oldest offsets first. T-067's
     /// processing queue.
     fn list_pending(&self, meeting_id: &str) -> Result<Vec<MeetingBlock>>;
+    /// Every recorded block of a meeting — transcribed or not — ordered by
+    /// track then index. T-067's clock-placement source for coverage.
+    fn list_by_meeting(&self, meeting_id: &str) -> Result<Vec<MeetingBlock>>;
 }
 
 pub struct SqliteMeetingBlockRepository<'a> {
@@ -98,6 +101,27 @@ impl MeetingBlockRepository for SqliteMeetingBlockRepository<'_> {
              FROM meeting_blocks
              WHERE meeting_id = ?1 AND transcribed = 0
              ORDER BY start_ms ASC, track ASC, block_index ASC",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            Ok(MeetingBlock {
+                meeting_id: row.get("meeting_id")?,
+                track: row.get("track")?,
+                block_index: row.get("block_index")?,
+                start_ms: row.get("start_ms")?,
+                end_ms: row.get("end_ms")?,
+                transcribed: row.get("transcribed")?,
+                attempts: row.get("attempts")?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn list_by_meeting(&self, meeting_id: &str) -> Result<Vec<MeetingBlock>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT meeting_id, track, block_index, start_ms, end_ms, transcribed, attempts
+             FROM meeting_blocks
+             WHERE meeting_id = ?1
+             ORDER BY track ASC, block_index ASC",
         )?;
         let rows = stmt.query_map(params![meeting_id], |row| {
             Ok(MeetingBlock {

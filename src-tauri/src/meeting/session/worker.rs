@@ -498,6 +498,13 @@ impl Worker {
             Effect::StopCapture => {
                 if let Some(capture) = self.capture.take() {
                     let summary = capture.stop();
+                    // The tail seals *after* `capture_rx` is gone, so its
+                    // `BlockSealed` events never arrive — the summary is the
+                    // last chance to record those blocks' clock placement.
+                    for block in summary.mic.iter().chain(summary.system.iter()) {
+                        self.record_pending_block(block);
+                    }
+
                     log::debug!(
                         "Meeting capture stopped: {} mic / {} system blocks",
                         summary.mic.len(),
@@ -734,3 +741,4 @@ impl Worker {
         }
     }
 }
+

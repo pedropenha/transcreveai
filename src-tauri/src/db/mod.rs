@@ -206,6 +206,7 @@ mod tests {
             "notes",
             "meetings",
             "meeting_segments",
+            "meeting_blocks",
             "summary_templates",
             "meeting_app_rules",
             "dictations_fts",

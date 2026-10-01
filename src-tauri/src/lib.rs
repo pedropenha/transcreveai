@@ -506,6 +506,12 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             },
         );
     }
+
+    // F009/T-067: post-processing — a worker thread listens for the session's
+    // `meeting://process-requested`, transcribes pending blocks, summarizes
+    // (map-reduce past the context budget) and suggests a title.
+    meeting::postprocess::init(app_handle);
+
     // F008/T-062: the non-activatable meeting toast — hidden window created
     // up front (WebView2 cold start is too slow to launch per detection),
     // driven by `detector://meeting` / `toast://show` events.
@@ -988,6 +994,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_delete,
             commands::meeting::meeting_consent_accept,
             commands::meeting::meeting_consent_copy,
+            commands::meeting::meeting_regenerate_summary,
+            commands::meeting::meeting_retry_processing,
+            commands::meeting::meeting_summary_templates,
+            commands::meeting::meeting_set_summary_template,
             commands::detector::detector_respond,
             commands::meeting_rules::meeting_rules_list,
             commands::meeting_rules::meeting_rule_add,

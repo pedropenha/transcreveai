@@ -110,8 +110,9 @@ pub struct LlmSummaryStatus {
 }
 
 /// Pure status computation — split out for tests; the command reads settings
-/// and the vault and feeds both in.
-fn summary_status(settings: &AppSettings, api_key: Option<&str>) -> LlmSummaryStatus {
+/// and the vault and feeds both in. `pub(crate)` for the meeting
+/// post-processor, which reuses it as the FR-009-21 pre-flight gate.
+pub(crate) fn summary_status(settings: &AppSettings, api_key: Option<&str>) -> LlmSummaryStatus {
     let provider = settings.active_post_process_provider();
     let model = provider
         .and_then(|p| settings.post_process_models.get(&p.id))

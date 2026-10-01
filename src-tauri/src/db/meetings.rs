@@ -34,6 +34,10 @@ pub struct Meeting {
     pub template_id: Option<String>,
     /// Editable markdown summary.
     pub summary_md: Option<String>,
+    /// 'pending' | 'ready' | 'disabled' | 'error' — FR-009-16 step (4).
+    /// 'disabled' is FR-009-21 (no BYOK key): the meeting is `ready` with
+    /// transcript + notes but no summary.
+    pub summary_status: String,
     /// Directory with the 60 s audio blocks; NULL after retention expiry.
     pub audio_dir: Option<String>,
     pub language: Option<String>,
@@ -58,6 +62,7 @@ impl Meeting {
             llm_provider_id: None,
             template_id: None,
             summary_md: None,
+            summary_status: "pending".to_string(),
             audio_dir: None,
             language: None,
             error_code: None,
@@ -79,6 +84,7 @@ impl Meeting {
             llm_provider_id: row.get("llm_provider_id")?,
             template_id: row.get("template_id")?,
             summary_md: row.get("summary_md")?,
+            summary_status: row.get("summary_status")?,
             audio_dir: row.get("audio_dir")?,
             language: row.get("language")?,
             error_code: row.get("error_code")?,
@@ -98,6 +104,18 @@ pub trait MeetingRepository {
     fn set_status(&self, id: &str, status: &str, error_code: Option<&str>) -> Result<()>;
     /// Deletes the meeting and cascades to its segments/notes.
     fn delete(&self, id: &str) -> Result<()>;
+    /// T-067: persist the generated/edited summary together with its status
+    /// ('ready' | 'disabled' | 'error'). Never touches `notes` (FR-009-19).
+    fn set_summary(&self, id: &str, summary_md: Option<&str>, status: &str) -> Result<()>;
+    /// T-067: flip `summary_status` only (e.g. back to 'pending' while a
+    /// regeneration is in flight).
+    fn set_summary_status(&self, id: &str, status: &str) -> Result<()>;
+    /// T-067: per-meeting summary-template override; `None` falls back to the
+    /// `summary_templates.is_default` row.
+    fn set_template_id(&self, id: &str, template_id: Option<&str>) -> Result<()>;
+    /// T-067: write a title — callers gate on "still the default placeholder"
+    /// so a user-edited title is never clobbered.
+    fn set_title(&self, id: &str, title: &str) -> Result<()>;
 }
 
 pub struct SqliteMeetingRepository<'a> {
@@ -117,8 +135,8 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                 id, title, app_exe, app_label, detection, status,
                 started_at, ended_at, capture_system_audio,
                 stt_provider_id, llm_provider_id, template_id,
-                summary_md, audio_dir, language, error_code
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+                summary_md, summary_status, audio_dir, language, error_code
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
             params![
                 meeting.id,
                 meeting.title,
@@ -133,6 +151,7 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                 meeting.llm_provider_id,
                 meeting.template_id,
                 meeting.summary_md,
+                meeting.summary_status,
                 meeting.audio_dir,
                 meeting.language,
                 meeting.error_code,
@@ -162,8 +181,9 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                 status = ?5, started_at = ?6, ended_at = ?7,
                 capture_system_audio = ?8, stt_provider_id = ?9,
                 llm_provider_id = ?10, template_id = ?11, summary_md = ?12,
-                audio_dir = ?13, language = ?14, error_code = ?15
-             WHERE id = ?16",
+                summary_status = ?13, audio_dir = ?14, language = ?15,
+                error_code = ?16
+             WHERE id = ?17",
             params![
                 meeting.title,
                 meeting.app_exe,
@@ -177,6 +197,7 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                 meeting.llm_provider_id,
                 meeting.template_id,
                 meeting.summary_md,
+                meeting.summary_status,
                 meeting.audio_dir,
                 meeting.language,
                 meeting.error_code,
@@ -202,6 +223,38 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
     fn delete(&self, id: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM meetings WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    fn set_summary(&self, id: &str, summary_md: Option<&str>, status: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE meetings SET summary_md = ?1, summary_status = ?2 WHERE id = ?3",
+            params![summary_md, status, id],
+        )?;
+        Ok(())
+    }
+
+    fn set_summary_status(&self, id: &str, status: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE meetings SET summary_status = ?1 WHERE id = ?2",
+            params![status, id],
+        )?;
+        Ok(())
+    }
+
+    fn set_template_id(&self, id: &str, template_id: Option<&str>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE meetings SET template_id = ?1 WHERE id = ?2",
+            params![template_id, id],
+        )?;
+        Ok(())
+    }
+
+    fn set_title(&self, id: &str, title: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE meetings SET title = ?1 WHERE id = ?2",
+            params![title, id],
+        )?;
         Ok(())
     }
 }

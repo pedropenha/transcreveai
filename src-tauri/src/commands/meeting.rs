@@ -11,11 +11,16 @@
 //! inside `audio/meetings/`.
 
 use tauri::{AppHandle, Manager};
+use tokio::sync::oneshot;
 
 use crate::db::meetings::{
     Meeting, MeetingRepository, MeetingSegment, MeetingSegmentRepository, SqliteMeetingRepository,
     SqliteMeetingSegmentRepository,
 };
+use crate::db::summary_templates::{
+    SqliteSummaryTemplateRepository, SummaryTemplate, SummaryTemplateRepository,
+};
+use crate::meeting::postprocess::{Job, MeetingPostProcessor};
 use crate::meeting::session::{
     meeting_recording_active, open_session_db, remove_meeting_audio_dir, MeetingSessionManager,
     MeetingStateEvent, StartRequest,
@@ -187,4 +192,158 @@ pub fn meeting_consent_accept(app: AppHandle) -> CommandResult<()> {
 #[specta::specta]
 pub fn meeting_consent_copy(app: AppHandle) -> CommandResult<String> {
     Ok(get_settings(&app).meeting_consent_text)
+}
+
+// -- T-067: post-processing -------------------------------------------------
+
+fn post_processor(app: &AppHandle) -> CommandResult<MeetingPostProcessor> {
+    app.try_state::<MeetingPostProcessor>()
+        .map(|s| s.inner().clone())
+        .ok_or_else(|| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Meeting post-processing is unavailable",
+                "MeetingPostProcessor is not managed",
+            )
+        })
+}
+
+/// Load the meeting the T-067 commands act on — 404 for a missing row,
+/// `invalid_input` while a session still owns it.
+fn load_meeting(app: &AppHandle, meeting_id: &str) -> CommandResult<Meeting> {
+    let conn = open_session_db(app)?;
+    let meeting = SqliteMeetingRepository::new(&conn)
+        .get(meeting_id)
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
+        })?
+        .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "Meeting not found"))?;
+    if matches!(meeting.status.as_str(), "recording" | "paused") {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "The meeting is still recording",
+        ));
+    }
+    Ok(meeting)
+}
+
+/// FR-009-20: re-run the summary + title suggestion only (steps 4–5) —
+/// transcript and notes are untouched. A missing summary key answers with
+/// `missing_api_key`; other provider failures with `provider`.
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_regenerate_summary(app: AppHandle, meeting_id: String) -> CommandResult<()> {
+    let meeting = load_meeting(&app, &meeting_id)?;
+    if meeting.status == "processing" {
+        return Err(CommandError::new(
+            CommandErrorCode::Busy,
+            "The meeting is still processing",
+        ));
+    }
+    let (tx, rx) = oneshot::channel();
+    post_processor(&app)?.request(Job::SummaryOnly {
+        meeting_id,
+        reply: tx,
+    })?;
+    rx.await.map_err(|_| {
+        CommandError::new(
+            CommandErrorCode::Internal,
+            "Meeting post-processing is unavailable",
+        )
+    })?
+}
+
+/// FR-009-22: re-run the whole pipeline for a meeting that ended in
+/// `error` (or `recovered` after a crash). Pending-block coverage makes the
+/// re-run idempotent — only audio still missing a segment is retranscribed.
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_retry_processing(app: AppHandle, meeting_id: String) -> CommandResult<()> {
+    load_meeting(&app, &meeting_id)?;
+    let (tx, rx) = oneshot::channel();
+    post_processor(&app)?.request(Job::Full {
+        meeting_id,
+        reply: Some(tx),
+    })?;
+    rx.await.map_err(|_| {
+        CommandError::new(
+            CommandErrorCode::Internal,
+            "Meeting post-processing is unavailable",
+        )
+    })?
+}
+
+/// Every `summary_templates` row for the meeting-window picker (FR-009-17).
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_summary_templates(app: AppHandle) -> CommandResult<Vec<SummaryTemplate>> {
+    let conn = open_session_db(&app)?;
+    SqliteSummaryTemplateRepository::new(&conn)
+        .list()
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to list summary templates",
+                e,
+            )
+        })
+}
+
+/// Select the template a meeting summarizes under (FR-009-17/20):
+/// `meeting_id` set → per-meeting override (`meetings.template_id`;
+/// `template_id: null` clears it back to the default); `meeting_id: null`
+/// → global default (`summary_templates.is_default`). Unknown template ids
+/// are rejected.
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_set_summary_template(
+    app: AppHandle,
+    meeting_id: Option<String>,
+    template_id: Option<String>,
+) -> CommandResult<()> {
+    let conn = open_session_db(&app)?;
+    let templates = SqliteSummaryTemplateRepository::new(&conn);
+    if let Some(id) = template_id.as_deref() {
+        let exists = templates
+            .get(id)
+            .map_err(|e| {
+                CommandError::logged(
+                    CommandErrorCode::Internal,
+                    "Failed to load the summary template",
+                    e,
+                )
+            })?
+            .is_some();
+        if !exists {
+            return Err(CommandError::new(
+                CommandErrorCode::NotFound,
+                "Summary template not found",
+            ));
+        }
+    }
+    match (meeting_id, template_id) {
+        (Some(meeting_id), template_id) => {
+            load_meeting(&app, &meeting_id)?;
+            SqliteMeetingRepository::new(&conn)
+                .set_template_id(&meeting_id, template_id.as_deref())
+                .map_err(|e| {
+                    CommandError::logged(
+                        CommandErrorCode::Internal,
+                        "Failed to set the meeting template",
+                        e,
+                    )
+                })
+        }
+        (None, Some(template_id)) => templates.set_default(&template_id).map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to set the default summary template",
+                e,
+            )
+        }),
+        (None, None) => Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "A template id is required",
+        )),
+    }
 }
