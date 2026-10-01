@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Input } from "../../ui/Input";
+import { apiKeyEditValue } from "./apiKeyEdit";
 
 interface ApiKeyFieldProps {
   /**
@@ -28,18 +29,11 @@ export const ApiKeyField: React.FC<ApiKeyFieldProps> = React.memo(
     }, [value]);
 
     const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-      let next = event.target.value;
-      if (localValue === value && value) {
-        // The user is editing on top of the mask. Strip a leading untouched
-        // copy of the hint so only newly typed text is submitted, and drop any
-        // residual mask characters from mid-string edits — bullets must never
-        // be written to the vault as if they were key material.
-        if (next.startsWith(value)) {
-          next = next.slice(value.length);
-        }
-        next = next.replace(/•/g, "");
-      }
-      setLocalValue(next);
+      // Bullet characters can only come from the masked hint itself — a value
+      // that still contains them is a mangled mask (e.g. a mid-mask
+      // backspace), never new key material, so the edit is discarded and the
+      // hint restored instead of writing "123" into the vault.
+      setLocalValue(apiKeyEditValue(value, event.target.value));
     };
 
     // Select the whole mask on focus so typing replaces it outright instead of
