@@ -13,6 +13,7 @@ mod helpers;
 mod input;
 mod llm_client;
 mod managers;
+mod meeting;
 mod memory;
 mod overlay;
 mod paste_tx;
@@ -424,6 +425,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // F008/T-060: watch the microphone ConsentStore + window titles and log
+    // meeting-app detections. T-061 builds the detector state machine
+    // (debounce, title memory, `detector://meeting` events) on top of it.
+    meeting::start(app_handle);
 }
 
 #[tauri::command]
