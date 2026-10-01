@@ -124,77 +124,10 @@ fn is_blank_transcription(transcription: &str) -> bool {
 // managers::audio::classify_stopped_recording and discarded before the
 // provider — the Flow Bar flashes "Nada ouvido" instead.
 
-/// FR-002-17 / AC-002-10: a spoken "send" command as the last words of a
-/// dictation ("… enviar", "… send", "… press enter") is a session command,
-/// not dictation text: it is stripped and the configured auto-submit key is
-/// sent after insertion. Returns the cleaned text when a trailing command
-/// was found, `None` otherwise (or when stripping would leave no text).
-///
-/// Phrase lists come from `settings.voice_submit_phrases`: the `"default"`
-/// list always applies, and a language key covers the matching language —
-/// `"pt"` also covers `"pt-BR"`.
-fn strip_voice_send_command(
-    text: &str,
-    language: &str,
-    phrases: &HashMap<String, Vec<String>>,
-) -> Option<String> {
-    let tail = text.trim_end();
-    if tail.is_empty() {
-        return None;
-    }
-    // Keep the terminal punctuation the model produced so the stripped text
-    // still ends a sentence ("… minutos enviar." → "… minutos.").
-    let terminal = tail.chars().last().filter(|c| matches!(c, '.' | '!' | '?'));
-    let tail = tail.trim_end_matches(['.', '!', '?', ',', ';', ':', '…', '"', '\'', ')', ']']);
-    if tail.is_empty() {
-        return None;
-    }
-
-    // Candidate phrases: longest first so "press enter" wins over "enter".
-    let lang_tag = language.to_lowercase();
-    let lang_prefix = lang_tag.split(['-', '_']).next().unwrap_or("");
-    let mut candidates: Vec<String> = Vec::new();
-    for key in ["default", lang_tag.as_str(), lang_prefix] {
-        if key.is_empty() {
-            continue;
-        }
-        if let Some(list) = phrases.get(key) {
-            candidates.extend(list.iter().map(|p| p.trim().to_lowercase()));
-        }
-    }
-    candidates.sort_by_key(|p| std::cmp::Reverse(p.chars().count()));
-    candidates.dedup();
-
-    let tail_lower_chars: Vec<char> = tail.to_lowercase().chars().collect();
-    for phrase in candidates {
-        if phrase.is_empty() {
-            continue;
-        }
-        let phrase_chars: Vec<char> = phrase.chars().collect();
-        if !tail_lower_chars.ends_with(&phrase_chars) {
-            continue;
-        }
-        // The command must start on a word boundary — preceded by whitespace
-        // or at the very start of the dictation.
-        let boundary = tail_lower_chars.len() - phrase_chars.len();
-        if boundary > 0 && !tail_lower_chars[boundary - 1].is_whitespace() {
-            continue;
-        }
-        let strip_chars = tail.chars().count() - phrase_chars.len();
-        let mut cleaned: String = tail.chars().take(strip_chars).collect();
-        cleaned = cleaned.trim_end().to_string();
-        if cleaned.is_empty() {
-            return None;
-        }
-        if let Some(punct) = terminal {
-            if !cleaned.ends_with(['.', '!', '?']) {
-                cleaned.push(punct);
-            }
-        }
-        return Some(cleaned);
-    }
-    None
-}
+// FR-002-17 / AC-002-10: the trailing spoken "send" command ("… enviar") was
+// consolidated into `pipeline::voice_commands::strip_trailing_submit_command`
+// (T-035) — it runs in the voice-commands stage of `process_transcription_output`
+// and reports `press_enter` on `ProcessedTranscription`.
 
 /// Compact an error for the `session://state` `error` field and the
 /// dictation `error_code` column — never longer than needed for the UI.
@@ -506,6 +439,10 @@ pub(crate) struct ProcessedTranscription {
     pub final_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
+    /// FR-004-02: the deterministic text pipeline (`pipeline`) found a
+    /// trailing spoken send command ("… enviar"/"… send") — send the submit
+    /// key after insertion.
+    pub press_enter: bool,
 }
 
 /// Resolve the persisted language *intent* into the language the currently-loaded
@@ -549,6 +486,34 @@ pub(crate) async fn process_transcription_output(
         final_text = converted_text;
     }
 
+    // F004 (T-035): deterministic text pipeline — normalize → voice commands
+    // (incl. the trailing "enviar" send command → `press_enter`) → vocabulary
+    // corrections → `light` cleanup. Pure and fast; fail-open like the rest
+    // of post-processing so a pipeline bug can never eat a transcription.
+    let mut press_enter = false;
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::pipeline::run(&crate::pipeline::PipelineInput {
+            text: final_text.clone(),
+            language: Some(effective_language.clone()),
+            cleanup_level: settings.cleanup_level,
+            cleanup_filler_words: settings.custom_filler_words.clone(),
+            filler_removal_enabled: settings.filler_word_removal_enabled,
+            custom_words: settings.custom_words.clone(),
+            word_correction_threshold: settings.word_correction_threshold,
+            voice_command_phrases: settings.voice_command_phrases.clone(),
+            voice_submit_phrases: settings.voice_submit_phrases.clone(),
+            spoken_punctuation_enabled: settings.spoken_punctuation_enabled,
+        })
+    })) {
+        Ok(output) => {
+            final_text = output.text;
+            press_enter = output.press_enter;
+        }
+        Err(_) => {
+            error!("text pipeline panicked; keeping pre-pipeline text");
+        }
+    }
+
     if post_process {
         if let Some(processed_text) = post_process_transcription(app, &settings, &final_text).await
         {
@@ -564,6 +529,8 @@ pub(crate) async fn process_transcription_output(
                     post_process_prompt = Some(prompt.prompt.clone());
                 }
             }
+        } else if final_text != transcription {
+            post_processed_text = Some(final_text.clone());
         }
     } else if final_text != transcription {
         post_processed_text = Some(final_text.clone());
@@ -573,6 +540,7 @@ pub(crate) async fn process_transcription_output(
         final_text,
         post_processed_text,
         post_process_prompt,
+        press_enter,
     }
 }
 
@@ -933,20 +901,13 @@ impl ShortcutAction for TranscribeAction {
                                 c.notify_pipeline_phase(PipelinePhase::Processing);
                             }
 
-                            // FR-002-17 / AC-002-10: a trailing spoken "send"
-                            // command is a session command — strip it before
-                            // the text pipeline so post-processing and
-                            // history never see it; Enter goes out after the
-                            // insertion below.
-                            let language = resolve_effective_language(&ah, &settings);
-                            let (transcription, spoken_submit) = match strip_voice_send_command(
-                                &transcription,
-                                &language,
-                                &settings.voice_submit_phrases,
-                            ) {
-                                Some(cleaned) => (cleaned, true),
-                                None => (transcription, false),
-                            };
+                            // FR-002-17 / AC-002-10 + F004 (T-035): the
+                            // deterministic text pipeline (normalization,
+                            // voice commands incl. the trailing "enviar" →
+                            // `press_enter`, vocabulary, `light` cleanup)
+                            // runs inside `process_transcription_output`, so
+                            // history keeps the raw dictation and the submit
+                            // flag comes back in `processed`.
 
                             if post_process {
                                 if use_streaming_overlay {
@@ -1043,7 +1004,7 @@ impl ShortcutAction for TranscribeAction {
                                 // spoken "enviar" only needs its own send
                                 // when that setting is off.
                                 let need_spoken_submit =
-                                    spoken_submit && !(settings.auto_submit && method_inserts);
+                                    processed.press_enter && !(settings.auto_submit && method_inserts);
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");
@@ -1317,10 +1278,9 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 mod tests {
     use super::{
         complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block, strip_voice_send_command,
+        strip_think_block,
     };
     use crate::settings::OverlayStyle;
-    use std::collections::HashMap;
     use std::future;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -1402,70 +1362,6 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
     }
 
-    fn voice_phrases() -> HashMap<String, Vec<String>> {
-        HashMap::from([
-            (
-                "default".to_string(),
-                vec!["send".into(), "press enter".into(), "enviar".into()],
-            ),
-            ("pt".to_string(), vec!["enviar".into()]),
-            ("en".to_string(), vec!["send".into(), "press enter".into()]),
-        ])
-    }
-
-    /// AC-002-10: "vou chegar em 5 minutos enviar" inserts "Vou chegar em 5
-    /// minutos." and queues the submit key.
-    #[test]
-    fn voice_send_command_is_stripped_and_punctuation_kept() {
-        let phrases = voice_phrases();
-        assert_eq!(
-            strip_voice_send_command("Vou chegar em 5 minutos enviar.", "pt-BR", &phrases),
-            Some("Vou chegar em 5 minutos.".to_string())
-        );
-        assert_eq!(
-            strip_voice_send_command("Vou chegar em 5 minutos enviar", "pt", &phrases),
-            Some("Vou chegar em 5 minutos".to_string())
-        );
-        assert_eq!(
-            strip_voice_send_command("see you soon send", "en", &phrases),
-            Some("see you soon".to_string())
-        );
-        // The default list applies to every language.
-        assert_eq!(
-            strip_voice_send_command("vou chegar enviar", "auto", &phrases),
-            Some("vou chegar".to_string())
-        );
-    }
-
-    #[test]
-    fn voice_send_command_requires_trailing_word_boundary() {
-        let phrases = voice_phrases();
-        // Not at the end of the dictation — plain dictation text.
-        assert_eq!(
-            strip_voice_send_command("enviar isso depois", "pt", &phrases),
-            None
-        );
-        // Mid-word: "enviarei" must not match "enviar".
-        assert_eq!(
-            strip_voice_send_command("vou enviarei", "pt", &phrases),
-            None
-        );
-        // No command at all.
-        assert_eq!(
-            strip_voice_send_command("vou chegar em 5 minutos", "pt", &phrases),
-            None
-        );
-        // A bare command word leaves nothing to insert.
-        assert_eq!(strip_voice_send_command("enviar", "pt", &phrases), None);
-        assert_eq!(strip_voice_send_command("", "pt", &phrases), None);
-    }
-
-    #[test]
-    fn voice_send_command_prefers_longest_phrase() {
-        let phrases = voice_phrases();
-        assert_eq!(
-            strip_voice_send_command("finish now press enter", "en", &phrases),
-            Some("finish now".to_string())
-        );
-    }
+    // AC-002-10 voice "send" command tests moved with the function into
+    // `pipeline::voice_commands` (T-035).
 }

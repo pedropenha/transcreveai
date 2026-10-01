@@ -21,6 +21,7 @@ pub mod meeting;
 mod memory;
 mod overlay;
 mod paste_tx;
+pub mod pipeline;
 pub mod portable;
 mod secrets;
 mod secure_input;
@@ -838,6 +839,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::text_pipeline::get_filler_words,
+            commands::text_pipeline::set_filler_words,
+            commands::text_pipeline::reset_filler_words,
+            commands::text_pipeline::change_cleanup_level_setting,
+            commands::text_pipeline::change_spoken_punctuation_setting,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

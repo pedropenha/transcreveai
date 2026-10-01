@@ -1090,6 +1090,69 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, Comm
 }
 },
 /**
+ * A lista de muletas efetiva da limpeza `light`: a editada pelo usuário
+ * (`custom_filler_words`) ou, quando ausente, o padrão pt-BR embutido.
+ */
+async getFillerWords() : Promise<Result<string[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_filler_words") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Persiste a lista editável de muletas (FR-004-12). Entradas são
+ * normalizadas (trim, minúsculas, sem duplicatas nem vazias). Uma lista
+ * vazia é válida: desliga a remoção de muletas sem mexer no resto da
+ * limpeza `light` (repetições, pontuação, capitalização).
+ */
+async setFillerWords(words: string[]) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_filler_words", { words }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Volta a lista de muletas ao padrão pt-BR embutido (`custom_filler_words`
+ * → `None`).
+ */
+async resetFillerWords() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_filler_words") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Nível de limpeza do pipeline (FR-004-11). Na v1 a UI só oferece
+ * `none`/`light`; `medium`/`high` (v1.1+, LLM) são aceitos aqui mas
+ * degradam para `light` no pipeline.
+ */
+async changeCleanupLevelSetting(level: CleanupLevel) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_cleanup_level_setting", { level }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Liga/desliga a pontuação falada ("vírgula" → `,`), desligada por padrão
+ * (FR-004-03).
+ */
+async changeSpokenPunctuationSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_spoken_punctuation_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
  */
@@ -1247,6 +1310,23 @@ session_queue_size?: number;
  */
 voice_submit_phrases?: Partial<{ [key in string]: string[] }>; 
 /**
+ * Text-pipeline cleanup level (FR-004-11): `none`/`light` are the v1
+ * options — `medium`/`high` need an LLM (v1.1+) and degrade to `light`.
+ * The editable filler list is `custom_filler_words` (`None` → the
+ * built-in pt-BR `light` list, FR-004-12).
+ */
+cleanup_level?: CleanupLevel; 
+/**
+ * Spoken punctuation ("vírgula", "ponto final"…) becomes a symbol
+ * (FR-004-03). Off by default — the engines already punctuate.
+ */
+spoken_punctuation_enabled?: boolean; 
+/**
+ * Voice break commands per language (FR-004-02): the `"default"` entry
+ * always applies; `pt`/`en` add the language-specific forms.
+ */
+voice_command_phrases?: Partial<{ [key in string]: VoiceCommandPhrases }>; 
+/**
  * Flow Bar visibility policy: always / only while recording / never
  * (FR-001-10). `Never` still leaves hotkeys and tray feedback working.
  */
@@ -1307,6 +1387,31 @@ export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+/**
+ * Nível de limpeza do pipeline (FR-004-11 / data-model `text.cleanup_level`).
+ * 
+ * Na v1 não existe LLM no pipeline: `Medium`/`High` degradam para `Light`
+ * (a UI já os esconde até a v1.1+). `None` aplica só as etapas
+ * determinísticas 1, 2 e 4.
+ */
+export type CleanupLevel = 
+/**
+ * Nenhuma limpeza além das etapas determinísticas 1–4.
+ */
+"none" | 
+/**
+ * Remove muletas pt-BR e repetições imediatas, corrige pontuação e
+ * capitalização (FR-004-12). Padrão.
+ */
+"light" | 
+/**
+ * `light` + backtrack, listas enumeradas e números/datas — v1.1+ (LLM).
+ */
+"medium" | 
+/**
+ * Reescrita para clareza no estilo do perfil — v1.1+ (LLM).
+ */
+"high"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 /**
  * The error half of the IPC envelope — a stable `code` plus a
@@ -1653,6 +1758,19 @@ export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+/**
+ * Frases que viram quebra de linha/parágrafo no ditado (FR-004-02),
+ * configuráveis por idioma via `settings.voice_command_phrases`.
+ */
+export type VoiceCommandPhrases = { 
+/**
+ * Frases que produzem `\n` (ex.: "nova linha", "new line").
+ */
+newline?: string[]; 
+/**
+ * Frases que produzem `\n\n` (ex.: "novo parágrafo", "new paragraph").
+ */
+new_paragraph?: string[] }
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 
 /** tauri-specta globals **/

@@ -1,3 +1,4 @@
+use crate::pipeline::{CleanupLevel, VoiceCommandPhrases};
 use crate::utils;
 use log::{debug, warn};
 use serde::de::{self, Visitor};
@@ -641,6 +642,20 @@ pub struct AppSettings {
     /// phrases for that language (the `pt` list also covers `pt-BR`).
     #[serde(default = "default_voice_submit_phrases")]
     pub voice_submit_phrases: HashMap<String, Vec<String>>,
+    /// Text-pipeline cleanup level (FR-004-11): `none`/`light` are the v1
+    /// options — `medium`/`high` need an LLM (v1.1+) and degrade to `light`.
+    /// The editable filler list is `custom_filler_words` (`None` → the
+    /// built-in pt-BR `light` list, FR-004-12).
+    #[serde(default = "default_cleanup_level")]
+    pub cleanup_level: CleanupLevel,
+    /// Spoken punctuation ("vírgula", "ponto final"…) becomes a symbol
+    /// (FR-004-03). Off by default — the engines already punctuate.
+    #[serde(default)]
+    pub spoken_punctuation_enabled: bool,
+    /// Voice break commands per language (FR-004-02): the `"default"` entry
+    /// always applies; `pt`/`en` add the language-specific forms.
+    #[serde(default = "default_voice_command_phrases")]
+    pub voice_command_phrases: HashMap<String, VoiceCommandPhrases>,
     /// Flow Bar visibility policy: always / only while recording / never
     /// (FR-001-10). `Never` still leaves hotkeys and tray feedback working.
     #[serde(default)]
@@ -862,17 +877,20 @@ fn default_session_queue_size() -> usize {
 
 /// Built-in voice "send" phrases (FR-002-17): the `default` list applies to
 /// every language; `pt`/`en` add language-specific forms. Configurable per
-/// language via the `voice_submit_phrases` map.
+/// language via the `voice_submit_phrases` map. Single source of truth lives
+/// in `pipeline` (T-035 consolidated the voice commands there).
 fn default_voice_submit_phrases() -> HashMap<String, Vec<String>> {
-    let strs = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    HashMap::from([
-        (
-            "default".to_string(),
-            strs(&["send", "press enter", "enviar"]),
-        ),
-        ("pt".to_string(), strs(&["enviar"])),
-        ("en".to_string(), strs(&["send", "press enter", "send it"])),
-    ])
+    crate::pipeline::default_voice_submit_phrases()
+}
+
+/// FR-004-11: v1 default is the deterministic `light` cleanup (ADR-0002).
+fn default_cleanup_level() -> CleanupLevel {
+    CleanupLevel::Light
+}
+
+/// FR-004-02: built-in voice break commands, defined once in `pipeline`.
+fn default_voice_command_phrases() -> HashMap<String, VoiceCommandPhrases> {
+    crate::pipeline::default_voice_command_phrases()
 }
 
 fn default_flowbar_position_offset() -> f64 {
@@ -1237,6 +1255,9 @@ pub fn get_default_settings() -> AppSettings {
         max_dictation_minutes: default_max_dictation_minutes(),
         session_queue_size: default_session_queue_size(),
         voice_submit_phrases: default_voice_submit_phrases(),
+        cleanup_level: default_cleanup_level(),
+        spoken_punctuation_enabled: false,
+        voice_command_phrases: default_voice_command_phrases(),
         flowbar_visibility: FlowbarVisibility::default(),
         flowbar_follow: FlowbarFollow::default(),
         flowbar_position_edge: FlowbarEdge::default(),
