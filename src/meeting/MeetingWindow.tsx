@@ -34,6 +34,7 @@ import { MarkdownContent } from "@/components/whats-new/MarkdownContent";
 import {
   formatElapsedMs,
   formatSegmentTimestamp,
+  isTranscriptVisible,
   mergeSegments,
   normalizeMeetingStatus,
   resolveSummaryPhase,
@@ -310,6 +311,13 @@ const MeetingWindow: React.FC = () => {
     const raw = liveStatus ?? meeting?.status ?? "";
     return normalizeMeetingStatus(raw) ?? "error";
   }, [liveStatus, meeting]);
+
+  // FR-009-10/AC-009-03: dictated mic rows (`excluded`) never render —
+  // the `dictation_marker` row covering the span is shown instead.
+  const visibleSegments = useMemo(
+    () => segments.filter(isTranscriptVisible),
+    [segments],
+  );
 
   const live =
     meetingId !== null && (status === "recording" || status === "paused");
@@ -638,13 +646,13 @@ const MeetingWindow: React.FC = () => {
             }}
             className="h-full overflow-y-auto p-4"
           >
-            {segments.length === 0 ? (
+            {visibleSegments.length === 0 ? (
               <p className="text-sm text-mid-gray">
                 {t("meeting.window.transcriptEmpty")}
               </p>
             ) : (
               <ol className="space-y-2">
-                {segments.map((seg) => {
+                {visibleSegments.map((seg) => {
                   const speaker = segmentSpeaker(seg);
                   const isMarker =
                     speaker.kind === "dictation" || speaker.kind === "gap";

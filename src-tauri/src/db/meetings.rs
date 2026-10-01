@@ -198,6 +198,7 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                      SELECT 1 FROM meeting_fts
                      JOIN meeting_segments s ON s.rowid = meeting_fts.rowid
                      WHERE meeting_fts MATCH ?1 AND s.meeting_id = m.id
+                       AND s.excluded = 0
                    )
              ORDER BY m.started_at DESC",
         )?;
@@ -572,6 +573,50 @@ mod tests {
         // Deleting the meeting removes every FTS trace of it.
         meetings.delete(&by_segment.id).expect("delete");
         assert!(ids("okr").is_empty());
+    }
+
+    #[test]
+    fn search_never_matches_excluded_dictated_speech() {
+        // FR-009-10/AC-009-03: dictated mic rows are private — neither the
+        // insert trigger nor the search join may surface them.
+        let conn = setup();
+        let meetings = SqliteMeetingRepository::new(&conn);
+        let segments = SqliteMeetingSegmentRepository::new(&conn);
+        let q = |raw: &str| crate::db::fts_match_query(raw).expect("non-empty query");
+
+        let m = Meeting::new("Daily", "manual");
+        meetings.create(&m).expect("create meeting");
+
+        let mut dictated = MeetingSegment::new(&m.id, "mic", 0, 1500, "segredo pessoal");
+        dictated.excluded = true;
+        segments.create(&dictated).expect("excluded segment");
+        segments
+            .create(&MeetingSegment::new(
+                &m.id,
+                "system",
+                1500,
+                3000,
+                "pauta pública",
+            ))
+            .expect("public segment");
+
+        assert!(meetings.search(&q("segredo")).expect("search").is_empty());
+        assert_eq!(meetings.search(&q("pauta")).expect("search").len(), 1);
+
+        // The UPDATE trigger must also respect the flag: un-excluding the
+        // row indexes it, re-excluding removes it again.
+        conn.execute(
+            "UPDATE meeting_segments SET excluded = 0 WHERE id = ?1",
+            params![dictated.id],
+        )
+        .expect("un-exclude");
+        assert_eq!(meetings.search(&q("segredo")).expect("search").len(), 1);
+        conn.execute(
+            "UPDATE meeting_segments SET excluded = 1 WHERE id = ?1",
+            params![dictated.id],
+        )
+        .expect("re-exclude");
+        assert!(meetings.search(&q("segredo")).expect("search").is_empty());
     }
 
     #[test]

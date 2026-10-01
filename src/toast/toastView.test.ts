@@ -4,6 +4,7 @@ import {
   COLLAPSE_AFTER_MS,
   meetingMenuItems,
   noticeActionFor,
+  noticeBlocksCollapse,
   resolveToastView,
   startsRecording,
   toastWindowHeight,
@@ -109,6 +110,65 @@ assert.equal(
   }),
   "notice-expanded",
 );
+// FR-009-09/AC-009-08: the silence check-in opens expanded — Continuar /
+// Parar must be clickable immediately — and is exempt from the 60 s
+// collapse so it survives its 2-minute response window.
+const checkinNotice: ToastNotice = {
+  kind: "meeting_checkin",
+  message: "Ainda em reunião?",
+  action: "checkin",
+};
+assert.equal(
+  resolveToastView({
+    ...base,
+    state: { collapsed: false, detection: null, notice: checkinNotice },
+  }),
+  "notice-expanded",
+);
+assert.equal(noticeBlocksCollapse(checkinNotice), true);
+assert.equal(noticeBlocksCollapse(notice), false);
+const checkin = noticeActionFor("checkin");
+assert.equal(checkin?.command, "meeting_checkin_respond");
+assert.deepEqual(checkin?.args, { keepRecording: true });
+assert.equal(checkin?.secondary?.command, "meeting_checkin_respond");
+assert.deepEqual(checkin?.secondary?.args, { keepRecording: false });
+
+// FR-009-22: retry_processing needs the notice's meeting_id — without it
+// the action is unanswerable and the notice stays compact.
+const retryNotice: ToastNotice = {
+  kind: "meeting_error",
+  message: "falha ao processar",
+  action: "retry_processing",
+};
+assert.equal(noticeActionFor("retry_processing"), null);
+assert.equal(noticeActionFor("retry_processing", null), null);
+const retry = noticeActionFor("retry_processing", "m-1");
+assert.equal(retry?.command, "meeting_retry_processing");
+assert.equal(retry?.needsMeetingId, true);
+assert.equal(
+  resolveToastView({
+    ...base,
+    state: {
+      collapsed: false,
+      detection: null,
+      notice: { ...retryNotice, meeting_id: "m-1" },
+    },
+  }),
+  "notice-expanded",
+);
+assert.equal(
+  resolveToastView({
+    ...base,
+    state: { collapsed: false, detection: null, notice: retryNotice },
+  }),
+  "notice",
+);
+
+// open_summary_settings shows the Hub and deep-links post-processing.
+const summaryNotice = noticeActionFor("open_summary_settings");
+assert.equal(summaryNotice?.command, "show_main_window_command");
+assert.equal(summaryNotice?.navigateSection, "postprocessing");
+
 // Actions the toast cannot answer inline keep the compact notice face.
 assert.equal(
   resolveToastView({
@@ -116,7 +176,7 @@ assert.equal(
     state: {
       collapsed: false,
       detection: null,
-      notice: { kind: "meeting_checkin", message: "x", action: "checkin" },
+      notice: { kind: "meeting_consent", message: "x", action: "open_consent" },
     },
   }),
   "notice",
@@ -126,7 +186,6 @@ assert.equal(
   "meeting_continue_recording",
 );
 assert.equal(noticeActionFor("extend_30")?.command, "meeting_extend_30");
-assert.equal(noticeActionFor("checkin"), null);
 assert.equal(noticeActionFor("bogus"), null);
 assert.equal(noticeActionFor(undefined), null);
 // T-069: an auto-start detection never renders the ask prompt — the

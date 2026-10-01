@@ -432,6 +432,7 @@ impl Runner {
                     kind: "meeting_warning".to_string(),
                     message: live_transcription_warning(&lang),
                     action: None,
+                    meeting_id: None,
                 },
             ) {
                 warn!("Failed to emit {TOAST_SHOW_EVENT}: {e}");

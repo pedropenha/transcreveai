@@ -361,7 +361,6 @@ Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todo
             1,
             1);",
     ),
-
     // --- FTS over meeting title + summary (12, T-068) -------------------------
     // FR-009-25 searches title, notes, summary and transcript. Migration 9
     // already indexes `meeting_segments.text` (meeting_fts) and `notes`
@@ -389,5 +388,40 @@ Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todo
             VALUES (new.rowid, new.title, new.summary_md);
         END;
         INSERT INTO meetings_fts(meetings_fts) VALUES ('rebuild');",
+    ),
+
+    // --- meeting_fts honors `excluded` (13, privacy fix) ----------------------
+    // Migration 9's meeting_fts triggers index every segment unconditionally,
+    // so dictated mic rows (`excluded = 1`, FR-009-10/AC-009-03) stayed
+    // searchable. The triggers are recreated with exclusion guards; the update
+    // trigger uses INSERT...SELECT so an `excluded` flip in either direction
+    // keeps the index in sync. A manual 'delete-all' + filtered repopulate is
+    // used instead of 'rebuild' because FTS5's rebuild command has no WHERE
+    // clause and would re-index the excluded rows.
+    M::up(
+        "DROP TRIGGER IF EXISTS meeting_fts_ai;
+        DROP TRIGGER IF EXISTS meeting_fts_ad;
+        DROP TRIGGER IF EXISTS meeting_fts_au;
+        CREATE TRIGGER meeting_fts_ai AFTER INSERT ON meeting_segments
+            WHEN new.excluded = 0
+        BEGIN
+            INSERT INTO meeting_fts(rowid, text)
+            VALUES (new.rowid, new.text);
+        END;
+        CREATE TRIGGER meeting_fts_ad AFTER DELETE ON meeting_segments
+            WHEN old.excluded = 0
+        BEGIN
+            INSERT INTO meeting_fts(meeting_fts, rowid, text)
+            VALUES ('delete', old.rowid, old.text);
+        END;
+        CREATE TRIGGER meeting_fts_au AFTER UPDATE ON meeting_segments BEGIN
+            INSERT INTO meeting_fts(meeting_fts, rowid, text)
+            SELECT 'delete', old.rowid, old.text WHERE old.excluded = 0;
+            INSERT INTO meeting_fts(rowid, text)
+            SELECT new.rowid, new.text WHERE new.excluded = 0;
+        END;
+        INSERT INTO meeting_fts(meeting_fts) VALUES ('delete-all');
+        INSERT INTO meeting_fts(rowid, text)
+        SELECT rowid, text FROM meeting_segments WHERE excluded = 0;",
     ),
 ];

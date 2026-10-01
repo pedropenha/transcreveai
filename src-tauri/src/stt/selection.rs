@@ -30,6 +30,17 @@ pub fn local_model_id(provider_id: &str) -> Option<&str> {
         .filter(|id| !id.is_empty())
 }
 
+/// Valor persistível numa coluna `*_provider_id REFERENCES providers(id)`:
+/// apenas ids de linhas reais da tabela `providers`. Pseudo-ids
+/// `local_model:*` não são chaves dessa tabela — na v1 ela está vazia e a FK
+/// falharia — então viram `NULL` (o modelo efetivo continua resolvível via
+/// `effective_*_model_id`).
+pub fn provider_row_id(provider_id: Option<&str>) -> Option<String> {
+    provider_id
+        .filter(|id| local_model_id(id).is_none())
+        .map(str::to_string)
+}
+
 /// O campo `* _provider_id` referencia o modelo local `model_id`?
 pub fn provider_is_local_model(provider_id: Option<&str>, model_id: &str) -> bool {
     provider_id
@@ -92,6 +103,19 @@ mod tests {
         assert_eq!(local_model_id("9f0c…-uuid"), None);
         assert_eq!(local_model_id("openai"), None);
         assert_eq!(local_model_id("local_model:"), None);
+    }
+
+    #[test]
+    fn provider_row_id_keeps_only_real_provider_keys() {
+        // Pseudo-ids de modelo local não são chaves de `providers` — gravá-los
+        // numa coluna REFERENCES providers(id) quebraria a FK (a tabela está
+        // vazia na v1).
+        assert_eq!(provider_row_id(Some("local_model:whisper-turbo")), None);
+        assert_eq!(provider_row_id(None), None);
+        assert_eq!(
+            provider_row_id(Some("9f0c…-uuid")),
+            Some("9f0c…-uuid".to_string())
+        );
     }
 
     #[test]

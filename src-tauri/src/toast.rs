@@ -77,6 +77,9 @@ pub struct ToastNotice {
     pub kind: String,
     pub message: String,
     pub action: Option<serde_json::Value>,
+    /// Meeting the action acts on (`meeting_retry_processing` needs it);
+    /// absent for detection-level notices.
+    pub meeting_id: Option<String>,
 }
 
 /// The `toast://state` broadcast payload. Always carries all three keys so
@@ -109,6 +112,7 @@ struct ToastShowPayload {
     kind: Option<String>,
     message: Option<String>,
     action: Option<serde_json::Value>,
+    meeting_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -520,6 +524,7 @@ fn handle_show_event(app: &AppHandle, payload: &str) {
             kind: parsed.kind.unwrap_or_else(|| "info".to_string()),
             message,
             action: parsed.action,
+            meeting_id: parsed.meeting_id,
         },
     );
 }

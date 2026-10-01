@@ -30,11 +30,13 @@ pub const CONTEXT_BUDGET_CHARS: usize = 120_000;
 pub const MAX_REDUCE_ROUNDS: usize = 4;
 
 /// The transcript carries only `speech` rows — gap/dictation markers are
-/// meeting-clock bookkeeping, not spoken content for the summary.
+/// meeting-clock bookkeeping, not spoken content for the summary. `excluded`
+/// mic rows (dictated notes, FR-009-10/AC-009-03) stay out too: dictated
+/// text is private and must never reach the summary prompt.
 fn transcript_lines(segments: &[MeetingSegment]) -> Vec<String> {
     segments
         .iter()
-        .filter(|s| s.kind == "speech" && !s.text.trim().is_empty())
+        .filter(|s| s.kind == "speech" && !s.excluded && !s.text.trim().is_empty())
         .map(|s| {
             format!(
                 "[{}] {}: {}",
@@ -88,7 +90,7 @@ pub fn split_for_map(
 ) -> Vec<Vec<MeetingSegment>> {
     let speech: Vec<&MeetingSegment> = segments
         .iter()
-        .filter(|s| s.kind == "speech" && !s.text.trim().is_empty())
+        .filter(|s| s.kind == "speech" && !s.excluded && !s.text.trim().is_empty())
         .collect();
     let mut chunks: Vec<Vec<MeetingSegment>> = Vec::new();
     let mut current: Vec<MeetingSegment> = Vec::new();
@@ -267,6 +269,20 @@ mod tests {
         let blank = seg("system", 20_000, "   ");
         let out = format_transcript(&[gap, blank, seg("mic", 30_000, "ok")]);
         assert_eq!(out, "[00:30] Você: ok");
+    }
+
+    #[test]
+    fn excluded_dictated_speech_never_reaches_the_prompt() {
+        // FR-009-10/AC-009-03: mic speech inside a dictation interval is
+        // `excluded` — the summary prompt must not contain dictated text.
+        let mut dictated = seg("mic", 5_000, "nota particular");
+        dictated.excluded = true;
+        let out = format_transcript(&[dictated, seg("system", 6_000, "público")]);
+        assert_eq!(out, "[00:06] Outros: público");
+        // Same for the map split: excluded rows produce no chunk at all.
+        let mut dictated = seg("mic", 0, "segredo");
+        dictated.excluded = true;
+        assert!(split_for_map(&[dictated], MAP_CHUNK_MS, usize::MAX).is_empty());
     }
 
     #[test]

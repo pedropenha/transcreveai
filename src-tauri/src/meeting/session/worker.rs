@@ -246,7 +246,11 @@ impl Worker {
         meeting.app_label = req.app_label;
         meeting.app_exe = req.app_exe;
         meeting.capture_system_audio = !req.mic_only;
-        meeting.stt_provider_id = settings.meeting_provider_id.clone();
+        // `stt_provider_id` REFERENCES providers(id) — pseudo-ids
+        // `local_model:*` (a seleção da v1) não são chaves da tabela e
+        // quebrariam a FK; só ids de provider reais são persistidos.
+        meeting.stt_provider_id =
+            crate::stt::selection::provider_row_id(settings.meeting_provider_id.as_deref());
         if settings.selected_language != "auto" {
             meeting.language = Some(settings.selected_language.clone());
         }
@@ -327,6 +331,7 @@ impl Worker {
                 kind: "meeting_consent".to_string(),
                 message: settings.meeting_consent_text.clone(),
                 action: Some("copy_consent".to_string()),
+                meeting_id: None,
             });
         }
         log::info!("Meeting {} started ({})", meeting.id, meeting.title);
@@ -573,11 +578,11 @@ impl Worker {
             } => self.write_gap_marker(track, start_ms, end_ms),
             Effect::PersistStatus { status, error_code } => self.persist_status(status, error_code),
             Effect::Toast(kind) => self.emit_kind(kind),
-            // Only a still-pending `meeting_auto_stop` notice is cleared —
-            // a toast another lane just showed (new detection, consent)
-            // must survive the race.
-            Effect::DismissToast => {
-                crate::toast::dismiss_notice_if_kind(&self.app, ToastKind::AutoStop.kind())
+            // Only a still-pending notice of that kind is cleared — a toast
+            // another lane just showed (new detection, consent) must
+            // survive the race.
+            Effect::DismissToast(kind) => {
+                crate::toast::dismiss_notice_if_kind(&self.app, kind.kind())
             }
             Effect::RequestProcessing => {
                 let Some(meeting) = &self.meeting else {
@@ -774,6 +779,9 @@ impl Worker {
             kind: kind.kind().to_string(),
             message: toast_message(kind, &lang),
             action: kind.action().map(str::to_string),
+            // Session notices ride the active meeting's id — the toast only
+            // spends it on actions that take a `meetingId` argument.
+            meeting_id: self.meeting.as_ref().map(|m| m.id.clone()),
         });
     }
 

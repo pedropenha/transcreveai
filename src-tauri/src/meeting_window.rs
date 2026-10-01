@@ -168,6 +168,7 @@ fn emit_error_toast(app: &AppHandle) {
             kind: "meeting_error".to_string(),
             message: message.to_string(),
             action: None,
+            meeting_id: None,
         },
     );
 }

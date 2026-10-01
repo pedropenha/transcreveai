@@ -25,6 +25,9 @@ export interface MeetingSegmentLike {
   /** 'speech' | 'dictation_marker' | 'gap_marker' */
   kind: string;
   is_final: boolean;
+  /** FR-009-10/AC-009-03: mic speech inside a dictation interval. Only ever
+   * set on `kind === 'speech'` rows — markers never carry the flag. */
+  excluded: boolean;
 }
 
 /** Statuses `meetings.status` can carry (db/meetings.rs CHECK constraint). */
@@ -99,6 +102,15 @@ export function segmentSpeaker(segment: MeetingSegmentLike): SegmentSpeaker {
   // T-065 fills `speaker` when diarization lands; until then the track is
   // the speaker: mic is the user, system loopback is everyone else.
   return segment.track === "mic" ? { kind: "you" } : { kind: "others" };
+}
+
+/**
+ * FR-009-10/AC-009-03: `excluded` rows are dictated notes — private to the
+ * user and never rendered as transcript speech. The `dictation_marker` row
+ * covering the same span is what the transcript shows instead.
+ */
+export function isTranscriptVisible(segment: MeetingSegmentLike): boolean {
+  return !segment.excluded;
 }
 
 /**

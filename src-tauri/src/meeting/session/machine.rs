@@ -154,10 +154,10 @@ pub enum Effect {
     },
     /// Emit `toast://show` for this kind (the worker localizes the message).
     Toast(ToastKind),
-    /// Close whatever the toast shows — journaled when a meeting stops while
-    /// its auto-stop prompt was pending, so the stale "finalizando em 15 s"
-    /// notice does not linger after the meeting is already processing.
-    DismissToast,
+    /// Close a still-showing notice of this kind — journaled when a meeting
+    /// stops with a pending auto-stop/check-in prompt or when resumed speech
+    /// cancels the check-in, so the stale notice does not linger.
+    DismissToast(ToastKind),
     /// Emit `meeting://process-requested` for T-067's post-processing.
     RequestProcessing,
     /// Recording indicator on/off (tray icon, "Stop Meeting" row, Flow Bar
@@ -332,9 +332,13 @@ impl SessionMachine {
             return;
         }
         self.status = Status::Done;
-        // Whatever ended it, a pending auto-stop prompt is now stale.
+        // Whatever ended it, pending prompts are now stale.
         if self.auto_stop_since.take().is_some() {
-            self.effects.push(Effect::DismissToast);
+            self.effects.push(Effect::DismissToast(ToastKind::AutoStop));
+        }
+        if self.checkin_since.take().is_some() {
+            self.effects
+                .push(Effect::DismissToast(ToastKind::SilenceCheckin));
         }
         self.effects.push(Effect::StopCapture);
         match reason {
@@ -368,8 +372,11 @@ impl SessionMachine {
         self.write_failures = 0;
         if has_speech {
             self.last_speech[slot(track)] = Some(now);
-            // Speech resumed — a pending check-in is moot.
-            self.checkin_since = None;
+            // Speech resumed — a pending check-in is moot; its toast closes.
+            if self.checkin_since.take().is_some() {
+                self.effects
+                    .push(Effect::DismissToast(ToastKind::SilenceCheckin));
+            }
         }
     }
 
@@ -425,6 +432,8 @@ impl SessionMachine {
         if self.status == Status::Done || self.checkin_since.is_none() {
             return;
         }
+        self.effects
+            .push(Effect::DismissToast(ToastKind::SilenceCheckin));
         if keep_recording {
             self.checkin_since = None;
             // The answer itself counts as presence: restart the 10-min clock.
@@ -925,8 +934,52 @@ mod tests {
         assert!(e.contains(&Effect::RequestProcessing));
         assert!(e.contains(&Effect::Indicator(false)));
         // The pending "finalizando em 15 s" notice must be closed with it.
-        assert!(e.contains(&Effect::DismissToast));
+        assert!(e.contains(&Effect::DismissToast(ToastKind::AutoStop)));
         assert_eq!(m.take_events().last().unwrap().status, "processing");
+    }
+
+    #[test]
+    fn stale_checkin_toast_is_dismissed_on_timeout_and_speech() {
+        // The "Ainda em reunião?" notice is exempt from the 60 s toast
+        // collapse — without a backend dismissal it would linger with dead
+        // buttons after the response window lapses or speech resumes.
+        let t0 = Instant::now();
+        let mut m = detected_machine(t0);
+        m.tick(t0 + SILENCE_CHECKIN_AFTER);
+        assert!(m.checkin_pending());
+
+        // Timeout → stop: the check-in notice closes with the meeting.
+        m.tick(t0 + SILENCE_CHECKIN_AFTER + CHECKIN_RESPONSE_WINDOW);
+        assert!(!m.is_active());
+        assert!(
+            effects(&mut m).contains(&Effect::DismissToast(ToastKind::SilenceCheckin))
+        );
+
+        // Speech resuming clears a pending check-in the same way.
+        let mut m2 = detected_machine(t0);
+        m2.tick(t0 + SILENCE_CHECKIN_AFTER);
+        assert!(m2.checkin_pending());
+        m2.block_sealed(
+            Track::Mic,
+            true,
+            t0 + SILENCE_CHECKIN_AFTER + Duration::from_secs(10),
+        );
+        assert!(!m2.checkin_pending());
+        assert!(
+            effects(&mut m2).contains(&Effect::DismissToast(ToastKind::SilenceCheckin))
+        );
+
+        // An explicit "Continuar" clears it too — even if a non-toast
+        // surface answered.
+        let mut m3 = detected_machine(t0);
+        m3.tick(t0 + SILENCE_CHECKIN_AFTER);
+        m3.checkin_respond(
+            true,
+            t0 + SILENCE_CHECKIN_AFTER + Duration::from_secs(20),
+        );
+        assert!(
+            effects(&mut m3).contains(&Effect::DismissToast(ToastKind::SilenceCheckin))
+        );
     }
 
     #[test]

@@ -244,6 +244,35 @@
   outline: 2px solid var(--flowbar-text);
   outline-offset: 2px;
 }
+/* Secondary text button for two-choice notices (FR-009-09 "Parar"): same
+ * 32 px row height as .tprimary, ghost styling. */
+.tsecondary {
+  height: 32px;
+  flex: none;
+  padding: 0 14px;
+  border: 1px solid var(--t-border);
+  border-radius: var(--radius-md);
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--t-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-interaction)
+      var(--motion-easing-standard),
+    color var(--motion-duration-interaction) var(--motion-easing-standard);
+}
+.tsecondary:hover {
+  background: var(--t-hair);
+  color: var(--flowbar-text);
+}
+.tsecondary:focus-visible {
+  outline: 2px solid var(--flowbar-accent);
+  outline-offset: 2px;
+}
 .tmenu-btn {
   width: 32px;
   height: 32px;

@@ -953,7 +953,14 @@ impl ShortcutAction for TranscribeAction {
                                     error_code: None,
                                     duration_ms: session_duration_ms,
                                     language: Some(settings.selected_language.clone()),
-                                    stt_provider_id: Some(settings.selected_model.clone()),
+                                    // `stt_provider_id` REFERENCES providers(id)
+                                    // — `local_model:*` pseudo-ids (v1
+                                    // selection) are not table keys and would
+                                    // break the FK; only real provider ids
+                                    // persist.
+                                    stt_provider_id: crate::stt::selection::provider_row_id(
+                                        settings.dictation_provider_id.as_deref(),
+                                    ),
                                 }) {
                                     Ok(entry) => Some(entry.id),
                                     Err(err) => {
@@ -1124,7 +1131,9 @@ impl ShortcutAction for TranscribeAction {
                                     error_code: Some(short_error(&err)),
                                     duration_ms: session_duration_ms,
                                     language: Some(settings.selected_language.clone()),
-                                    stt_provider_id: Some(settings.selected_model.clone()),
+                                    stt_provider_id: crate::stt::selection::provider_row_id(
+                                        settings.dictation_provider_id.as_deref(),
+                                    ),
                                 }) {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }

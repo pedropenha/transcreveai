@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BellRing, ChevronDown, TriangleAlert, Video, X } from "lucide-react";
@@ -11,11 +11,13 @@ import {
   CONFIRMATION_MS,
   meetingMenuItems,
   noticeActionFor,
+  noticeBlocksCollapse,
   resolveToastView,
   startsRecording,
   toastWindowHeight,
   type DetectorAction,
   type NoticeAction,
+  type NoticeActionButton,
   type ToastStateEvent,
 } from "./toastView";
 
@@ -41,6 +43,7 @@ function isWarningKind(kind: string | undefined): boolean {
   return (
     kind === "warning" ||
     kind === "error" ||
+    kind === "meeting_error" ||
     kind === "meeting_warning" ||
     kind === "meeting_limit" ||
     kind === "meeting_auto_stop"
@@ -115,13 +118,19 @@ const ToastOverlay: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (view === "hidden" || view === "confirming") {
+    // FR-009-09: the check-in stays up for its full response window —
+    // collapsing it would hide the only way to say "keep recording".
+    if (
+      view === "hidden" ||
+      view === "confirming" ||
+      noticeBlocksCollapse(state.notice)
+    ) {
       disarmCollapse();
       return;
     }
     armCollapse();
     return disarmCollapse;
-  }, [view, armCollapse, disarmCollapse]);
+  }, [view, state.notice, armCollapse, disarmCollapse]);
 
   // ---- toast://state --------------------------------------------------------
   useEffect(() => {
@@ -163,18 +172,46 @@ const ToastOverlay: React.FC = () => {
     void invoke("toast_dismiss");
   }, []);
 
-  // FR-008-14/FR-009-08 (T-069): a notice carrying a known action gets a
-  // button; the command answer is the dismissal either way.
+  // FR-008-14/FR-009-08/09/22 (T-069): a notice carrying a known action
+  // gets button(s); success dismisses, a refused/failed command keeps the
+  // notice so retry stays reachable.
   const runNoticeAction = useCallback(
-    async (action: NoticeAction) => {
+    async (action: NoticeAction, button: NoticeActionButton = action) => {
+      const meetingId = state.notice?.meeting_id ?? null;
+      const args: Record<string, unknown> = { ...button.args };
+      if (action.needsMeetingId) {
+        if (!meetingId) return; // no context → nothing safe to invoke
+        args.meetingId = meetingId;
+      }
+      let ok = false;
       try {
-        await invoke(action.command);
+        const res = await invoke<CommandEnvelope | null>(button.command, args);
+        ok = !(
+          res !== null &&
+          typeof res === "object" &&
+          res.status === "error"
+        );
+        // FR-009-02 "Copiar aviso": the command resolves to the reminder
+        // text — the dismissal only counts once it's on the clipboard.
+        if (ok && action.copiesTextToClipboard) {
+          const text =
+            res !== null && typeof res === "object" && "data" in res
+              ? res.data
+              : res;
+          ok = typeof text === "string";
+          if (ok) await navigator.clipboard.writeText(text as string);
+        }
       } catch (e) {
-        console.warn(`${action.command} failed:`, e);
+        console.warn(`${button.command} failed:`, e);
+        ok = false;
+      }
+      if (!ok) return;
+      if (action.navigateSection) {
+        void emit("hub://navigate", { section: action.navigateSection });
       }
       dismissToast();
     },
-    [dismissToast],
+    [state.notice, dismissToast],
   );
 
   const dismissTransient = useCallback(() => {
@@ -222,7 +259,10 @@ const ToastOverlay: React.FC = () => {
 
   const renderNotice = () => {
     const expanded = view === "notice-expanded";
-    const noticeAction = noticeActionFor(state.notice?.action);
+    const noticeAction = noticeActionFor(
+      state.notice?.action,
+      state.notice?.meeting_id,
+    );
     return (
       <div
         className={`tcard tnotice ${expanded && noticeAction ? "expanded" : ""}`}
@@ -261,6 +301,17 @@ const ToastOverlay: React.FC = () => {
             >
               {t(`toast.${noticeAction.labelKey}`)}
             </button>
+            {noticeAction.secondary && (
+              <button
+                type="button"
+                className="tsecondary"
+                onClick={() =>
+                  void runNoticeAction(noticeAction, noticeAction.secondary)
+                }
+              >
+                {t(`toast.${noticeAction.secondary.labelKey}`)}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -358,7 +409,7 @@ const ToastOverlay: React.FC = () => {
           ? t("toast.recording", { app: confirming })
           : detection
             ? t("toast.meetingDetected")
-            : ""}
+            : (state.notice?.message ?? "")}
       </span>
       {state.notice !== null && detection === null
         ? renderNotice()

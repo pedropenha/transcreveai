@@ -182,6 +182,11 @@ pub fn render_meeting_markdown(
         out.push_str("—\n");
     } else {
         for segment in segments {
+            // FR-009-10/AC-009-03: `excluded` mic rows are dictated notes —
+            // the exported transcript shows the `dictation_marker` instead.
+            if segment.excluded {
+                continue;
+            }
             let ts = segment_timestamp(segment.start_ms);
             match segment.kind.as_str() {
                 "dictation_marker" => {
@@ -312,6 +317,26 @@ mod tests {
         assert!(md.contains("- **Duração:** 1 h 12 min\n"));
         // 1:01:01 elapsed → h:mm:ss, system track without speaker → "Sistema".
         assert!(md.contains("[1:01:01] Sistema: fim\n"));
+    }
+
+    #[test]
+    fn excluded_dictated_speech_stays_out_of_the_export() {
+        // FR-009-10/AC-009-03: the "Ditado" marker renders, the dictated
+        // text behind it does not.
+        let meeting = fixture_meeting();
+        let mut dictated = MeetingSegment::new(&meeting.id, "mic", 30_000, 31_000, "sigilo");
+        dictated.excluded = true;
+        let mut marker = MeetingSegment::new(&meeting.id, "mic", 30_000, 31_000, "Ditado");
+        marker.kind = "dictation_marker".to_string();
+        let md = render_meeting_markdown(
+            &meeting,
+            None,
+            &[dictated, marker],
+            &markdown_labels("pt-BR"),
+            "x",
+        );
+        assert!(md.contains("*Ditado*"));
+        assert!(!md.contains("sigilo"));
     }
 
     #[test]

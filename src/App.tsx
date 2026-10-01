@@ -215,6 +215,25 @@ function App() {
     };
   }, [t]);
 
+  // Toast actions can deep-link a sidebar section ("open_summary_settings"
+  // → post-processing). Only navigate to sections the current settings
+  // expose — e.g. postprocessing is hidden until post_process_enabled.
+  useEffect(() => {
+    const unlisten = listen<{ section?: string }>("hub://navigate", (event) => {
+      const section = event.payload.section;
+      if (
+        section !== undefined &&
+        section in SECTIONS_CONFIG &&
+        SECTIONS_CONFIG[section as SidebarSection].enabled(settings)
+      ) {
+        setCurrentSection(section as SidebarSection);
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [settings]);
+
   const revealMainWindowForPermissions = async () => {
     try {
       await commands.showMainWindowCommand();

@@ -2291,7 +2291,7 @@ kind: string;
 /**
  * false while the segment is still a partial transcript.
  */
-is_final: boolean;
+is_final: boolean; 
 /**
  * FR-009-10/AC-009-03 (T-065): mic speech overlapping a dictation
  * interval is excluded from the transcript — the meeting UI hides these

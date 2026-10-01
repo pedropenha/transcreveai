@@ -293,12 +293,25 @@ impl Worker {
     }
 
     fn emit_toast(&self, kind: &str, message: String, action: Option<&str>) {
+        self.emit_toast_for(kind, message, action, None);
+    }
+
+    /// `meeting_id` rides the payload so action buttons like
+    /// `retry_processing` know which meeting they act on.
+    fn emit_toast_for(
+        &self,
+        kind: &str,
+        message: String,
+        action: Option<&str>,
+        meeting_id: Option<&str>,
+    ) {
         if let Err(e) = self.app.emit(
             TOAST_SHOW_EVENT,
             ToastPayload {
                 kind: kind.to_string(),
                 message,
                 action: action.map(str::to_string),
+                meeting_id: meeting_id.map(str::to_string),
             },
         ) {
             log::warn!("Failed to emit {TOAST_SHOW_EVENT}: {e}");
@@ -437,10 +450,11 @@ impl Worker {
         if let Ok(meeting) = self.meeting(meeting_id) {
             self.emit_state(meeting_id, "error", Self::elapsed_ms(&meeting));
         }
-        self.emit_toast(
+        self.emit_toast_for(
             "meeting_error",
             self.toast_message("meeting_error"),
             Some("retry_processing"),
+            Some(meeting_id),
         );
         Err(err)
     }

@@ -25,6 +25,10 @@ export interface ToastNotice {
   kind: string;
   message: string;
   action?: unknown;
+  /** Meeting the action acts on — `retry_processing` invokes
+   *  `meeting_retry_processing(meetingId)`, so notices that need it but
+   *  lack one render no button. Absent for detection-level notices. */
+  meeting_id?: string | null;
 }
 
 /** `toast://state` payload — all keys always present (null when absent). */
@@ -67,10 +71,11 @@ export function resolveToastView(input: ToastViewInput): ToastView {
   if (state.detection !== null) {
     return hovered || menuOpen ? "expanded" : "compact";
   }
-  // Notices carrying a known action open expanded straight away — the
-  // button must be clickable without a hover dance (AC-008-05 gives the
-  // user 15 s).
-  return hovered || noticeActionFor(state.notice?.action) !== null
+  // Notices carrying an answerable action open expanded straight away —
+  // the button must be clickable without a hover dance (AC-008-05 gives
+  // the user 15 s; FR-009-09's check-in gets 2 min).
+  return hovered ||
+    noticeActionFor(state.notice?.action, state.notice?.meeting_id) !== null
     ? "notice-expanded"
     : "notice";
 }
@@ -102,20 +107,39 @@ export function startsRecording(action: DetectorAction): boolean {
   return RECORDING_ACTIONS.has(action);
 }
 
-/** A `toast://show` action the toast can answer inline (T-069): the button
- *  an expanded notice renders. `command` is invoked raw — meeting commands
- *  ship in bindings.ts, but this webview deliberately calls `invoke` (same
- *  style as `detector_respond` above). */
-export interface NoticeAction {
+/** One button of a notice action: the raw-invoked command plus the args
+ *  it carries. `needsMeetingId` buttons only exist when the notice ships
+ *  a `meeting_id`. */
+export interface NoticeActionButton {
   command: string;
   /** Key under `toast.*` holding the button label. */
   labelKey: string;
+  /** Extra invoke args (e.g. `{ keepRecording: false }` for "Parar"). */
+  args?: Record<string, unknown>;
+}
+
+/** A `toast://show` action the toast can answer inline (T-069): the
+ *  button(s) an expanded notice renders. `command` is invoked raw — the
+ *  meeting commands ship in bindings.ts, but this webview deliberately
+ *  calls `invoke` (same style as `detector_respond` above). */
+export interface NoticeAction extends NoticeActionButton {
+  /** Second button for two-choice prompts — FR-009-09's
+   *  "Continuar"/"Parar" check-in. */
+  secondary?: NoticeActionButton;
+  /** The command takes `{ meetingId }` from `notice.meeting_id`. */
+  needsMeetingId?: boolean;
+  /** Hub sidebar section to open after `command` runs (`hub://navigate`
+   *  payload) — `open_summary_settings` lands on post-processing. */
+  navigateSection?: string;
+  /** The command resolves to text to put on the clipboard — the FR-009-02
+   *  reminder's "Copiar aviso" (`meeting_consent_copy` → writeText). */
+  copiesTextToClipboard?: boolean;
 }
 
 /** Known notice actions, keyed by `toast://show.action`. Notices whose
  *  action is absent here render without a button — e.g. `open_consent`
- *  opens the Hub modal (MeetingConsentGate) and `checkin` needs the
- *  two-choice prompt (Continuar/Parar) that belongs to T-066's surface. */
+ *  opens the Hub modal (MeetingConsentGate) and unknown vocabulary stays
+ *  informational rather than rendering a dead button. */
 const NOTICE_ACTIONS: Readonly<Record<string, NoticeAction>> = {
   // FR-008-14: "Continuar gravando" cancels the 15 s auto-stop.
   continue_recording: {
@@ -124,10 +148,58 @@ const NOTICE_ACTIONS: Readonly<Record<string, NoticeAction>> = {
   },
   // FR-009-08: "Estender 30 min" on the duration-limit warning.
   extend_30: { command: "meeting_extend_30", labelKey: "extend30" },
+  // FR-009-09/AC-009-08: "Ainda em reunião?" — Continuar keeps recording,
+  // Parar stops and processes. `meeting_checkin_respond` acts on the
+  // active session, so no meeting id is needed.
+  checkin: {
+    command: "meeting_checkin_respond",
+    labelKey: "checkinContinue",
+    args: { keepRecording: true },
+    secondary: {
+      command: "meeting_checkin_respond",
+      labelKey: "checkinStop",
+      args: { keepRecording: false },
+    },
+  },
+  // FR-009-22: fatal post-processing failure — re-runs the pipeline for
+  // the meeting the notice names. No meeting id → no button (the command
+  // cannot be invoked without one).
+  retry_processing: {
+    command: "meeting_retry_processing",
+    labelKey: "retryProcessing",
+    needsMeetingId: true,
+  },
+  // `summary_status = disabled` notice: opens the Hub on the
+  // post-processing section where the summary provider/key is set.
+  open_summary_settings: {
+    command: "show_main_window_command",
+    labelKey: "openSettings",
+    navigateSection: "postprocessing",
+  },
+  // FR-009-02: the every-start consent reminder carries the notice text —
+  // "Copiar aviso" puts it on the clipboard to paste in the meeting chat.
+  copy_consent: {
+    command: "meeting_consent_copy",
+    labelKey: "copyNotice",
+    copiesTextToClipboard: true,
+  },
 };
 
-export function noticeActionFor(action: unknown): NoticeAction | null {
-  return typeof action === "string" ? (NOTICE_ACTIONS[action] ?? null) : null;
+export function noticeActionFor(
+  action: unknown,
+  meetingId?: string | null,
+): NoticeAction | null {
+  if (typeof action !== "string") return null;
+  const noticeAction = NOTICE_ACTIONS[action] ?? null;
+  if (noticeAction?.needsMeetingId && !meetingId) return null;
+  return noticeAction;
+}
+
+/** FR-009-09: the silence check-in must stay on screen for its whole
+ *  2-minute response window — the 60 s collapse timer (FR-008-10) does
+ *  not apply to notices that await an answer. */
+export function noticeBlocksCollapse(notice: ToastNotice | null): boolean {
+  return notice?.action === "checkin";
 }
 
 export interface ToastMenuItem {

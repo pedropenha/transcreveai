@@ -600,6 +600,7 @@ fn start_meeting_from_surface(app: &AppHandle, req: meeting::session::StartReque
                 kind: kind.to_string(),
                 message: e.message,
                 action: action.map(str::to_string),
+                meeting_id: None,
             },
         );
     }
@@ -635,6 +636,7 @@ fn toggle_meeting_from_surface(app: &AppHandle) {
                 kind: kind.to_string(),
                 message: e.message,
                 action: action.map(str::to_string),
+                meeting_id: None,
             },
         );
     }

@@ -117,6 +117,10 @@ pub struct ToastPayload {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<String>,
+    /// Meeting the action acts on — `meeting_retry_processing` needs the id;
+    /// session-scoped actions (check-in, auto-stop) ignore it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
 }
 
 /// `meeting://process-requested` payload — the T-067 seam. `Deserialize` so
@@ -410,6 +414,17 @@ pub(crate) fn open_session_db(app: &AppHandle) -> CommandResult<Connection> {
 /// Delete a meeting's audio dir — guarded to `audio/meetings/` so a tampered
 /// row can never delete outside `app_data`.
 pub(crate) fn remove_meeting_audio_dir(app_data_dir: &Path, meeting_id: &str) -> CommandResult<()> {
+    // Meeting ids are UUIDs minted by `Meeting::new`. Enforcing that here
+    // also kills path traversal — `"../dictations"` is not a valid UUID, so
+    // a tampered `meeting_delete` argument can never escape the root before
+    // the component-level guard below even runs (`Path::starts_with` does
+    // not normalize `..`).
+    if uuid::Uuid::parse_str(meeting_id).is_err() {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "Invalid meeting id",
+        ));
+    }
     let dir = meeting_audio_dir(app_data_dir, meeting_id);
     if !dir_inside_meetings_root(app_data_dir, &dir) {
         return Err(CommandError::new(
@@ -468,6 +483,31 @@ mod tests {
         ));
         assert!(!dir_inside_meetings_root(root, Path::new("data/other")));
         assert!(!dir_inside_meetings_root(root, Path::new("elsewhere")));
+        // `..` components pass a naive `starts_with` — the real defense is
+        // the UUID gate in `remove_meeting_audio_dir`.
+        assert!(dir_inside_meetings_root(
+            root,
+            &meeting_audio_dir(root, "../dictations")
+        ));
+    }
+
+    #[test]
+    fn remove_audio_dir_rejects_non_uuid_ids() {
+        // A frontend-supplied id containing `..` would otherwise resolve
+        // outside `audio/meetings/` once the OS normalizes the path.
+        for bad in ["../dictations", "../../", "a/b", ".", "..", ""] {
+            let err = remove_meeting_audio_dir(Path::new("data"), bad)
+                .expect_err("non-UUID id must be rejected");
+            assert_eq!(
+                err.code,
+                CommandErrorCode::InvalidInput,
+                "id {bad:?} should fail validation"
+            );
+        }
+        // A well-formed UUID for a meeting that never recorded deletes
+        // nothing and succeeds (idempotent).
+        remove_meeting_audio_dir(Path::new("data"), "9f0c0000-0000-4000-8000-000000000000")
+            .expect("UUID id");
     }
 
     #[test]

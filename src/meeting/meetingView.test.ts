@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   formatElapsedMs,
   formatSegmentTimestamp,
+  isTranscriptVisible,
   mergeSegments,
   normalizeMeetingStatus,
   normalizeProgressStep,
@@ -20,6 +21,7 @@ const seg = (over: Partial<MeetingSegmentLike>): MeetingSegmentLike => ({
   text: "texto",
   kind: "speech",
   is_final: true,
+  excluded: false,
   ...over,
 });
 
@@ -81,6 +83,13 @@ assert.equal(
   mergeSegments(hydrated, [seg({ id: "a" }), seg({ id: "a" })]).length,
   2,
 );
+
+// --- Transcript visibility (FR-009-10/AC-009-03) ------------------------------
+// `excluded` mic speech is dictated notes — the `dictation_marker` row is
+// what the transcript shows instead.
+assert.equal(isTranscriptVisible(seg({})), true);
+assert.equal(isTranscriptVisible(seg({ excluded: true })), false);
+assert.equal(isTranscriptVisible(seg({ kind: "dictation_marker" })), true);
 
 // --- Status mapping ----------------------------------------------------------
 assert.equal(normalizeMeetingStatus("recording"), "recording");

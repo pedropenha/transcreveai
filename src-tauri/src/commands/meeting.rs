@@ -393,6 +393,15 @@ pub fn meeting_export_markdown(app: AppHandle, id: String) -> CommandResult<Stri
 #[tauri::command]
 #[specta::specta]
 pub fn meeting_delete(app: AppHandle, id: String) -> CommandResult<()> {
+    // Meeting ids are UUIDs minted server-side; rejecting anything else here
+    // keeps a forged id ("../dictations") from ever reaching the filesystem
+    // delete — the UUID check in `remove_meeting_audio_dir` is the backstop.
+    if uuid::Uuid::parse_str(&id).is_err() {
+        return Err(CommandError::new(
+            CommandErrorCode::InvalidInput,
+            "Invalid meeting id",
+        ));
+    }
     if meeting_recording_active()
         && manager(&app)?
             .current()
