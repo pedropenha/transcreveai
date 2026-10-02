@@ -89,6 +89,9 @@ isolang = "2"
 chrono = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
+# Meeting-app icon -> PNG data URI (meeting::app_icon).
+png = "0.18"
+base64 = "0.22"
 tar = "0.4.44"
 flate2 = "1.0"
 sha2 = "0.10"
@@ -147,6 +150,7 @@ windows = { version = "0.61.3", features = [
   "Win32_Security",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_UI_Controls",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",

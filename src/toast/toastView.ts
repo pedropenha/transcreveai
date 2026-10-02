@@ -18,6 +18,8 @@ export interface MeetingDetection {
   /** Rule action that produced the detection (`ask`, `auto_start`, …). */
   action?: string | null;
   started_at?: string | number | null;
+  /** App icon as a PNG data URI (`data:image/png;base64,…`) or null. */
+  icon?: string | null;
 }
 
 /** A generic `toast://show` warning/notice. */
@@ -41,8 +43,7 @@ export interface ToastStateEvent {
 /** The toast's visual classes (FR-008-07..09). */
 export type ToastView =
   | "hidden" // nothing to show, or collapsed to the amber dot
-  | "compact" // icon + "Reunião detectada" + "● Agora" + app (FR-008-07)
-  | "expanded" // hover: ✕ + "Iniciar Notetaker" + ▾ menu (FR-008-08)
+  | "expanded" // always: icon + "Reunião detectada" + Iniciar Notetaker ▾ (FR-008-07/08)
   | "confirming" // "Gravando · <App>" for 3 s after start (FR-008-09)
   | "notice" // generic compact informational toast (toast://show)
   | "notice-expanded"; // hovered notice (✕ dismiss visible)
@@ -60,7 +61,7 @@ export interface ToastViewInput {
 }
 
 export function resolveToastView(input: ToastViewInput): ToastView {
-  const { state, hovered, menuOpen, confirming } = input;
+  const { state, hovered, confirming } = input;
 
   if (state.detection === null && state.notice === null) return "hidden";
   // Collapsed = the amber dot on the Flow Bar is the whole UI (FR-008-10/12).
@@ -69,7 +70,7 @@ export function resolveToastView(input: ToastViewInput): ToastView {
   // toast morphs to "Gravando · <App>" regardless of where the cursor sits.
   if (confirming !== null && state.detection !== null) return "confirming";
   if (state.detection !== null) {
-    return hovered || menuOpen ? "expanded" : "compact";
+    return "expanded";
   }
   // Notices carrying an answerable action open expanded straight away —
   // the button must be clickable without a hover dance (AC-008-05 gives
@@ -123,9 +124,9 @@ export interface NoticeActionButton {
 }
 
 /** A `toast://show` action the toast can answer inline (T-069): the
- *  button(s) an expanded notice renders. `command` is invoked raw — the
- *  meeting commands ship in bindings.ts, but this webview deliberately
- *  calls `invoke` (same style as `detector_respond` above). */
+ *  button(s) an expanded notice renders. `command` is invoked raw
+ *  because the name is data-driven — a `commands.*` call needs a
+ *  statically known member, so dynamic dispatch stays on `invoke`. */
 export interface NoticeAction extends NoticeActionButton {
   /** Second button for two-choice prompts — FR-009-09's
    *  "Continuar"/"Parar" check-in. */
@@ -245,13 +246,12 @@ export function toastWindowHeight(view: ToastView, menuOpen: boolean): number {
   switch (view) {
     case "hidden":
       return 0;
-    case "compact":
     case "confirming":
     case "notice":
       return 88; // 56 card + 32 stage padding
     case "notice-expanded":
       return 136; // 104 card + 32 padding (notices have no menu)
     case "expanded":
-      return menuOpen ? 304 : 136; // 104 card (+168 menu) + 32 padding
+      return menuOpen ? 264 : 96; // 64 card (+168 menu) + 32 padding
   }
 }

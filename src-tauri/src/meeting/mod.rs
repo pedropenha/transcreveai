@@ -29,6 +29,7 @@
 //! `detector://start-requested`, emitted by
 //! `commands::detector::detector_respond` and by the T-069 auto-start path).
 
+mod app_icon;
 mod classifier;
 mod consent;
 mod detector;
@@ -181,6 +182,13 @@ fn emit_detector_outputs(app: &tauri::AppHandle, outputs: Vec<DetectorOutput>) {
                     detection.source
                 );
                 let mut event = DetectorMeetingEvent::started(&detection);
+                // Cached per exe path; known apps/browsers resolve to `None`
+                // (the front-end embeds their logos).
+                event.icon = app_icon::detection_icon(
+                    &detection.app_label,
+                    &detection.exe_name,
+                    detection.exe_path.as_deref(),
+                );
                 if auto {
                     // The toast keys the "Gravando · <App>" confirmation
                     // face off `action == "auto_start"` — global-toggle

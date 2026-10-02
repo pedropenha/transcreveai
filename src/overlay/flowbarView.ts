@@ -218,3 +218,20 @@ export function toastBadgeVisible(
 ): boolean {
   return toastPending && view !== "hidden";
 }
+
+/** Hover tooltip content: action label plus an optional shortcut that the
+ * view renders in bold ("Ditar  **Win + Space**"). */
+export interface HoverTipParts {
+  label: string;
+  shortcut: string | null;
+}
+
+export function hoverTipParts(label: string, shortcut: string): HoverTipParts {
+  const trimmed = shortcut.trim();
+  return { label, shortcut: trimmed === "" ? null : trimmed };
+}
+
+/** Flat text of a tooltip — the accessible name of the button it describes. */
+export function hoverTipText({ label, shortcut }: HoverTipParts): string {
+  return shortcut === null ? label : `${label} ${shortcut}`;
+}

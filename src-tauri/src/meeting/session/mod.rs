@@ -463,6 +463,13 @@ pub(crate) fn toast_message(kind: ToastKind, lang: &str) -> String {
                 "The meeting ended — finishing in 15 s"
             }
         }
+        ToastKind::ConsentReminder => {
+            if pt {
+                "Informe aos participantes que a reunião está sendo transcrita."
+            } else {
+                "Let participants know the meeting is being transcribed."
+            }
+        }
     };
     text.to_string()
 }
@@ -487,13 +494,10 @@ pub(crate) fn remove_meeting_audio_dir(app_data_dir: &Path, meeting_id: &str) ->
     // a tampered `meeting_delete` argument can never escape the root before
     // the component-level guard below even runs (`Path::starts_with` does
     // not normalize `..`).
-    if uuid::Uuid::parse_str(meeting_id).is_err() {
-        return Err(CommandError::new(
-            CommandErrorCode::InvalidInput,
-            "Invalid meeting id",
-        ));
-    }
-    let dir = meeting_audio_dir(app_data_dir, meeting_id);
+    let canonical = uuid::Uuid::parse_str(meeting_id)
+        .map(|uuid| uuid.hyphenated().to_string())
+        .map_err(|_| CommandError::new(CommandErrorCode::InvalidInput, "Invalid meeting id"))?;
+    let dir = meeting_audio_dir(app_data_dir, &canonical);
     if !dir_inside_meetings_root(app_data_dir, &dir) {
         return Err(CommandError::new(
             CommandErrorCode::InvalidInput,
@@ -663,6 +667,11 @@ mod tests {
             "Still in the meeting?"
         );
         assert!(toast_message(ToastKind::SystemUnavailable, "pt-BR").contains("participantes"));
+        // FR-009-02: the reminder is a nudge, not the clipboard payload —
+        // `meeting_consent_text` is what `copy_consent` copies, not what the
+        // toast prints.
+        assert!(toast_message(ToastKind::ConsentReminder, "pt-BR").contains("participantes"));
+        assert!(toast_message(ToastKind::ConsentReminder, "en").contains("participants"));
     }
 
     #[test]
@@ -672,6 +681,11 @@ mod tests {
         assert_eq!(ToastKind::AutoStop.action(), Some("continue_recording"));
         assert_eq!(ToastKind::AutoStop.kind(), "meeting_auto_stop");
         assert_eq!(ToastKind::MicUnavailable.action(), None);
+        // FR-009-02: the reminder shares the gate's `meeting_consent` kind
+        // and differs only by the `copy_consent` action — the toast and
+        // MeetingConsentGate split on it.
+        assert_eq!(ToastKind::ConsentReminder.kind(), "meeting_consent");
+        assert_eq!(ToastKind::ConsentReminder.action(), Some("copy_consent"));
     }
 
     #[test]

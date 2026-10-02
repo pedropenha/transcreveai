@@ -21,7 +21,7 @@
 //! fake; only [`CpalLoopbackBackend`] touches real hardware.
 
 use std::{
-    sync::{mpsc, Arc, Mutex},
+    sync::{atomic::Ordering, mpsc, Arc, Mutex},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -38,10 +38,15 @@ use super::{
 };
 use crate::audio_toolkit::constants;
 
-/// How often the worker re-checks the default render endpoint and drains the
-/// ring. With the 100 ms first reattach delay, a device swap reattaches well
-/// inside the FR-009-04 budget of 2 s.
+/// How often the worker re-checks the default render endpoint. With the
+/// 100 ms first reattach delay, a device swap reattaches well inside the
+/// FR-009-04 budget of 2 s.
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// Idle wake cadence while the ring is empty — the same poll the mic
+/// consumer uses, so newly-arriving audio is drained within a few ms. While
+/// samples are queued the worker never sleeps: real-time input must not
+/// outrun the drain.
+const RING_IDLE_POLL: Duration = Duration::from_millis(10);
 /// Ring capacity, mirroring the microphone path.
 const RING_SECONDS: usize = 2;
 /// Upper bound per drain so a stalled worker cannot fall arbitrarily behind.
@@ -76,6 +81,11 @@ pub enum SystemAudioEvent {
     },
     /// Capture stopped producing frames until the next `Attached`.
     Detached { reason: DetachReason },
+    /// The endpoint callback could not fit every sample into the ring and
+    /// dropped some — the system track is missing audio even though the
+    /// stream stayed attached. `dropped_samples` is the cumulative count for
+    /// the current attach; a reattach resets it to zero.
+    Overrun { dropped_samples: u64 },
 }
 
 pub type SystemAudioEventCallback = Arc<dyn Fn(SystemAudioEvent) + Send + Sync + 'static>;
@@ -89,6 +99,12 @@ pub trait LoopbackStream: Send {
     /// `Some(message)` once the backend's error callback reported the stream
     /// can no longer capture; `None` while healthy.
     fn failure(&self) -> Option<String>;
+    /// Samples the capture callback dropped because the ring was full —
+    /// cumulative for this stream's lifetime. Backends that cannot observe
+    /// overruns report zero.
+    fn dropped_samples(&self) -> u64 {
+        0
+    }
 }
 
 /// The two halves of an opened capture: the live stream plus the consumer
@@ -103,8 +119,10 @@ pub struct OpenedLoopback {
 /// scripted backend so the worker's attach/detach/backoff logic runs without
 /// hardware.
 pub trait LoopbackBackend: Send {
-    /// Name of the current default render endpoint, `None` if there is none.
-    fn default_device_name(&self) -> Option<String>;
+    /// Name of the current default render endpoint: `Ok(None)` when there
+    /// is none, `Err` when the probe itself failed. The distinction matters
+    /// — a transient `name()` error must not detach a healthy stream.
+    fn default_device_name(&self) -> Result<Option<String>, String>;
     /// Open a loopback capture on the current default render endpoint.
     fn open(&self) -> Result<OpenedLoopback, String>;
 }
@@ -119,19 +137,28 @@ pub(crate) fn reattach_delay(attempt: u32) -> Duration {
 
 /// Pure detach policy, separated from the poll loop for testing: a stream is
 /// detached when its backend reported a failure or when the default render
-/// endpoint no longer matches the device the stream is bound to.
+/// endpoint no longer matches the device the stream is bound to. A failed
+/// *probe* (`Err` from `default_device_name`) is not evidence of a swap —
+/// the stream stays attached rather than flapping on a transient `name()`
+/// error, and the next successful poll still sees a real change.
 pub(crate) fn assess_stream(
     failure: Option<String>,
     bound_name: &str,
-    current_default: Option<&str>,
+    current_default: Result<Option<String>, String>,
 ) -> Option<DetachReason> {
     if let Some(message) = failure {
         return Some(DetachReason::StreamError(message));
     }
-    if current_default != Some(bound_name) {
-        return Some(DetachReason::DefaultDeviceChanged);
+    match current_default {
+        Err(err) => {
+            log::debug!("Default endpoint probe failed ({err}) — keeping the loopback stream");
+            None
+        }
+        Ok(current) if current.as_deref() != Some(bound_name) => {
+            Some(DetachReason::DefaultDeviceChanged)
+        }
+        Ok(_) => None,
     }
-    None
 }
 
 /// Handle to the system-audio capture worker. `stop`/`drop` ends the stream
@@ -187,7 +214,9 @@ impl SystemAudioCapture {
             let _ = tx.send(());
         }
         if let Some(handle) = self.worker.take() {
-            let _ = handle.join();
+            if let Err(e) = handle.join() {
+                log::error!("System audio capture worker panicked: {e:?}");
+            }
         }
     }
 }
@@ -210,11 +239,19 @@ enum AttachedExit {
 /// to stop or [`assess_stream`] reports the stream is no longer bound to the
 /// default endpoint. A resampler is built per attach so a different device
 /// rate never feeds a stale filter chain.
+///
+/// Draining mirrors the microphone consumer: while the ring holds samples
+/// the loop never sleeps — it drains bounded chunks back-to-back, checking
+/// the stop signal between them. Sleeping once per [`POLL_INTERVAL`] here is
+/// what let continuous input outrun the old 50 ms-per-250 ms drain and
+/// overflow the 2 s ring. Endpoint health is still assessed only once per
+/// `poll_interval`; overrun drops surface as [`SystemAudioEvent::Overrun`].
 fn run_attached(
     opened: OpenedLoopback,
     backend: &dyn LoopbackBackend,
     stop_rx: &mpsc::Receiver<()>,
     frame_cb: &AudioFrameCallback,
+    event_cb: &SystemAudioEventCallback,
     poll_interval: Duration,
 ) -> AttachedExit {
     let OpenedLoopback {
@@ -237,36 +274,92 @@ fn run_attached(
     let max_drain_samples =
         ((sample_rate as u128 * MAX_DRAIN_CHUNK.as_millis()) / 1_000).max(1) as usize;
 
+    let mut next_assessment = Instant::now();
+    let mut dropped_seen = stream.dropped_samples();
+
+    // Final drain: deliver every sample still in the ring before the
+    // resampler tail flush. Bounded by the ring's capacity plus one drain
+    // chunk — the producer may keep feeding a live stream while we drain,
+    // so "while non-empty" alone could outrun the bound.
+    let drain_all = |samples: &mut Consumer<f32>,
+                     resampler: &mut FrameResampler,
+                     frame_cb: &AudioFrameCallback| {
+        let mut budget = samples.slots() + max_drain_samples;
+        while samples.slots() > 0 && budget > 0 {
+            let drained = drain_available_samples(samples, max_drain_samples, |raw| {
+                resampler.push(raw, |frame| frame_cb(frame));
+            });
+            budget = budget.saturating_sub(drained.max(1));
+        }
+    };
+
+    // Overruns are only checked on the assessment cadence, so drops in the
+    // last poll window would vanish — report the final reading before any
+    // exit so the meeting's cumulative loss count stays exact.
+    let report_overrun = |stream: &dyn LoopbackStream, dropped_seen: &mut u64| {
+        let dropped = stream.dropped_samples();
+        if dropped > *dropped_seen {
+            log::warn!(
+                "System audio ring dropped {} samples ({} total); input outran the drain",
+                dropped - *dropped_seen,
+                dropped
+            );
+            *dropped_seen = dropped;
+            // Emit on every growth — the session accumulates the deltas,
+            // so suppressing later reports would undercount the loss.
+            event_cb(SystemAudioEvent::Overrun {
+                dropped_samples: dropped,
+            });
+        }
+    };
+
     loop {
-        match stop_rx.recv_timeout(poll_interval) {
-            Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // Drain whatever the callback still queued before flushing the
-                // resampler tail, so stopping loses only audio that never
-                // arrived.
-                while samples.slots() > 0 {
-                    drain_available_samples(&mut samples, max_drain_samples, |raw| {
-                        resampler.push(raw, |frame| frame_cb(frame));
-                    });
-                }
-                resampler.finish(|frame| frame_cb(frame));
-                return AttachedExit::Stop;
+        // Stop is observed between bounded chunks so it cannot sit behind a
+        // full ring; when the ring is empty the worker blocks briefly and the
+        // stop signal wakes it immediately.
+        let stop_requested = if samples.slots() > 0 {
+            matches!(
+                stop_rx.try_recv(),
+                Ok(()) | Err(mpsc::TryRecvError::Disconnected)
+            )
+        } else {
+            match stop_rx.recv_timeout(RING_IDLE_POLL) {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => true,
+                Err(mpsc::RecvTimeoutError::Timeout) => false,
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        };
+        if stop_requested {
+            // Drain whatever the callback still queued before flushing the
+            // resampler tail, so stopping loses only audio that never
+            // arrived.
+            drain_all(&mut samples, &mut resampler, frame_cb);
+            resampler.finish(|frame| frame_cb(frame));
+            report_overrun(stream.as_ref(), &mut dropped_seen);
+            return AttachedExit::Stop;
         }
 
         drain_available_samples(&mut samples, max_drain_samples, |raw| {
             resampler.push(raw, |frame| frame_cb(frame));
         });
 
-        if let Some(reason) = assess_stream(
-            stream.failure(),
-            stream.device_name(),
-            backend.default_device_name().as_deref(),
-        ) {
-            // Flush the resampler tail before detaching so audio that already
-            // arrived is delivered ahead of the gap.
-            resampler.finish(|frame| frame_cb(frame));
-            return AttachedExit::Detach(reason);
+        let now = Instant::now();
+        if now >= next_assessment {
+            next_assessment = now + poll_interval;
+
+            if let Some(reason) = assess_stream(
+                stream.failure(),
+                stream.device_name(),
+                backend.default_device_name(),
+            ) {
+                // Drain the ring, then flush the resampler tail, so audio
+                // that already arrived is delivered ahead of the gap.
+                drain_all(&mut samples, &mut resampler, frame_cb);
+                resampler.finish(|frame| frame_cb(frame));
+                report_overrun(stream.as_ref(), &mut dropped_seen);
+                return AttachedExit::Detach(reason);
+            }
+
+            report_overrun(stream.as_ref(), &mut dropped_seen);
         }
     }
 }
@@ -294,7 +387,14 @@ fn run_loopback_worker(
                     after_gap: gap_started_at.take().map(|start| start.elapsed()),
                 });
                 attempts = 0;
-                match run_attached(opened, backend.as_ref(), &stop_rx, &frame_cb, poll_interval) {
+                match run_attached(
+                    opened,
+                    backend.as_ref(),
+                    &stop_rx,
+                    &frame_cb,
+                    &event_cb,
+                    poll_interval,
+                ) {
                     AttachedExit::Stop => return,
                     AttachedExit::Detach(reason) => {
                         gap_started_at = Some(Instant::now());
@@ -325,10 +425,17 @@ fn run_loopback_worker(
 pub struct CpalLoopbackBackend;
 
 impl LoopbackBackend for CpalLoopbackBackend {
-    fn default_device_name(&self) -> Option<String> {
-        crate::audio_toolkit::get_cpal_host()
-            .default_output_device()
-            .and_then(|device| device.name().ok())
+    fn default_device_name(&self) -> Result<Option<String>, String> {
+        match crate::audio_toolkit::get_cpal_host().default_output_device() {
+            // A `name()` failure here is a probe error, not "no device" —
+            // swallowing it as `None` would read as a device swap and flap
+            // the capture on every transient failure.
+            Some(device) => device
+                .name()
+                .map(Some)
+                .map_err(|e| format!("Failed to name the default output device: {e}")),
+            None => Ok(None),
+        }
     }
 
     fn open(&self) -> Result<OpenedLoopback, String> {
@@ -336,19 +443,35 @@ impl LoopbackBackend for CpalLoopbackBackend {
         let device = host
             .default_output_device()
             .ok_or_else(|| "No default output device found".to_string())?;
-        let device_name = device.name().unwrap_or_default();
+        // A nameless device would bind the stream to "" and mismatch every
+        // later `default_device_name` poll — detach/reattach flapping. Treat
+        // it as an open failure so the backoff retry handles it instead.
+        let device_name = device
+            .name()
+            .map_err(|e| format!("Failed to name the default output device: {e}"))?;
         // `default_output_config` returns the endpoint's mix format — the only
         // format WASAPI accepts for a shared-mode loopback stream.
         let config = device
             .default_output_config()
             .map_err(|e| format!("Failed to fetch the output config for loopback: {e}"))?;
         let failure = Arc::new(Mutex::new(None));
+        let transport = Arc::new(CaptureTransportState::default());
         let (stream, samples) = match config.sample_format() {
-            cpal::SampleFormat::U8 => build_loopback_stream::<u8>(&device, &config, &failure),
-            cpal::SampleFormat::I8 => build_loopback_stream::<i8>(&device, &config, &failure),
-            cpal::SampleFormat::I16 => build_loopback_stream::<i16>(&device, &config, &failure),
-            cpal::SampleFormat::I32 => build_loopback_stream::<i32>(&device, &config, &failure),
-            cpal::SampleFormat::F32 => build_loopback_stream::<f32>(&device, &config, &failure),
+            cpal::SampleFormat::U8 => {
+                build_loopback_stream::<u8>(&device, &config, &failure, &transport)
+            }
+            cpal::SampleFormat::I8 => {
+                build_loopback_stream::<i8>(&device, &config, &failure, &transport)
+            }
+            cpal::SampleFormat::I16 => {
+                build_loopback_stream::<i16>(&device, &config, &failure, &transport)
+            }
+            cpal::SampleFormat::I32 => {
+                build_loopback_stream::<i32>(&device, &config, &failure, &transport)
+            }
+            cpal::SampleFormat::F32 => {
+                build_loopback_stream::<f32>(&device, &config, &failure, &transport)
+            }
             sample_format => {
                 return Err(format!(
                     "Unsupported loopback sample format: {sample_format:?}"
@@ -365,6 +488,7 @@ impl LoopbackBackend for CpalLoopbackBackend {
                 device_name,
                 sample_rate: config.sample_rate().0,
                 failure,
+                transport,
             }),
             samples,
         })
@@ -377,6 +501,7 @@ struct CpalLoopbackStream {
     device_name: String,
     sample_rate: u32,
     failure: Arc<Mutex<Option<String>>>,
+    transport: Arc<CaptureTransportState>,
 }
 
 impl LoopbackStream for CpalLoopbackStream {
@@ -391,6 +516,10 @@ impl LoopbackStream for CpalLoopbackStream {
     fn failure(&self) -> Option<String> {
         self.failure.lock().ok().and_then(|slot| slot.clone())
     }
+
+    fn dropped_samples(&self) -> u64 {
+        self.transport.overrun_samples.load(Ordering::Relaxed)
+    }
 }
 
 /// Build the cpal input stream on a render device (WASAPI loopback) and the
@@ -400,6 +529,7 @@ fn build_loopback_stream<T>(
     device: &cpal::Device,
     config: &cpal::SupportedStreamConfig,
     failure: &Arc<Mutex<Option<String>>>,
+    transport: &Arc<CaptureTransportState>,
 ) -> Result<(cpal::Stream, Consumer<f32>), cpal::BuildStreamError>
 where
     T: Sample + SizedSample + Copy + Send + 'static,
@@ -424,9 +554,15 @@ where
         chunk.commit_all();
     }
 
-    let transport = Arc::new(CaptureTransportState::default());
+    let callback_transport = Arc::clone(transport);
     let data_cb = move |data: &[T], _: &cpal::InputCallbackInfo| {
-        AudioRecorder::write_input_to_ring(data, channels, None, &mut producer, &transport);
+        AudioRecorder::write_input_to_ring(
+            data,
+            channels,
+            None,
+            &mut producer,
+            &callback_transport,
+        );
     };
     let error_flag = Arc::clone(failure);
     let stream = device.build_input_stream(

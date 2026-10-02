@@ -181,11 +181,16 @@ impl TranscriptionManager {
                     }
 
                     // While recording, keep the idle timer fresh so the
-                    // model is never unloaded mid-session.
+                    // model is never unloaded mid-session. A meeting counts
+                    // too: its live transcriber leases the engine outside
+                    // the dictation recorder, so a long meeting with sparse
+                    // speech must not idle-unload the model mid-session
+                    // (the very ModelNotReady storm this watcher would cause).
                     let is_recording = app_handle_cloned
                         .try_state::<Arc<AudioRecordingManager>>()
                         .is_some_and(|a| a.is_recording());
-                    if is_recording {
+                    let meeting_active = crate::meeting::session::meeting_recording_active();
+                    if is_recording || meeting_active {
                         manager_cloned.touch_activity();
                         continue;
                     }

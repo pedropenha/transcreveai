@@ -23,13 +23,17 @@
 
 import type { Page } from "@playwright/test";
 
+/** A command handler that computes the payload from the invoke args. */
+export type HandlerFn = (args: Record<string, unknown>) => unknown;
+
 /** Tauri command name ("get_app_settings", "plugin:store|get", …) →
  * the raw value `invoke` resolves with (the bindings add the ok/error
  * envelope), or a function of the invoke args. */
-export type CommandHandlers = Record<
-  string,
-  unknown | ((args: Record<string, unknown>) => unknown)
->;
+export type CommandHandlers = Record<string, unknown | HandlerFn>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 /** A returning-user settings payload: lands straight on the settings UI. */
 export const DEFAULT_APP_SETTINGS = {
@@ -103,10 +107,11 @@ export async function installTauriMock(
   const mock: TauriMock = { calls: [] };
 
   await page.exposeFunction("__e2eInvoke", (cmd: string, args: unknown) => {
-    mock.calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+    const record = isRecord(args) ? args : {};
+    mock.calls.push({ cmd, args: record });
     const handler = table[cmd];
     if (typeof handler === "function") {
-      return handler(args as Record<string, unknown>);
+      return (handler as HandlerFn)(record);
     }
     if (cmd in table) {
       return handler;
@@ -231,6 +236,6 @@ export async function emitTauriEvent(
         }
       ).__e2eEmit(ev, data);
     },
-    [event, payload],
+    [event, payload] as [string, unknown],
   );
 }

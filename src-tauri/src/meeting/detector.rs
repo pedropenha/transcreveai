@@ -149,8 +149,9 @@ pub struct TickInput<'a> {
 
 /// IPC payload for `detector://meeting` (contracts.md §5). Optional fields
 /// are omitted from the JSON so each variant serializes exactly to the
-/// contract shapes; on the start variant `icon` stays `null` in v1 (icon
-/// resolution is the toast lane's job, T-062).
+/// contract shapes. On the start variant `icon` is a PNG data URI for unknown
+/// apps and omitted for known apps/browsers (the toast embeds their logos;
+/// see `app_icon`).
 #[derive(Clone, Debug, Serialize)]
 pub struct DetectorMeetingEvent {
     pub detection_id: String,
@@ -158,8 +159,8 @@ pub struct DetectorMeetingEvent {
     pub app_label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exe: Option<String>,
-    /// App icon for the toast (FR-008-07) — `None`/omitted in v1; resolution
-    /// is the toast lane's job (T-062).
+    /// App icon for the toast (FR-008-07): PNG data URI, filled by the emit
+    /// layer (`meeting::app_icon`); `None`/omitted when the front-end logo applies.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

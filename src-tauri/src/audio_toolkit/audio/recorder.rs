@@ -648,7 +648,9 @@ impl AudioRecorder {
             let _ = tx.send(Cmd::Shutdown);
         }
         if let Some(handle) = self.worker_handle.take() {
-            let _ = handle.join();
+            if let Err(e) = handle.join() {
+                log::error!("Audio recorder worker panicked: {e:?}");
+            }
         }
         self.device = None;
         Ok(())

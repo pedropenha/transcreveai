@@ -1,0 +1,6 @@
+{
+  "identifier": "assistant-capability",
+  "description": "Assistant panel window permissions",
+  "windows": ["assistant"],
+  "permissions": ["core:window:allow-hide"]
+}

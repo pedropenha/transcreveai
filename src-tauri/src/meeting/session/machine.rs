@@ -87,6 +87,11 @@ pub enum ToastKind {
     /// FR-008-14 (T-069) "A reunião terminou — finalizando em 15 s" —
     /// `action: "continue_recording"`.
     AutoStop,
+    /// FR-009-02: the discreet post-start reminder — `action: "copy_consent"`
+    /// puts the configured notice on the clipboard. Shares its `kind()`
+    /// string with the consent *gate* refusal toast (`open_consent`), which
+    /// MeetingConsentGate uses to tell them apart.
+    ConsentReminder,
 }
 
 impl ToastKind {
@@ -99,6 +104,7 @@ impl ToastKind {
             ToastKind::LimitWarning => "meeting_limit",
             ToastKind::SilenceCheckin => "meeting_checkin",
             ToastKind::AutoStop => "meeting_auto_stop",
+            ToastKind::ConsentReminder => "meeting_consent",
         }
     }
 
@@ -108,6 +114,7 @@ impl ToastKind {
             ToastKind::LimitWarning => Some("extend_30"),
             ToastKind::SilenceCheckin => Some("checkin"),
             ToastKind::AutoStop => Some("continue_recording"),
+            ToastKind::ConsentReminder => Some("copy_consent"),
             _ => None,
         }
     }

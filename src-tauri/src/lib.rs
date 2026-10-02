@@ -590,25 +590,32 @@ fn start_meeting_from_surface(app: &AppHandle, req: meeting::session::StartReque
     // meeting has nobody to report to — warn and drop it instead of flashing
     // a "busy" error toast while the user is in a call (T-069).
     let machine_initiated = req.detection == "auto_start";
-    if let Err(e) = manager.request_start(req) {
-        log::warn!("Meeting start refused ({:?}): {}", e.code, e.message);
-        if e.code == CommandErrorCode::Busy && machine_initiated {
-            return;
+    // A successful user-initiated start opens the notes window inside the
+    // worker (`handle_start`), so every surface — ◉, tray, Alt+M, the Hub,
+    // the detector toast — gets the same behavior; `auto_start` stays
+    // discreet with no focus steal mid-call.
+    match manager.request_start(req) {
+        Ok(_) => {}
+        Err(e) => {
+            log::warn!("Meeting start refused ({:?}): {}", e.code, e.message);
+            if e.code == CommandErrorCode::Busy && machine_initiated {
+                return;
+            }
+            let (kind, action) = if e.code == CommandErrorCode::ConsentRequired {
+                ("meeting_consent", Some("open_consent"))
+            } else {
+                ("meeting_error", None)
+            };
+            let _ = app.emit(
+                TOAST_SHOW_EVENT,
+                ToastPayload {
+                    kind: kind.to_string(),
+                    message: e.message,
+                    action: action.map(str::to_string),
+                    meeting_id: None,
+                },
+            );
         }
-        let (kind, action) = if e.code == CommandErrorCode::ConsentRequired {
-            ("meeting_consent", Some("open_consent"))
-        } else {
-            ("meeting_error", None)
-        };
-        let _ = app.emit(
-            TOAST_SHOW_EVENT,
-            ToastPayload {
-                kind: kind.to_string(),
-                message: e.message,
-                action: action.map(str::to_string),
-                meeting_id: None,
-            },
-        );
     }
 }
 

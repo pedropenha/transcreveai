@@ -513,27 +513,19 @@
   padding: 10px 14px;
 }
 
-/* Hover — two independent pills side by side (dictate mic + Notetaker dot),
-   same 36px height the merged card had; each pill is a circle around its
-   28px action. The group is a plain flex row — the zone rect wraps both. */
+/* Hover — reference design: three separate dark controls in a row. The mic is
+   the highlighted one (light pill, dark icon); notetaker and notes are dark
+   circles with light icons. Tokens: --flowbar-hover-*. */
 .f-hover-group {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-}
-.f-hover-pill {
-  width: var(--flowbar-size-hover-height);
-  height: var(--flowbar-size-hover-height);
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: var(--radius-pill);
+  gap: var(--flowbar-hover-gap);
+  animation: scard-pop var(--motion-duration-slow) var(--motion-easing-enter);
 }
 .fbtn {
-  width: 28px;
-  height: 28px;
+  width: var(--flowbar-hover-button-size);
+  height: var(--flowbar-hover-button-size);
   flex: none;
   padding: 0;
   border: 0;
@@ -551,7 +543,25 @@
       var(--motion-easing-standard),
     color var(--motion-duration-interaction) var(--motion-easing-standard);
 }
-.fbtn:hover {
+.fbtn-round {
+  color: var(--flowbar-hover-icon);
+  background: var(--flowbar-hover-surface);
+  border: 1px solid var(--flowbar-hover-border);
+}
+.fbtn-round:hover {
+  background: var(--flowbar-hover-surface-raised);
+  color: var(--flowbar-hover-icon);
+}
+.fbtn-primary {
+  width: var(--flowbar-hover-primary-width);
+  color: var(--flowbar-hover-primary-icon);
+  background: var(--flowbar-hover-primary-surface);
+}
+.fbtn-primary:hover {
+  background: var(--flowbar-hover-primary-surface-hover);
+  color: var(--flowbar-hover-primary-icon);
+}
+.fbtn.fretry:hover {
   background: var(--s-hair);
   color: var(--flowbar-accent);
 }
@@ -699,16 +709,24 @@ button.f-meeting-state:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--s-border);
-  background: var(--s-surface);
-  color: var(--flowbar-text);
-  font-size: 11.5px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--flowbar-hover-border);
+  background: var(--flowbar-hover-tip-surface);
+  color: var(--flowbar-hover-tip-text);
+  font-size: 13px;
   line-height: 1.3;
   white-space: nowrap;
   animation: scard-pop var(--motion-duration-interaction)
     var(--motion-easing-enter);
+}
+.fbar-tip-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.fbar-tip-text strong {
+  font-weight: 700;
 }
 .ov-stage.top .fbar-tip {
   margin: 8px 0 0;

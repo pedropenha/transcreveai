@@ -163,6 +163,25 @@ impl BlockWriter {
         &self.sealed
     }
 
+    /// Samples buffered in the in-flight (not yet sealed) block.
+    pub fn pending_len(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Samples a block still accepts before it seals.
+    pub fn block_capacity(&self) -> usize {
+        self.block_samples
+    }
+
+    /// The meeting-clock offset the in-flight block will seal with —
+    /// `None` while it holds no samples yet. This is the same stamp
+    /// [`Self::seal`] records, exposed so the live feed can anchor chunks
+    /// on the block's own axis rather than a separate arrival clock.
+    pub fn pending_start_offset_ms(&self) -> Option<u64> {
+        self.pending_start
+            .map(|start| start.saturating_duration_since(self.t0).as_millis() as u64)
+    }
+
     /// Buffer a frame; seal and fsync every block it completes. `now` stamps
     /// block boundaries so `start_offset_ms` reflects real elapsed time —
     /// including capture gaps (device swaps produce no samples).
@@ -377,6 +396,38 @@ mod tests {
         assert_eq!(sealed.len(), 3);
         assert_eq!(sealed[2].samples, 40);
         crate::audio_toolkit::verify_wav_file(&sealed[2].path, 40).unwrap();
+    }
+
+    /// The invariant the live-chunk ledger relies on: the offset a chunk
+    /// reads via `pending_start_offset_ms` must equal the `start_offset_ms`
+    /// the enclosing block eventually seals with.
+    #[test]
+    fn pending_accessors_preview_the_next_block_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let t0 = Instant::now();
+        let mut writer = BlockWriter::with_block_samples(dir.path(), Track::Mic, t0, 100).unwrap();
+
+        // Empty pending reports nothing to anchor to.
+        assert_eq!(writer.pending_len(), 0);
+        assert_eq!(writer.pending_start_offset_ms(), None);
+        assert_eq!(writer.block_capacity(), 100);
+
+        let stamp = t0 + Duration::from_millis(10);
+        writer.push(&frames(40, 0.5), stamp).unwrap();
+        assert_eq!(writer.pending_len(), 40);
+        assert_eq!(writer.pending_start_offset_ms(), Some(10));
+
+        // The pending start becomes the sealed block's start offset.
+        writer
+            .push(&frames(160, 0.5), stamp + Duration::from_millis(5))
+            .unwrap();
+        assert_eq!(writer.sealed().len(), 2);
+        assert_eq!(writer.sealed()[0].start_offset_ms, 10);
+        // 40 + 160 = 200 → two full blocks; block 1's start is the second
+        // push's boundary stamp, not block 0's.
+        assert_eq!(writer.sealed()[1].start_offset_ms, 15);
+        assert_eq!(writer.pending_len(), 0);
+        assert_eq!(writer.pending_start_offset_ms(), None);
     }
 
     #[test]

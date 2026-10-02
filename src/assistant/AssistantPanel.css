@@ -95,8 +95,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  /* 20 px was below the shared minimum target — near the rounded corner the
+     hairline clipped real hits into the drag strip instead of the button. */
+  width: var(--control-target-min);
+  height: var(--control-target-min);
   border: none;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -394,4 +396,15 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Screen-reader-only live region (same trick as the toast). */
+.as-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

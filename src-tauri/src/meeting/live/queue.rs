@@ -7,12 +7,20 @@
 //! dropped silently.
 
 use std::collections::VecDeque;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::meeting::blocks::{SealedBlock, Track};
 
-/// One sealed block queued for transcription.
+/// One unit of transcription work — a sealed on-disk block, or a live
+/// in-memory chunk emitted long before its block seals (FR-009-15).
 pub(crate) struct BlockJob {
     pub block: SealedBlock,
+    /// Chunk jobs carry their samples inline instead of a file path.
+    pub inline: Option<Arc<Vec<f32>>>,
+    /// `false` for live chunks: they have no `meeting_blocks` row to flip,
+    /// and their failure only delays text — the block pass re-covers them.
+    pub bookkeep: bool,
     /// Utterances already persisted — resume point after a model-busy
     /// requeue so a retried block never inserts duplicate rows.
     pub resume_utterance: usize,
@@ -24,6 +32,29 @@ impl BlockJob {
     pub fn new(block: SealedBlock) -> Self {
         Self {
             block,
+            inline: None,
+            bookkeep: true,
+            resume_utterance: 0,
+            busy_retries: 0,
+        }
+    }
+
+    /// A live chunk masquerades as a synthetic block: `index` 0 never
+    /// collides with the 1-based on-disk numbering and there is no path.
+    pub fn chunk(track: Track, start_offset_ms: u64, samples: Arc<Vec<f32>>) -> Self {
+        let len = samples.len();
+        Self {
+            block: SealedBlock {
+                track,
+                index: 0,
+                path: PathBuf::new(),
+                start_offset_ms,
+                duration_ms: (len as u64 * 1_000)
+                    / crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as u64,
+                samples: len,
+            },
+            inline: Some(samples),
+            bookkeep: false,
             resume_utterance: 0,
             busy_retries: 0,
         }
@@ -68,6 +99,28 @@ impl TrackQueues {
         }
         queue.push_back(job);
         Ok(())
+    }
+
+    /// Live chunks currently queued for `track` — they share the FIFO but
+    /// hold a bounded slice of it (`CHUNK_QUEUE_BUDGET` at the caller).
+    pub fn chunks_queued(&self, track: Track) -> usize {
+        self.queues[slot(track)]
+            .iter()
+            .filter(|job| !job.bookkeep)
+            .count()
+    }
+
+    /// Drop the stalest live chunk of `track`, making room for fresher
+    /// work. `true` when a chunk was evicted; the evicted range is
+    /// re-covered by its sealing block, so nothing is lost.
+    pub fn evict_oldest_chunk(&mut self, track: Track) -> bool {
+        let queue = &mut self.queues[slot(track)];
+        if let Some(pos) = queue.iter().position(|job| !job.bookkeep) {
+            queue.remove(pos);
+            true
+        } else {
+            false
+        }
     }
 
     /// Put a partially processed block back at the front of its track —
@@ -149,6 +202,29 @@ mod tests {
         assert!(rejected.is_err(), "bounded FIFO refuses the third block");
         // The other track still has room — per-track bound.
         assert!(queues.push(job(Track::System, 1)).is_ok());
+    }
+
+    fn chunk(track: Track, offset: u64) -> BlockJob {
+        BlockJob::chunk(track, offset, Arc::new(vec![0.0; 1_600]))
+    }
+
+    #[test]
+    fn evict_oldest_chunk_drops_only_chunks() {
+        let mut queues = TrackQueues::new(4);
+        queues.push(chunk(Track::Mic, 0)).ok();
+        queues.push(job(Track::Mic, 1)).ok();
+        queues.push(chunk(Track::Mic, 8_000)).ok();
+
+        assert_eq!(queues.chunks_queued(Track::Mic), 2);
+        assert!(queues.evict_oldest_chunk(Track::Mic));
+        assert_eq!(queues.chunks_queued(Track::Mic), 1);
+
+        // The evicted chunk was the stalest (offset 0); the block survives.
+        let first = queues.pop().unwrap_or_else(|| unreachable!());
+        assert!(first.bookkeep, "the persisted block keeps its slot");
+        // One chunk remains; evicting it leaves nothing evictable.
+        assert!(queues.evict_oldest_chunk(Track::Mic));
+        assert!(!queues.evict_oldest_chunk(Track::Mic));
     }
 
     #[test]

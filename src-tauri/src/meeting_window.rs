@@ -16,10 +16,11 @@
 //!   `?meeting_id=` on first creation and re-broadcasts `meeting://open` on
 //!   every call — the webview also re-reads `meeting_current` on mount, so a
 //!   listener that attaches late still converges on the right meeting.
-//! - The meeting window is never auto-opened: starts coming from the
-//!   detection toast or auto-start rules already confirm via toast, and the
-//!   Flow Bar pill is the persistent indicator (FR-009-07). Only manual
-//!   starts (Hub "Nova reunião") open the window.
+//! - The window opens on explicit user starts: the Hub "Nova reunião" flow
+//!   and clicked detection-toast actions ("Iniciar", "Só microfone",
+//!   "Sempre iniciar" — the `auto_prompt` path). `auto_start` rules stay
+//!   discreet — they confirm via toast and the Flow Bar pill (FR-009-07)
+//!   without stealing focus mid-call.
 
 use std::sync::Mutex;
 
@@ -49,9 +50,21 @@ pub struct MeetingOpenPayload {
 }
 
 /// Initial URL for a fresh window — `?meeting_id=` is read by the webview on
-/// mount (before any event listener could attach).
+/// mount (before any event listener could attach). The id is percent-encoded
+/// so the query can never be broken out of, even if a future caller stops
+/// going through the UUID-minted id contract.
 fn meeting_url(meeting_id: &str) -> String {
-    format!("src/meeting/index.html?meeting_id={meeting_id}")
+    let encoded: String = meeting_id
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    format!("src/meeting/index.html?meeting_id={encoded}")
 }
 
 /// Native title bar text for a meeting.
@@ -81,6 +94,28 @@ fn pick_meeting_id(
 }
 
 fn resolve_meeting_id(app: &AppHandle, requested: Option<String>) -> CommandResult<String> {
+    // An explicit target skips the list query — `meeting_title` still
+    // resolves it against the db, which is also the existence check. But
+    // meeting ids are UUIDs minted by `Meeting::new`: a malformed id is a
+    // caller bug (or a forged frontend payload), so fail fast here.
+    if let Some(id) = requested
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
+        let parsed = match uuid::Uuid::parse_str(id) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                return Err(CommandError::new(
+                    CommandErrorCode::InvalidInput,
+                    "meeting_id must be a UUID",
+                ))
+            }
+        };
+        // Canonicalize — an uppercase/braced/URN spelling must land on the
+        // same window label and db row as the stored hyphenated id.
+        return Ok(parsed.hyphenated().to_string());
+    }
     let active = app
         .try_state::<MeetingSessionManager>()
         .and_then(|m| m.current())
@@ -95,7 +130,7 @@ fn resolve_meeting_id(app: &AppHandle, requested: Option<String>) -> CommandResu
         .into_iter()
         .next()
         .map(|m| m.id);
-    pick_meeting_id(requested.as_deref(), active.as_deref(), latest.as_deref())
+    pick_meeting_id(None, active.as_deref(), latest.as_deref())
         .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "There is no meeting to show"))
 }
 
@@ -151,13 +186,15 @@ pub fn retitle_if_shown(app: &AppHandle, meeting_id: &str, meeting_title: &str) 
     }
     let title = window_title(meeting_title);
     let handle = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    if let Err(e) = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(MEETING) {
             if let Err(e) = window.set_title(&title) {
                 log::warn!("Failed to retitle the meeting window: {e}");
             }
         }
-    });
+    }) {
+        log::warn!("Failed to dispatch the meeting-window retitle: {e}");
+    }
 }
 
 fn emit_error_toast(app: &AppHandle) {

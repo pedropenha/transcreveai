@@ -197,8 +197,22 @@ pub fn init(app: &AppHandle) {
         MEETING_PROCESS_REQUESTED_EVENT,
         move |event| match serde_json::from_str::<ProcessRequestedPayload>(event.payload()) {
             Ok(payload) => {
-                if let Some(processor) = handle.try_state::<MeetingPostProcessor>() {
-                    processor.enqueue_process(payload.meeting_id);
+                // Any webview can emit this event — real ids are UUIDs
+                // minted by `Meeting::new`, so reject anything else before
+                // the worker does a db lookup for a forged id. Enqueue the
+                // canonical hyphenated form: `parse_str` also accepts
+                // simple/braced/urn spellings that would not match the db.
+                match uuid::Uuid::parse_str(payload.meeting_id.trim()) {
+                    Ok(id) => {
+                        if let Some(processor) = handle.try_state::<MeetingPostProcessor>() {
+                            processor.enqueue_process(id.hyphenated().to_string());
+                        }
+                    }
+                    Err(_) => {
+                        log::warn!(
+                            "Ignoring {MEETING_PROCESS_REQUESTED_EVENT} with a non-UUID meeting id"
+                        );
+                    }
                 }
             }
             Err(e) => {

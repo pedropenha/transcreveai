@@ -8,16 +8,7 @@ import React, {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Check,
-  CircleDot,
-  Mic,
-  Pause,
-  Play,
-  Square,
-  TriangleAlert,
-  X,
-} from "lucide-react";
+import { Check, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
 import type {
@@ -33,15 +24,22 @@ import { formatKeyCombination } from "@/lib/utils/keyboard";
 import { useOsType } from "@/hooks/useOsType";
 import {
   effectiveEdge,
+  hoverTipParts,
   meetingStateClaimsFlowbar,
   resolveFlowbarView,
   toastBadgeVisible,
   type FlowbarView,
+  type HoverTipParts,
   type MeetingStatus,
   type OverlayHint,
   type SessionPhase,
   type StageEdge,
 } from "./flowbarView";
+import {
+  FlowbarHoverCard,
+  FlowbarTipText,
+  type FlowbarTip,
+} from "./FlowbarHoverCard";
 import type { ToastStateEvent } from "@/toast/toastView";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
@@ -97,9 +95,7 @@ const RecordingOverlay: React.FC = () => {
 
   // --- Hover / click-through (FR-001-02, NFR-001-02) ---
   const [hovered, setHovered] = useState(false);
-  const [tip, setTip] = useState<"dictate" | "notetaker" | "error" | null>(
-    null,
-  );
+  const [tip, setTip] = useState<FlowbarTip | null>(null);
 
   // --- Dock edge the stage mirrors (FR-001-01/08) ---
   const [edge, setEdge] = useState<StageEdge>("bottom");
@@ -535,6 +531,10 @@ const RecordingOverlay: React.FC = () => {
   const notetaker = () => {
     void commands.flowbarStartNotetaker();
   };
+  // Notes live in the Hub (F007): reveal the main window.
+  const openNotes = () => {
+    void commands.showMainWindowCommand();
+  };
   // FR-009-06: the meeting pill's own pause/resume + stop.
   const meetingTogglePause = () => {
     void (meetingStatus === "paused"
@@ -658,15 +658,15 @@ const RecordingOverlay: React.FC = () => {
     }
   })();
 
-  const dictateTip =
-    dictateShortcut === ""
-      ? t("overlay.dictate")
-      : `${t("overlay.dictate")} · ${dictateShortcut}`;
+  const dictateTipParts = hoverTipParts(t("overlay.dictate"), dictateShortcut);
 
-  const tipContent = (() => {
-    if (tip === "dictate") return dictateTip;
-    if (tip === "notetaker") return t("overlay.notetaker");
-    if (tip === "error") return sessionError || t("overlay.failed");
+  const tipContent: HoverTipParts | null = (() => {
+    if (tip === "dictate") return dictateTipParts;
+    if (tip === "notetaker") return hoverTipParts(t("overlay.notetaker"), "");
+    if (tip === "notes") return hoverTipParts(t("overlay.notes"), "");
+    if (tip === "error") {
+      return hoverTipParts(sessionError || t("overlay.failed"), "");
+    }
     return null;
   })();
 
@@ -735,41 +735,18 @@ const RecordingOverlay: React.FC = () => {
         );
 
       case "hover":
-        // FR-001-02/03/04: dictate + notetaker as two *separate* pills —
-        // the mic control and the Notetaker dot are distinct surfaces, not
-        // one merged card. The assistant is shortcut-only (F012: no Flow
-        // Bar slot).
+        // Reference design: highlighted mic + notetaker dot + notes, three
+        // separate controls. The assistant is shortcut-only (F012).
         return (
-          <div className="f-hover-group">
-            <div className="fbar-card scard f-hover-pill">
-              <button
-                type="button"
-                className="fbtn"
-                aria-label={dictateTip}
-                onMouseEnter={() => setTip("dictate")}
-                onFocus={() => setTip("dictate")}
-                onMouseLeave={() => setTip(null)}
-                onBlur={() => setTip(null)}
-                onClick={dictate}
-              >
-                <Mic size={14} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="fbar-card scard f-hover-pill">
-              <button
-                type="button"
-                className="fbtn"
-                aria-label={t("overlay.notetaker")}
-                onMouseEnter={() => setTip("notetaker")}
-                onFocus={() => setTip("notetaker")}
-                onMouseLeave={() => setTip(null)}
-                onBlur={() => setTip(null)}
-                onClick={notetaker}
-              >
-                <CircleDot size={14} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
+          <FlowbarHoverCard
+            dictateTip={dictateTipParts}
+            notetakerLabel={t("overlay.notetaker")}
+            notesLabel={t("overlay.notes")}
+            onTip={setTip}
+            onDictate={dictate}
+            onNotetaker={notetaker}
+            onNotes={openNotes}
+          />
         );
 
       case "recording":
@@ -997,7 +974,7 @@ const RecordingOverlay: React.FC = () => {
               className="fbar-tip"
               role="tooltip"
             >
-              <span>{tipContent}</span>
+              <FlowbarTipText {...tipContent} />
               {tip === "error" && (
                 <button
                   type="button"

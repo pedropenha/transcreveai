@@ -48,8 +48,8 @@ Na **v1** o conjunto embutido é **Zoom, Teams, Meet (navegador) e Webex** (ADR-
 
 ### Toast (UX)
 
-- **FR-008-07** Toast compacto, ancorado acima da Flow Bar (ou canto inferior direito, configurável): ícone do app (ou câmera genérica), "Reunião detectada", "● Agora" e o rótulo do app. Não-ativável (não rouba foco).
-- **FR-008-08** Ao passar o mouse, expande: **✕** (dispensar), botão primário **"Iniciar Notetaker"** e **▾** com:
+- **FR-008-07** Toast sempre expandido (sem depender de hover), ancorado acima da Flow Bar (ou canto inferior direito, configurável), card escuro arredondado: à esquerda o **ícone do app** (PNG fornecido pelo detector em `icon`, logo embutido por `app_label` ou glifo de vídeo genérico), no centro **"Reunião detectada"** em negrito e abaixo "● Agora · <App>" (ponto verde; o rótulo do app também é tooltip). Não-ativável (não rouba foco).
+- **FR-008-08** À direita, botão **creme "Iniciar Notetaker"** (com ícone de barras de áudio) seguido de um segmento com **▾** que abre o menu abaixo. O **✕** (dispensar) é discreto: canto superior do card, visível ao passar o mouse ou com foco de teclado. Menu ▾:
   - Iniciar só com microfone
   - Sempre iniciar automaticamente para <App>
   - Nunca perguntar para <App>
@@ -74,7 +74,7 @@ Na **v1** o conjunto embutido é **Zoom, Teams, Meet (navegador) e Webex** (ADR-
 ## Critérios de aceitação
 
 - **AC-008-01** _Dado_ a detecção ligada, _quando_ entro numa reunião do Google Meet no Chrome, _então_ em ≤ 7 s aparece o toast "Reunião detectada · Google Meet" e o foco continua no Chrome.
-- **AC-008-02** _Quando_ passo o mouse no toast, _então_ ele mostra ✕, "Iniciar Notetaker" e ▾; _quando_ clico em "Iniciar Notetaker", _então_ a gravação começa e a Flow Bar mostra o cronômetro.
+- **AC-008-02** _Quando_ o toast aparece, _então_ já mostra o ícone do app, "Reunião detectada", "Iniciar Notetaker" e ▾ (sem hover), e o ✕ aparece ao passar o mouse; _quando_ clico em "Iniciar Notetaker", _então_ a gravação começa e a Flow Bar mostra o cronômetro.
 - **AC-008-03** _Dado_ "Nunca perguntar para Discord", _quando_ entro numa chamada no Discord, _então_ nenhum toast aparece.
 - **AC-008-04** _Dado_ auto-start para Zoom, _quando_ entro numa reunião Zoom, _então_ a gravação começa sem clique e o toast de gravação aparece.
 - **AC-008-05** _Dado_ uma gravação iniciada por detecção, _quando_ saio da chamada, _então_ após 15 s a gravação para e o processamento começa; _se_ clico em "Continuar gravando" antes, _então_ ela continua.

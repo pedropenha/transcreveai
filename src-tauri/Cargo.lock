@@ -7456,6 +7456,7 @@ version = "0.9.7"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "cpal",
@@ -7481,6 +7482,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-service-management",
  "once_cell",
+ "png 0.18.1",
  "rdev",
  "regex",
  "reqwest 0.12.28",

@@ -72,7 +72,10 @@ pub(crate) fn segment_utterances(
     let make = |start: usize, end: usize| -> Option<Utterance> {
         (end - start >= min_frames).then(|| Utterance {
             start_sample: start * frame_samples,
-            end_sample: end * frame_samples,
+            // The last frame can be partial (`n_frames` is a ceil): without
+            // the clamp an open tail's `end_sample` overshoots the buffer,
+            // which the runner's `== samples.len()` tail-drop must not miss.
+            end_sample: (end * frame_samples).min(total_samples),
             start_ms: start as u64 * frame_ms,
             end_ms: (end as u64 * frame_ms).min(total_ms),
         })
@@ -247,6 +250,27 @@ mod tests {
         let utterances = seg(10 * FRAME + FRAME / 2, &voiced);
         assert_eq!(utterances.len(), 1);
         assert_eq!(utterances[0].end_ms, 300);
+    }
+
+    #[test]
+    fn open_tail_end_sample_clamps_to_total_samples() {
+        // A live-chunk-sized buffer whose length is NOT a frame multiple
+        // (8 s = 128 000 samples vs. 480-sample frames): the open tail's
+        // end must land on `total_samples`, not the padded frame edge —
+        // the runner drops the tail on `end_sample == samples.len()`.
+        let total = 8 * WHISPER_SAMPLE_RATE as usize; // 266.67 frames
+        let mut voiced = vec![false; total.div_ceil(FRAME)];
+        // Speech runs through the last (partial) frame.
+        for v in voiced.iter_mut().skip(250) {
+            *v = true;
+        }
+        let cfg = SegmenterConfig {
+            min_ms: 30, // 1 frame so the tail survives the floor
+            ..test_cfg()
+        };
+        let utterances = segment_utterances(total, FRAME, &voiced, &cfg);
+        let last = utterances.last().expect("a tail utterance");
+        assert_eq!(last.end_sample, total);
     }
 
     #[test]

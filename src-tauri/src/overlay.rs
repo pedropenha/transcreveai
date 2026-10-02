@@ -663,8 +663,9 @@ pub fn set_flowbar_user_hidden(app_handle: &AppHandle, hidden: bool) {
 
 /// IPC contract (contracts.md §5): the flowbar receives `audio://level` with
 /// `{ rms: f32[] }` at ~30 Hz while dictation records or meeting capture
-/// monitors the shared mic. The values are the visualizer's per-band levels -
-/// the flowbar renders them directly as bars.
+/// monitors the shared mic — and, on call-mode meetings, meters the loopback
+/// track too so remote voice also moves the pill's bars. The values are the
+/// visualizer's per-band levels - the flowbar renders them directly as bars.
 const LEVEL_EVENT: &str = "audio://level";
 
 pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {

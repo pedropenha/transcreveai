@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import ReactMarkdown from "react-markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 import { MessageSquarePlus, Pin, PinOff, Sparkles, X } from "lucide-react";
 import "./AssistantPanel.css";
 import { commands, events } from "@/bindings";
-import type { AssistantStateEvent, StreamTextEvent } from "@/bindings";
+import type { AssistantStateEvent } from "@/bindings";
 import i18n from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import {
@@ -25,6 +26,28 @@ import {
  * immediately; this is only the fallback for a lost trailing event. */
 const LIVE_SETTLE_MS = 1500;
 
+/** Run a specta command and make failures visible in the log — a
+ *  silently-failed strip action looks exactly like a dead button. `false`
+ *  lets the caller recover (e.g. `close` still hides the window). */
+async function invokeChecked<T, E>(
+  name: string,
+  call: () => Promise<
+    { status: "ok"; data: T } | { status: "error"; error: E }
+  >,
+): Promise<boolean> {
+  try {
+    const res = await call();
+    if (res.status === "error") {
+      console.warn(`${name} refused:`, res.error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn(`${name} failed:`, e);
+    return false;
+  }
+}
+
 const AssistantPanel: React.FC = () => {
   const { t } = useTranslation();
   const direction = getLanguageDirection(i18n.language);
@@ -40,29 +63,20 @@ const AssistantPanel: React.FC = () => {
   // written once, on pointerup (`assistant_save_panel_position`).
   const grabRef = useRef<PanelGrab | null>(null);
   const dragFrameRef = useRef(0);
-  // The view-model decisions read the freshest state inside event handlers.
+  // The view-model decisions read the freshest state inside event
+  // handlers. Ref writes live in an effect so render stays side-effect
+  // free (StrictMode); the hydration path still writes it inline — that
+  // assignment is the apply itself, not a render side effect.
   const stateRef = useRef<AssistantStateEvent | null>(null);
-  stateRef.current = state;
+  useEffect(() => {
+    stateRef.current = state;
+  });
 
   useEffect(() => {
-    let unlisteners: (() => void)[] = [];
+    const unlisteners: (() => void)[] = [];
     let cancelled = false;
 
     const setup = async () => {
-      // Hydrate before wiring listeners so a cold webview renders the full
-      // snapshot (open conversation, pinned state, provider chip).
-      try {
-        const result = await commands.assistantGetState();
-        if (cancelled) return;
-        if (result.status === "ok") {
-          setState(result.data);
-          stateRef.current = result.data;
-        }
-      } catch {
-        // The panel can still render its chrome without a snapshot; the next
-        // `assistant://state` event recovers it.
-      }
-
       // Each listener self-unlistens if the effect was torn down while its
       // `listen` promise was still in flight — otherwise the callbacks keep
       // firing on a dead component for the rest of the session.
@@ -74,22 +88,49 @@ const AssistantPanel: React.FC = () => {
         else unlisteners.push(unlisten);
       };
 
-      await add(() =>
-        listen<AssistantStateEvent>("assistant://state", (event) => {
-          setState(event.payload);
-        }),
-      );
+      // Listeners first, hydrate second: an `assistant://state` emitted
+      // between the snapshot fetch and the listener registration would
+      // otherwise be lost and the snapshot would already be stale. An
+      // event that arrives *after* registration is fresher than the
+      // in-flight snapshot — hydration must not overwrite it.
+      let eventDelivered = false;
+      try {
+        await add(() =>
+          listen<AssistantStateEvent>("assistant://state", (event) => {
+            eventDelivered = true;
+            setState(event.payload);
+          }),
+        );
 
-      // The streaming engine broadcasts committed+tentative text to every
-      // window; the panel only shows it while this dictation is routed here.
-      await add(() =>
-        events.streamTextEvent.listen((event) => {
-          if (stateRef.current?.dictating) {
-            const p = event.payload as StreamTextEvent;
-            setLive(`${p.committed}${p.tentative ? ` ${p.tentative}` : ""}`);
-          }
-        }),
-      );
+        // The streaming engine broadcasts committed+tentative text to every
+        // window; the panel only shows it while this dictation is routed here.
+        await add(() =>
+          events.streamTextEvent.listen((event) => {
+            if (stateRef.current?.dictating) {
+              const p = event.payload;
+              setLive(`${p.committed}${p.tentative ? ` ${p.tentative}` : ""}`);
+            }
+          }),
+        );
+      } catch (e) {
+        console.warn("Assistant listeners failed to register:", e);
+      }
+
+      // Hydrate so a cold webview renders the full snapshot (open
+      // conversation, pinned state, provider chip). Skip the apply when a
+      // state event already landed — the snapshot was fetched before it.
+      try {
+        const result = await commands.assistantGetState();
+        if (cancelled || eventDelivered) return;
+        if (result.status === "ok") {
+          setState(result.data);
+          stateRef.current = result.data;
+        }
+      } catch (e) {
+        // The panel can still render its chrome without a snapshot; the next
+        // `assistant://state` event recovers it.
+        console.debug("Assistant state hydration failed:", e);
+      }
     };
 
     void setup();
@@ -135,14 +176,16 @@ const AssistantPanel: React.FC = () => {
   const onStageKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      void commands.assistantDismiss();
+      void invokeChecked("assistant_dismiss", () =>
+        commands.assistantDismiss(),
+      );
     }
   };
 
   // FR-012-11: the panel never takes focus on its own — a click is explicit
   // intent, so the backend makes the window key/focused here.
   const onPanelMouseDown = () => {
-    void commands.assistantFocus();
+    void invokeChecked("assistant_focus", () => commands.assistantFocus());
   };
 
   // ---- Drag & pin (T-092, FR-012-16) ------------------------------------
@@ -156,9 +199,15 @@ const AssistantPanel: React.FC = () => {
     if (e.button !== 0) return;
     if (!canDragPanel(stateRef.current?.pinned ?? false)) return;
     // The buttons inside the strip are not drag handles.
-    if ((e.target as HTMLElement).closest("button")) return;
+    if (!(e.target instanceof Element) || e.target.closest("button")) return;
     grabRef.current = { clientX: e.clientX, clientY: e.clientY };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // InvalidStateError when the pointer is already gone — the drag
+      // just won't start rather than surfacing a crash.
+      grabRef.current = null;
+    }
   };
 
   const onTitlePointerMove = () => {
@@ -168,7 +217,9 @@ const AssistantPanel: React.FC = () => {
     const { clientX, clientY } = grab;
     dragFrameRef.current = requestAnimationFrame(() => {
       dragFrameRef.current = 0;
-      void commands.assistantMovePanel(clientX, clientY);
+      void invokeChecked("assistant_move_panel", () =>
+        commands.assistantMovePanel(clientX, clientY),
+      );
     });
   };
 
@@ -180,51 +231,101 @@ const AssistantPanel: React.FC = () => {
       cancelAnimationFrame(dragFrameRef.current);
       dragFrameRef.current = 0;
     }
-    void commands.assistantSavePanelPosition(grab.clientX, grab.clientY);
+    void invokeChecked("assistant_save_panel_position", () =>
+      commands.assistantSavePanelPosition(grab.clientX, grab.clientY),
+    );
   };
 
   // FR-012-16 "Fixar": the toggle persists; while pinned every drag is
   // ignored (canDragPanel gate above + a backend check on the command).
   const togglePin = () => {
-    void commands.assistantSetPanelPinned(!(stateRef.current?.pinned ?? false));
+    void invokeChecked("assistant_set_panel_pinned", () =>
+      commands.assistantSetPanelPinned(!(stateRef.current?.pinned ?? false)),
+    );
   };
 
-  const close = useCallback(() => void commands.assistantClose(), []);
-  const cancel = () => void commands.assistantCancel();
-  const retry = () => void commands.assistantRetry();
-  const newConversation = () => void commands.assistantNewConversation();
+  const close = useCallback(() => {
+    void invokeChecked("assistant_close", () => commands.assistantClose())
+      .then((ok) => {
+        if (ok) return;
+        // The X must never look dead: hide the window locally so the
+        // gesture always lands; the backend session keeps its state.
+        try {
+          void getCurrentWindow()
+            .hide()
+            .catch((e) => console.warn("assistant panel hide failed:", e));
+        } catch (e) {
+          console.warn("assistant panel hide failed:", e);
+        }
+      })
+      .catch((e) => console.warn("assistant close fallback failed:", e));
+  }, []);
+  const cancel = () =>
+    void invokeChecked("assistant_cancel", () => commands.assistantCancel());
+  const retry = () =>
+    void invokeChecked("assistant_retry", () => commands.assistantRetry());
+  const newConversation = () => {
+    void invokeChecked("assistant_new_conversation", () =>
+      commands.assistantNewConversation(),
+    );
+  };
   const openSettings = () => {
-    void commands.showMainWindowCommand();
+    void invokeChecked("show_main_window", () =>
+      commands.showMainWindowCommand(),
+    );
     // Lands on the Settings section's general tab, where the assistant
     // provider picker lives (`settingsTab` is read by SettingsHub).
     void emit("hub://navigate", {
       section: "settings",
       settingsTab: "general",
-    });
+    }).catch((e) => console.warn("hub://navigate emit failed:", e));
   };
 
-  /** Title-strip buttons act on pointerdown AND click, deduped per button —
-   * whichever event survives the WebView2 focus transition wins; the
-   * follow-up within 400 ms is ignored (a plain click alone can be
-   * swallowed by the native focus transition — the X "not closing" bug). */
-  const lastStripPressRef = useRef<Record<string, number>>({});
+  /** Title-strip buttons act on pointerdown AND click, deduped *per
+   *  gesture*: pointerdown runs the action and stamps it consumed; the
+   *  paired click is suppressed. An unpaired click (keyboard, or a
+   *  pointerdown the WebView2 focus transition swallowed) still runs.
+   *  The stamp is re-taken on pointerup — the click lands at release, so
+   *  a held press must measure freshness from the release, not the press —
+   *  and carries a freshness bound because `preventDefault` on pointerdown
+   *  may suppress the paired click entirely (without it a never-consumed
+   *  flag could eat one later keyboard click). `pointercancel` clears it
+   *  (a cancelled press makes no click); `pointerleave` never does — a
+   *  mouse press that leaves, re-enters and releases still pairs with a
+   *  click, and a touch/pen release fires leave *before* the click, so
+   *  clearing on either would double-run. */
+  const consumedStripGestureRef = useRef<Partial<Record<string, number>>>({});
   const stripButton = (id: string, action: () => void) => {
-    const run = () => {
-      const now = Date.now();
-      if (now - (lastStripPressRef.current[id] ?? 0) < 400) return;
-      lastStripPressRef.current[id] = now;
-      action();
+    const clear = () => {
+      delete consumedStripGestureRef.current[id];
+    };
+    const restamp = () => {
+      if (consumedStripGestureRef.current[id] !== undefined) {
+        consumedStripGestureRef.current[id] = performance.now();
+      }
     };
     return {
       onPointerDown: (e: React.PointerEvent) => {
+        if (e.button !== 0) return; // only the primary button activates
         e.preventDefault();
         e.stopPropagation();
-        run();
+        consumedStripGestureRef.current[id] = performance.now();
+        action();
       },
+      onPointerUp: restamp,
+      onPointerCancel: clear,
       onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
-        run();
+        const stamp = consumedStripGestureRef.current[id];
+        clear();
+        // The click paired with a pointerdown that already ran is the
+        // duplicate; a stale flag (> 1 s — the paired click never arrived)
+        // must not suppress a fresh gesture.
+        if (stamp !== undefined && performance.now() - stamp < 1000) {
+          return;
+        }
+        action();
       },
     };
   };
@@ -247,6 +348,13 @@ const AssistantPanel: React.FC = () => {
       onMouseDown={onPanelMouseDown}
       onKeyDown={onStageKeyDown}
     >
+      {/* Persistent live region — a region inserted together with its
+          content is often not announced, and the streaming preview text
+          would re-announce on every STT event. "Listening" lands once
+          here instead. */}
+      <span className="as-sr" aria-live="polite">
+        {dictating ? t("assistant.listening") : ""}
+      </span>
       <div className="as-panel" role="dialog" aria-label={t("assistant.title")}>
         {/* Title strip — T-092's drag handle + Fixar toggle (FR-012-16):
             pointer events on the strip move the window; the buttons are
@@ -287,7 +395,10 @@ const AssistantPanel: React.FC = () => {
           <button
             type="button"
             className={`as-pin${pinned ? " as-pin--on" : ""}`}
-            aria-label={t(pinToggleKey(pinned))}
+            // One stable label — `aria-pressed` carries the state, so the
+            // announcement is "Pin, pressed" rather than a contradictory
+            // "Unpin, pressed". The tooltip still names the pending action.
+            aria-label={t("assistant.pin")}
             aria-pressed={pinned}
             title={t(pinToggleKey(pinned))}
             {...stripButton("pin", togglePin)}
@@ -349,7 +460,13 @@ const AssistantPanel: React.FC = () => {
                           href={href}
                           onClick={(e) => {
                             e.preventDefault();
-                            if (href) void openUrl(href);
+                            if (href)
+                              void openUrl(href).catch((err) =>
+                                console.warn(
+                                  "assistant link open failed:",
+                                  err,
+                                ),
+                              );
                           }}
                         >
                           {children}
@@ -372,7 +489,7 @@ const AssistantPanel: React.FC = () => {
             </div>
           )}
           {dictating && (
-            <div className="as-msg as-user as-live-msg" role="status">
+            <div className="as-msg as-user as-live-msg">
               <span className="as-live">
                 <span className="as-dot" />
                 {t("assistant.listening")}

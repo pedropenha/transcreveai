@@ -55,8 +55,8 @@ assert.equal(
   "hidden",
 );
 
-// Compact face (FR-008-07) and hover expansion (FR-008-08).
-assert.equal(resolveToastView(base), "compact");
+// The detection card is always expanded (FR-008-07/08) — no hover needed.
+assert.equal(resolveToastView(base), "expanded");
 assert.equal(resolveToastView({ ...base, hovered: true }), "expanded");
 assert.equal(resolveToastView({ ...base, menuOpen: true }), "expanded");
 
@@ -190,13 +190,27 @@ assert.equal(
   }),
   "notice",
 );
+// FR-009-02: the post-start consent reminder carries `copy_consent` — the
+// "Copiar aviso" inline action, expanded face, clipboard on click.
+const copyNotice = noticeActionFor("copy_consent");
+assert.equal(copyNotice?.command, "meeting_consent_copy");
+assert.equal(copyNotice?.labelKey, "copyNotice");
+assert.equal(copyNotice?.copiesTextToClipboard, true);
+assert.equal(
+  resolveToastView({
+    ...base,
+    state: {
+      collapsed: false,
+      detection: null,
+      notice: { kind: "meeting_consent", message: "x", action: "copy_consent" },
+    },
+  }),
+  "notice-expanded",
+);
 assert.equal(
   noticeActionFor("continue_recording")?.command,
   "meeting_continue_recording",
 );
-assert.equal(noticeActionFor("extend_30")?.command, "meeting_extend_30");
-assert.equal(noticeActionFor("bogus"), null);
-assert.equal(noticeActionFor(undefined), null);
 // T-069: an auto-start detection never renders the ask prompt — the
 // overlay feeds `confirming = app_label` into the resolver on the very
 // first paint, so it lands on the "Gravando · <App>" face directly.
@@ -233,12 +247,21 @@ assert.equal(CONFIRMATION_MS, 3_000);
 
 // Window heights track the view; hidden reports 0 (never requested anyway).
 assert.equal(toastWindowHeight("hidden", false), 0);
-assert.equal(toastWindowHeight("compact", false), 88);
 assert.equal(toastWindowHeight("confirming", false), 88);
 assert.equal(toastWindowHeight("notice", false), 88);
-assert.equal(toastWindowHeight("expanded", false), 136);
-assert.equal(toastWindowHeight("expanded", true), 304);
+assert.equal(toastWindowHeight("expanded", false), 96); // 64 card + 32 pad
+assert.equal(toastWindowHeight("expanded", true), 264); // + 168 menu
 assert.equal(toastWindowHeight("notice-expanded", false), 136);
 assert.equal(toastWindowHeight("notice-expanded", true), 136);
 
 console.log("toastView tests passed");
+
+// Optional app icon (data URI PNG) rides on the detection; absent/null is valid.
+const withIcon: MeetingDetection = {
+  ...detection,
+  icon: "data:image/png;base64,AAAA",
+};
+const withNullIcon: MeetingDetection = { ...detection, icon: null };
+assert.equal(withIcon.icon, "data:image/png;base64,AAAA");
+assert.equal(withNullIcon.icon, null);
+assert.equal(detection.icon, undefined);

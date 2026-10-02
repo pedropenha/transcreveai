@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   effectiveEdge,
+  hoverTipParts,
+  hoverTipText,
   meetingStateClaimsFlowbar,
   resolveFlowbarView,
   toastBadgeVisible,
@@ -212,3 +214,23 @@ assert.equal(effectiveEdge("right", "bottom"), "right");
 assert.equal(effectiveEdge(undefined, undefined), "bottom");
 
 console.log("flowbarView tests passed");
+
+// Hover tooltip: "Ditar" + bold shortcut (reference image), plain label when
+// no shortcut is configured, and a flat aria-label for assistive tech.
+assert.deepEqual(hoverTipParts("Ditar", "Win + Space"), {
+  label: "Ditar",
+  shortcut: "Win + Space",
+});
+assert.deepEqual(hoverTipParts("Ditar", ""), {
+  label: "Ditar",
+  shortcut: null,
+});
+assert.deepEqual(hoverTipParts("Ditar", "   "), {
+  label: "Ditar",
+  shortcut: null,
+});
+assert.equal(
+  hoverTipText({ label: "Ditar", shortcut: "Win + Space" }),
+  "Ditar Win + Space",
+);
+assert.equal(hoverTipText({ label: "Notas", shortcut: null }), "Notas");

@@ -243,6 +243,19 @@
   --flowbar-size-idle-height: 8px;
   --flowbar-size-hover-width: 88px;
   --flowbar-size-hover-height: 36px;
+  /* Hover trio (reference image): sizes and neutral dark/light surfaces. */
+  --flowbar-hover-button-size: 34px;
+  --flowbar-hover-primary-width: 44px;
+  --flowbar-hover-gap: 8px;
+  --flowbar-hover-surface: #0b0b0c;
+  --flowbar-hover-surface-raised: #1d1d20;
+  --flowbar-hover-border: #2a2a2d;
+  --flowbar-hover-icon: #f4f4f5;
+  --flowbar-hover-primary-surface: #fafafa;
+  --flowbar-hover-primary-surface-hover: #e4e4e7;
+  --flowbar-hover-primary-icon: #0b0b0c;
+  --flowbar-hover-tip-surface: #0b0b0c;
+  --flowbar-hover-tip-text: #fafafa;
   --flowbar-size-recording-width: 128px;
   --flowbar-size-recording-height: 36px;
   --flowbar-size-command-width: 150px;

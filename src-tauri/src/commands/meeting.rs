@@ -119,6 +119,18 @@ pub fn meeting_current(app: AppHandle) -> CommandResult<Option<MeetingStateEvent
 /// Upper bound for a user-edited meeting title (FR-009-12 inline rename).
 const MEETING_TITLE_MAX_CHARS: usize = 160;
 
+/// Meeting ids are UUIDs minted server-side — canonicalize at the command
+/// boundary so an uppercase or braced spelling resolves to the same db row,
+/// the same busy guard and the same audio dir instead of slipping past on a
+/// case-sensitive string compare. Non-UUID input is kept verbatim: it can
+/// never match a row, so reads still fail closed with "not found" while
+/// `meeting_delete` rejects it outright.
+fn canonical_meeting_id(id: &str) -> String {
+    uuid::Uuid::parse_str(id)
+        .map(|uuid| uuid.hyphenated().to_string())
+        .unwrap_or_else(|_| id.to_string())
+}
+
 /// Hydration payload for the meeting window (T-066): the row plus everything
 /// its three tabs render — transcript segments and the "Minhas notas" body.
 /// `meeting://segment` events append live on top of this snapshot.
@@ -136,6 +148,7 @@ pub struct MeetingDetail {
 #[tauri::command]
 #[specta::specta]
 pub fn meeting_get(app: AppHandle, id: String) -> CommandResult<Option<MeetingDetail>> {
+    let id = canonical_meeting_id(&id);
     let conn = open_session_db(&app)?;
     let Some(meeting) = SqliteMeetingRepository::new(&conn).get(&id).map_err(|e| {
         CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
@@ -190,6 +203,7 @@ pub fn meeting_rename(app: AppHandle, id: String, title: String) -> CommandResul
             "The meeting title is too long",
         ));
     }
+    let id = canonical_meeting_id(&id);
     let conn = open_session_db(&app)?;
     let repo = SqliteMeetingRepository::new(&conn);
     let mut meeting = repo
@@ -339,6 +353,7 @@ pub fn meeting_search(app: AppHandle, query: String) -> CommandResult<Vec<Meetin
 #[tauri::command]
 #[specta::specta]
 pub fn meeting_export_markdown(app: AppHandle, id: String) -> CommandResult<String> {
+    let id = canonical_meeting_id(&id);
     let conn = open_session_db(&app)?;
     let meeting = SqliteMeetingRepository::new(&conn)
         .get(&id)
@@ -388,6 +403,31 @@ pub fn meeting_export_markdown(app: AppHandle, id: String) -> CommandResult<Stri
     ))
 }
 
+/// `meeting_delete`'s busy guard, extracted so it can be tested without an
+/// `AppHandle`. `recording_active` is the worker's `MEETING_ACTIVE` truth —
+/// it flips on before the first snapshot commit and never lowers for a
+/// pause. The snapshot, though, is a late-mount cache that is NEVER
+/// cleared: a `ready`/`error`/`processing` event for this id lingers after
+/// the meeting ends, so only `recording | paused` means "the session still
+/// owns it". And while the indicator is on but no live snapshot has
+/// committed yet (the start race), the live meeting's id is unknowable —
+/// fail closed rather than risk deleting its blocks mid-write.
+fn delete_targets_live_meeting(
+    recording_active: bool,
+    snapshot: Option<&MeetingStateEvent>,
+    id: &str,
+) -> bool {
+    if !recording_active {
+        return false;
+    }
+    match snapshot {
+        Some(state) if matches!(state.status.as_str(), "recording" | "paused") => {
+            state.meeting_id == id
+        }
+        _ => true,
+    }
+}
+
 /// Delete a meeting row (segments/notes cascade) plus its audio blocks —
 /// the dir is only removed when it sits inside `audio/meetings/`.
 #[tauri::command]
@@ -396,17 +436,16 @@ pub fn meeting_delete(app: AppHandle, id: String) -> CommandResult<()> {
     // Meeting ids are UUIDs minted server-side; rejecting anything else here
     // keeps a forged id ("../dictations") from ever reaching the filesystem
     // delete — the UUID check in `remove_meeting_audio_dir` is the backstop.
-    if uuid::Uuid::parse_str(&id).is_err() {
-        return Err(CommandError::new(
-            CommandErrorCode::InvalidInput,
-            "Invalid meeting id",
-        ));
-    }
-    if meeting_recording_active()
-        && manager(&app)?
-            .current()
-            .is_some_and(|state| state.meeting_id == id)
-    {
+    // Canonicalize too: an uppercase/braced spelling must still hit the
+    // active-meeting busy guard and the same db row / audio dir.
+    let id = uuid::Uuid::parse_str(&id)
+        .map(|uuid| uuid.hyphenated().to_string())
+        .map_err(|_| CommandError::new(CommandErrorCode::InvalidInput, "Invalid meeting id"))?;
+    if delete_targets_live_meeting(
+        meeting_recording_active(),
+        manager(&app)?.current().as_ref(),
+        &id,
+    ) {
         return Err(CommandError::new(
             CommandErrorCode::Busy,
             "Stop the meeting before deleting it",
@@ -607,5 +646,82 @@ pub fn meeting_set_summary_template(
             CommandErrorCode::InvalidInput,
             "A template id is required",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state(meeting_id: &str, status: &str) -> MeetingStateEvent {
+        MeetingStateEvent {
+            meeting_id: meeting_id.to_string(),
+            status: status.to_string(),
+            elapsed_ms: 0,
+        }
+    }
+
+    #[test]
+    fn delete_guard_refuses_the_recording_meeting() {
+        assert!(delete_targets_live_meeting(
+            true,
+            Some(&state("m1", "recording")),
+            "m1"
+        ));
+    }
+
+    #[test]
+    fn delete_guard_refuses_the_paused_meeting() {
+        assert!(delete_targets_live_meeting(
+            true,
+            Some(&state("m1", "paused")),
+            "m1"
+        ));
+    }
+
+    #[test]
+    fn delete_guard_ignores_a_terminal_snapshot() {
+        // `current()` is never cleared — a `ready`/`processing`/`error`
+        // event for the meeting lingers after it ends. Presence must not
+        // block its own delete.
+        for status in ["processing", "ready", "error", "recovered"] {
+            assert!(
+                !delete_targets_live_meeting(false, Some(&state("m1", status)), "m1"),
+                "terminal snapshot must not block: {status}"
+            );
+        }
+    }
+
+    #[test]
+    fn delete_guard_allows_a_finished_meeting_while_another_is_live() {
+        // Session records m2; deleting m1 must not be confused by m2's
+        // live snapshot.
+        assert!(!delete_targets_live_meeting(
+            true,
+            Some(&state("m2", "recording")),
+            "m1"
+        ));
+    }
+
+    #[test]
+    fn delete_guard_fails_closed_in_the_start_race() {
+        // Indicator is on but no snapshot has committed yet — the live
+        // meeting's id is unknowable, so any delete is refused.
+        assert!(delete_targets_live_meeting(true, None, "m1"));
+        // A stale terminal snapshot from the previous meeting is the same
+        // race: refuse rather than guess.
+        assert!(delete_targets_live_meeting(
+            true,
+            Some(&state("m0", "ready")),
+            "m1"
+        ));
+        // Same shape on the stop path: `processing` commits to the
+        // snapshot before the indicator lowers, so the terminal event for
+        // THIS id must also fail closed.
+        assert!(delete_targets_live_meeting(
+            true,
+            Some(&state("m1", "processing")),
+            "m1"
+        ));
     }
 }

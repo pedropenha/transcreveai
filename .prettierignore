@@ -22,3 +22,6 @@ src-tauri/src/catalog/catalog.json
 .playwright-mcp/
 session-*.html
 videos/**
+
+# Agent analysis tooling artifacts
+.ua/

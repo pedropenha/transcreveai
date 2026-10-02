@@ -50,3 +50,6 @@ __pycache__/
 # Coverage reports (bun lcov / cargo-llvm-cov)
 coverage/
 llvm-cov.json
+
+# Agent analysis tooling artifacts (untracked scratch output)
+.ua/

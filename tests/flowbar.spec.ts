@@ -102,7 +102,9 @@ test.describe("Flow Bar — idle slit & hover actions", () => {
     await expect(dictate).toBeVisible();
     await expect(notetaker).toBeVisible();
     // F012: the assistant overlay is shortcut-only — no Flow Bar slot.
-    await expect(page.getByRole("button")).toHaveCount(2);
+    const notes = page.getByRole("button", { name: /Notes/i });
+    await expect(notes).toBeVisible();
+    await expect(page.getByRole("button")).toHaveCount(3);
 
     // FR-001-03: the tooltip shows the configured shortcut, not a hardcoded one.
     await dictate.hover();
@@ -119,6 +121,10 @@ test.describe("Flow Bar — idle slit & hover actions", () => {
     await expect(notetaker).toBeVisible();
     await notetaker.click();
     expect(mock.calls.map((c) => c.cmd)).toContain("flowbar_start_notetaker");
+
+    // Notes button reveals the Hub (F007 scratchpad lives there).
+    await notes.click();
+    expect(mock.calls.map((c) => c.cmd)).toContain("show_main_window_command");
   });
 
   test("session-only mode renders nothing until a session shows", async ({

@@ -21,6 +21,8 @@ use super::{
     MEETING_PROCESS_REQUESTED_EVENT, MEETING_STATE_EVENT, TOAST_SHOW_EVENT,
 };
 use crate::audio_toolkit::audio::loopback::SystemAudioEvent;
+use crate::audio_toolkit::audio::AudioVisualiser;
+use crate::audio_toolkit::{constants::WHISPER_SAMPLE_RATE, AudioFrameCallback};
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::db::meeting_blocks::{
     MeetingBlock, MeetingBlockRepository, SqliteMeetingBlockRepository,
@@ -33,7 +35,7 @@ use crate::db::notes::{Note, NoteRepository, SqliteNoteRepository};
 use crate::managers::audio::AudioRecordingManager;
 use crate::meeting::blocks::{meeting_audio_dir, SealedBlock, Track};
 use crate::meeting::capture::{
-    CaptureConfig, MeetingCapture, MeetingCaptureEvent, MicTap, SystemSource,
+    CaptureConfig, MeetingCapture, MeetingCaptureEvent, MicTap, SystemSource, LIVE_CHUNK_DURATION,
 };
 use crate::meeting::live::{
     dictation_marker_text, DictationTracker, LiveTranscriber, SharedDictationTracker,
@@ -63,6 +65,12 @@ pub(super) struct Worker {
     /// FR-009-10: open/closed dictation intervals on the meeting clock —
     /// shared with the transcriber so mic utterances are flagged at insert.
     dictation: Option<SharedDictationTracker>,
+    /// Cumulative samples the system-track ring dropped (P4 diagnostics) —
+    /// folded into the stop-time capture summary log. `Overrun` reports a
+    /// per-attach cumulative count, so `system_overrun_seen` tracks the last
+    /// reading to add only deltas (and resets on each reattach).
+    system_dropped_samples: u64,
+    system_overrun_seen: u64,
 }
 
 impl Worker {
@@ -84,6 +92,8 @@ impl Worker {
             audio_dir: None,
             transcriber: None,
             dictation: None,
+            system_dropped_samples: 0,
+            system_overrun_seen: 0,
         }
     }
 
@@ -216,6 +226,49 @@ impl Worker {
         }
     }
 
+    /// `detector://start-requested` payloads are caller-controlled — bound
+    /// the strings and strip control characters before they reach the db,
+    /// a window title or a toast. `is_control` covers only Cc — invisible
+    /// format characters (bidi overrides, zero-widths, line/paragraph
+    /// separators, BOM) can still spoof a title, so filter those too.
+    fn clean_surface_label(raw: Option<String>) -> Option<String> {
+        raw.map(|s| {
+            s.chars()
+                .filter(|c| {
+                    !c.is_control()
+                        && !matches!(
+                            c,
+                            '\u{00AD}'      // SOFT HYPHEN (Cf)
+                                | '\u{034F}'    // combining grapheme joiner
+                                | '\u{061C}'    // Arabic letter mark
+                                | '\u{115F}'..='\u{1160}' // Hangul fillers
+                                | '\u{17B4}'..='\u{17B5}' // Khmer inherent vowels
+                                | '\u{180B}'..='\u{180E}' // Mongolian FVS + vowel separator
+                                | '\u{200B}'..='\u{200F}'
+                                | '\u{2028}'
+                                | '\u{2029}'
+                                | '\u{202A}'..='\u{202E}'
+                                | '\u{2060}'..='\u{206F}' // word joiner, invisible ops, deprecateds
+                                | '\u{2800}'    // Braille blank (renders as space)
+                                | '\u{3164}'    // Hangul filler
+                                | '\u{13430}'..='\u{1343F}' // Egyptian format controls
+                                | '\u{1BCA0}'..='\u{1BCA3}' // shorthand format controls
+                                | '\u{1D173}'..='\u{1D17A}' // musical format controls
+                                | '\u{E0000}'..='\u{E007F}' // tags
+                                | '\u{FE00}'..='\u{FE0F}'   // variation selectors
+                                | '\u{FEFF}'
+                                | '\u{FFA0}'    // Hangul halfwidth filler
+                                | '\u{FFF0}'..='\u{FFFC}' // reserved default-ignorables + anchors + object replacement
+                                | '\u{E0100}'..='\u{E01EF}' // variation selectors suppl.
+                        )
+                })
+                .take(120)
+                .collect::<String>()
+        })
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    }
+
     fn handle_start(&mut self, req: StartRequest) -> CommandResult<Meeting> {
         if self.machine.as_ref().is_some_and(|m| m.is_active()) {
             return Err(CommandError::new(
@@ -238,12 +291,17 @@ impl Worker {
             CommandError::logged(CommandErrorCode::Internal, "Failed to resolve app data", e)
         })?;
 
+        // `app_label`/`app_exe` arrive over `detector://start-requested` —
+        // caller-controlled strings that land in the title, the db and the
+        // toast, so bound and clean them at the boundary.
+        let app_label = Self::clean_surface_label(req.app_label);
+        let app_exe = Self::clean_surface_label(req.app_exe);
         let mut meeting = Meeting::new(
-            &default_title(req.app_label.as_deref(), chrono::Local::now()),
+            &default_title(app_label.as_deref(), chrono::Local::now()),
             &req.detection,
         );
-        meeting.app_label = req.app_label;
-        meeting.app_exe = req.app_exe;
+        meeting.app_label = app_label;
+        meeting.app_exe = app_exe;
         meeting.capture_system_audio = !req.mic_only;
         // `stt_provider_id` REFERENCES providers(id) — pseudo-ids
         // `local_model:*` (a seleção da v1) não são chaves da tabela e
@@ -262,15 +320,30 @@ impl Worker {
         // close/dictation stop from closing the stream beneath the capture.
         MEETING_ACTIVE.store(true, Ordering::SeqCst);
         // `start_capture` borrows `&mut self`, so no db borrow may be live.
+        // Open the tap up front: a dead mic stream lands in the machine's
+        // `mic_live` (it must not hold the silence check-in open) and the
+        // TrackUnavailable warning queues *after* the consent reminder —
+        // the actionable notice is the toast that stays on screen.
+        let mic_tap = self.mic_tap();
+        let mic_live = mic_tap.is_some();
+        if !mic_live {
+            log::warn!("Meeting mic track unavailable: microphone stream is not open");
+        }
         let (next_mic, next_system) = next_block_indices(&audio_dir);
-        let capture =
-            match self.start_capture(&audio_dir, !req.mic_only, now, next_mic, next_system) {
-                Ok(capture) => capture,
-                Err(error) => {
-                    self.abort_start();
-                    return Err(error);
-                }
-            };
+        let capture = match self.start_capture(
+            &audio_dir,
+            !req.mic_only,
+            now,
+            next_mic,
+            next_system,
+            mic_tap,
+        ) {
+            Ok(capture) => capture,
+            Err(error) => {
+                self.abort_start();
+                return Err(error);
+            }
+        };
 
         let created = match self.conn() {
             Ok(conn) => SqliteMeetingRepository::new(conn).create(&meeting),
@@ -306,14 +379,25 @@ impl Worker {
         self.meeting = Some(meeting.clone());
         self.meeting_t0 = now;
         self.audio_dir = Some(audio_dir);
+        // Per-meeting diagnostics: a new meeting restarts the cumulative
+        // system-track loss counter.
+        self.system_dropped_samples = 0;
+        self.system_overrun_seen = 0;
         self.machine = Some(SessionMachine::new(
             meeting.id.clone(),
             now,
             MeetingPolicy::from_settings(&settings),
-            true,          // mic live unless TrackUnavailable says otherwise
+            mic_live,
             !req.mic_only, // system track only in call mode
             req.detection_id.clone(),
         ));
+        if !mic_live {
+            // Queued — it flushes after the consent reminder emitted below,
+            // so the actionable warning is the toast that stays visible.
+            if let Some(m) = self.machine.as_mut() {
+                m.track_unavailable(Track::Mic);
+            }
+        }
 
         // FR-009-10: dictation intervals live on the meeting clock. A
         // dictation already capturing when the meeting starts counts from t0.
@@ -351,16 +435,27 @@ impl Worker {
             }
         }
 
-        // FR-009-02: discreet consent reminder on every start (opt-out).
+        // FR-009-02: discreet consent reminder on every start (opt-out). The
+        // toast shows a localized nudge; "Copiar aviso" copies the configured
+        // `meeting_consent_text` — the paste body never doubles as the notice.
         if settings.meeting_consent_reminder {
-            self.emit_toast(ToastPayload {
-                kind: "meeting_consent".to_string(),
-                message: settings.meeting_consent_text.clone(),
-                action: Some("copy_consent".to_string()),
-                meeting_id: None,
-            });
+            self.emit_kind(ToastKind::ConsentReminder);
         }
-        log::info!("Meeting {} started ({})", meeting.id, meeting.title);
+        // Explicit starts (Flow Bar ◉, tray, Alt+M/CLI, the Hub, the detector
+        // prompt) open the notes window so the meeting is annotatable at
+        // once; `auto_start` stays discreet — no focus steal mid-call. An
+        // open failure must not take the recording down — `open` surfaces
+        // the error toast itself, so a synchronous refusal just gets logged.
+        if req.detection != "auto_start" {
+            if let Err(e) = crate::meeting_window::open(&self.app, Some(meeting.id.clone())) {
+                log::warn!(
+                    "Meeting started but the notes window did not open: {}",
+                    e.message
+                );
+            }
+        }
+        // The title carries caller-supplied app labels — log the safe id.
+        log::info!("Meeting {} started", meeting.id);
         Ok(meeting)
     }
 
@@ -377,7 +472,9 @@ impl Worker {
     }
 
     /// Attach the shared mic stream + (optionally) the WASAPI loopback to a
-    /// fresh [`MeetingCapture`] in `dir`.
+    /// fresh [`MeetingCapture`] in `dir`. `mic_tap` arrives already opened by
+    /// the caller — a `None` there is reported through the machine (ordering
+    /// it against the consent reminder needs the machine to exist).
     fn start_capture(
         &mut self,
         audio_dir: &Path,
@@ -385,24 +482,46 @@ impl Worker {
         time_base: Instant,
         next_mic_index: u32,
         next_system_index: u32,
+        mic_tap: Option<MicTap>,
     ) -> CommandResult<MeetingCapture> {
         let (events_tx, events_rx) = mpsc::channel();
-        let mic_tap = self.mic_tap();
-        if mic_tap.is_none() {
-            // `MicTap::new` never reached `subscribe_frame_consumer`, so the
-            // capture pipeline can't report it — warn here instead.
-            log::warn!("Meeting mic track unavailable: microphone stream is not open");
-            if let Some(m) = self.machine.as_mut() {
-                m.track_unavailable(Track::Mic);
-            } else {
-                self.emit_kind(ToastKind::MicUnavailable);
-            }
-        }
         let system = if system_audio {
             SystemSource::Default
         } else {
             SystemSource::Disabled
         };
+        // FR-009-15: with live transcription on, the writers also emit ~8 s
+        // live chunks so text lands well before the 60 s block seals.
+        let live_chunk_samples = if get_settings(&self.app).meeting_live_transcript_enabled {
+            LIVE_CHUNK_DURATION.as_secs() as usize * WHISPER_SAMPLE_RATE as usize
+        } else {
+            0
+        };
+        // The Flow Bar's meeting waveform meters BOTH tracks: the mic side
+        // emits `audio://level` through the shared recorder's visualizer, but
+        // remote participants only ever reach the loopback — meter it here on
+        // the same channel or the pill reads flat while the user listens.
+        let system_level_cb = system_audio.then(|| {
+            let app = self.app.clone();
+            // 512 samples ≈ 32 ms at 16 kHz — a ~31 Hz bucket feed that shares
+            // `emit_levels`' 30 Hz throttle with the mic side.
+            let visualizer = Mutex::new(AudioVisualiser::new(
+                WHISPER_SAMPLE_RATE,
+                512,
+                16,
+                400.0,
+                4000.0,
+            ));
+            Arc::new(move |frame: &[f32]| {
+                let buckets = visualizer
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .feed(frame);
+                if let Some(buckets) = buckets {
+                    crate::overlay::emit_levels(&app, &buckets);
+                }
+            }) as AudioFrameCallback
+        });
         let capture = MeetingCapture::start_with_config(
             audio_dir.to_path_buf(),
             mic_tap,
@@ -412,6 +531,8 @@ impl Worker {
                 time_base,
                 next_mic_index,
                 next_system_index,
+                live_chunk_samples,
+                system_level_cb,
                 ..CaptureConfig::default()
             },
         )
@@ -480,6 +601,19 @@ impl Worker {
 
     fn handle_capture_event(&mut self, event: MeetingCaptureEvent) {
         let now = Instant::now();
+        if let MeetingCaptureEvent::LiveChunk {
+            track,
+            start_offset_ms,
+            samples,
+        } = event
+        {
+            // Live feed only — no machine state, no bookkeeping; the block
+            // pass re-covers anything a chunk misses.
+            if let Some(transcriber) = &self.transcriber {
+                transcriber.enqueue_chunk(track, start_offset_ms, samples);
+            }
+            return;
+        }
         if let MeetingCaptureEvent::BlockSealed(block) = event {
             // Bookkeeping first — the pending row and the live queue matter
             // even when the machine is already gone (stop-time tails still
@@ -498,11 +632,36 @@ impl Worker {
             }
             return;
         }
+        // Loss bookkeeping is worker state, not machine state — an Overrun
+        // or attach draining after the machine finished (the stop-time
+        // drain in `Effect::StopCapture`) must still fold, or the final
+        // cumulative count in the capture summary under-reports.
+        if let MeetingCaptureEvent::System(SystemAudioEvent::Attached { .. }) = event {
+            // Every attach means a fresh stream — its cumulative overrun
+            // counter restarts at zero, so the seen baseline must too
+            // (a resumed capture's first attach has `after_gap: None`).
+            self.system_overrun_seen = 0;
+        }
+        if let MeetingCaptureEvent::System(SystemAudioEvent::Overrun { dropped_samples }) = event {
+            // The system track is missing audio; the meeting keeps
+            // recording and the loss is visible in diagnostics. The
+            // counter is cumulative per attach — add only the delta.
+            // `debug!`, not `warn!`: a leaky ring emits on every growth
+            // (~4/s), so a warn would spam the log; the stop-time
+            // capture summary carries the total.
+            let delta = fold_overrun(&mut self.system_overrun_seen, dropped_samples);
+            self.system_dropped_samples += delta;
+            log::debug!(
+                "Meeting system track dropped {delta} samples this report \
+                 ({dropped_samples} cumulative this attach)"
+            );
+            return;
+        }
         let Some(machine) = self.machine.as_mut() else {
             return;
         };
         match event {
-            MeetingCaptureEvent::BlockSealed(_) => {}
+            MeetingCaptureEvent::BlockSealed(_) | MeetingCaptureEvent::LiveChunk { .. } => {}
             MeetingCaptureEvent::TrackUnavailable { track, message } => {
                 log::warn!("Meeting {:?} track unavailable: {message}", track);
                 machine.track_unavailable(track);
@@ -518,6 +677,7 @@ impl Worker {
                 log::info!("Meeting system track detached: {reason:?}");
                 machine.system_detached(now);
             }
+            MeetingCaptureEvent::System(SystemAudioEvent::Overrun { .. }) => {}
         }
     }
 
@@ -601,12 +761,25 @@ impl Worker {
                 };
                 let capture_system = meeting.capture_system_audio;
                 let (next_mic, next_system) = next_block_indices(&dir);
+                // Same ownership story as the initial start: a stream that
+                // died while paused drops the mic from silence tracking and
+                // warns — through the machine this time (it exists on resume).
+                let mic_tap = self.mic_tap();
+                if mic_tap.is_none() {
+                    log::warn!(
+                        "Meeting mic track unavailable on resume: microphone stream is not open"
+                    );
+                    if let Some(m) = self.machine.as_mut() {
+                        m.track_unavailable(Track::Mic);
+                    }
+                }
                 match self.start_capture(
                     &dir,
                     capture_system,
                     self.meeting_t0,
                     next_mic,
                     next_system,
+                    mic_tap,
                 ) {
                     Ok(capture) => self.capture = Some(capture),
                     Err(e) => {
@@ -629,17 +802,25 @@ impl Worker {
                         self.record_pending_block(block);
                     }
 
-                    log::debug!(
-                        "Meeting capture stopped: {} mic / {} system blocks",
-                        summary.mic.len(),
-                        summary.system.len()
-                    );
                     // stop() seals the in-flight tails — their `BlockSealed`
                     // events must still reach the pending bookkeeping and
                     // the live queue before the receiver is dropped. Do not
                     // re-enter flush(): the finished machine is only dropped
                     // after PersistStatus and RequestProcessing have run.
                     self.drain_capture_events_inner(false);
+                    // Log after the drain so a final Overrun report still
+                    // lands in `system_dropped_samples`.
+                    log::info!(
+                        "Meeting capture stopped: mic {} blocks / {} frames / {} samples; \
+                         system {} blocks / {} frames / {} samples / {} dropped by overrun",
+                        summary.mic.len(),
+                        summary.mic_stats.frames,
+                        summary.mic_stats.samples,
+                        summary.system.len(),
+                        summary.system_stats.frames,
+                        summary.system_stats.samples,
+                        self.system_dropped_samples,
+                    );
                 }
                 self.capture_rx = None;
             }
@@ -872,5 +1053,54 @@ impl Worker {
                 "Meeting database is unavailable",
             )),
         }
+    }
+}
+
+/// Fold a per-attach cumulative `Overrun` reading into the meeting total.
+/// The backend counter restarts at zero on every attach — the caller
+/// resets `seen` on `Attached` — so only the delta since the last reading
+/// adds. A counter that somehow went backwards adds nothing.
+fn fold_overrun(seen: &mut u64, dropped_samples: u64) -> u64 {
+    let delta = dropped_samples.saturating_sub(*seen);
+    *seen = dropped_samples;
+    delta
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overrun_deltas_accumulate_across_reports_and_reattaches() {
+        let mut seen = 0u64;
+        let mut total = 0u64;
+        // First attach: the counter grows 100 → 250 — deltas 100 + 150.
+        total += fold_overrun(&mut seen, 100);
+        total += fold_overrun(&mut seen, 250);
+        // A reattach resets the baseline — the new counter starts at 50.
+        seen = 0;
+        total += fold_overrun(&mut seen, 50);
+        assert_eq!(total, 300);
+        // A replayed or backwards reading adds nothing.
+        assert_eq!(fold_overrun(&mut seen, 40), 0);
+    }
+
+    #[test]
+    fn surface_labels_are_bounded_and_stripped() {
+        let clean = Worker::clean_surface_label;
+        assert_eq!(clean(None), None);
+        assert_eq!(
+            clean(Some("  Zoom  ".to_string())),
+            Some("Zoom".to_string())
+        );
+        // Control characters drop; zero-widths and bidi overrides too.
+        assert_eq!(
+            clean(Some("Me\u{200B}et\u{202E}ing\nX".to_string())),
+            Some("MeetingX".to_string())
+        );
+        // Capped at 120 chars.
+        assert_eq!(clean(Some("a".repeat(300))).unwrap().len(), 120);
+        // An all-control string cleans to empty → None.
+        assert_eq!(clean(Some("\n\t".to_string())), None);
     }
 }
