@@ -340,37 +340,74 @@
   outline-offset: -2px;
 }
 
-/* Generic toast://show notice — icon + message (+ ✕ on hover). */
+/* Generic toast://show notice — icon + message (+ ✕ on hover). Auto-height
+ * (min 56 px): a wrapped message grows the card, the measured height is
+ * reported to the native window. */
 .tnotice {
   flex-direction: row;
   align-items: center;
   gap: 10px;
   padding: 0 12px;
+  height: auto;
+  min-height: 56px;
 }
 /* Expanded notice with an action button (FR-008-14): stacks the message
- * row over the .tactions row, same two-row layout as .tcard.expanded. */
+ * row over the .tactions row, same two-row layout as .tcard.expanded.
+ * Height is auto (min 104 px): a long message grows the card and the
+ * webview reports the measured height — no clipped text. */
 .tnotice.expanded {
   flex-direction: column;
   align-items: stretch;
   padding: 0;
+  height: auto;
+  min-height: 104px;
+}
+.tnotice {
+  position: relative; /* anchors the countdown bar */
 }
 .tnotice-main {
-  height: 56px;
+  min-height: 56px;
   flex: none;
-  padding: 0 12px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 .tnotice-msg {
   min-width: 0;
+  flex: 1;
   font-size: 12.5px;
+  line-height: 1.35;
   color: var(--flowbar-text);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
+}
+/* Self-dismiss countdown — a hairline that shrinks to zero; hover pauses
+ * it (animation-play-state) and animationend dismisses the notice. */
+.tnotice-life {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--t-accent);
+  transform-origin: left center;
+  animation-name: tnotice-life;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  opacity: 0.7;
+}
+@keyframes tnotice-life {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 
 /* FR-008-09 confirmation: coral dot + "Gravando · <App>". */

@@ -84,6 +84,10 @@ export function resolveToastView(input: ToastViewInput): ToastView {
 export const COLLAPSE_AFTER_MS = 60_000;
 /** FR-008-09: how long the "Gravando · <App>" confirmation stays up. */
 export const CONFIRMATION_MS = 3_000;
+/** Generic notices self-dismiss after this long (hover pauses the clock);
+ *  `noticeBlocksCollapse` kinds (the 2-min check-in) are exempt. The card
+ *  shows the remaining time as a shrinking bar. */
+export const NOTICE_AUTO_DISMISS_MS = 30_000;
 
 /** Actions sent to `detector_respond` (T-061 owns the command; camelCase
  *  args per the tauri-specta convention — `detectionId`). */
@@ -206,6 +210,12 @@ export function noticeBlocksCollapse(notice: ToastNotice | null): boolean {
   return notice?.action === "checkin";
 }
 
+/** Whether a live notice gets the 30 s countdown bar + auto-dismiss —
+ *  everything except kinds that await an answer (check-in's 2-min window). */
+export function noticeSelfDismisses(notice: ToastNotice | null): boolean {
+  return notice !== null && !noticeBlocksCollapse(notice);
+}
+
 export interface ToastMenuItem {
   action: DetectorAction;
   /** Key under `toast.*` in the translation files (takes `{{app}}`). */
@@ -224,10 +234,12 @@ export function meetingMenuItems(): ToastMenuItem[] {
 
 /**
  * Window height per view in CSS px, including the 16 px stage padding top
- * and bottom — keep in sync with the fixed card heights in
- * `ToastOverlay.css`. Reported to the backend via `toast_set_content_height`
- * so the native window is only ever as tall as the card (no click-through
- * dead zone, and expansion grows upward from the anchored bottom edge).
+ * and bottom. Pre-mount fallback only — once the card renders, the webview
+ * reports its measured height instead (a wrapped notice message can grow
+ * past the static values). Reported to the backend via
+ * `toast_set_content_height` so the native window is only ever as tall as
+ * the card (no click-through dead zone, and expansion grows upward from
+ * the anchored bottom edge).
  */
 export function toastWindowHeight(view: ToastView, menuOpen: boolean): number {
   switch (view) {

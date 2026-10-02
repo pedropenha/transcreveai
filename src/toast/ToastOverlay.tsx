@@ -9,9 +9,11 @@ import { getLanguageDirection } from "@/lib/utils/rtl";
 import {
   COLLAPSE_AFTER_MS,
   CONFIRMATION_MS,
+  NOTICE_AUTO_DISMISS_MS,
   meetingMenuItems,
   noticeActionFor,
   noticeBlocksCollapse,
+  noticeSelfDismisses,
   resolveToastView,
   startsRecording,
   toastWindowHeight,
@@ -88,6 +90,10 @@ const ToastOverlay: React.FC = () => {
 
   const collapseTimerRef = useRef<number | undefined>(undefined);
   const confirmTimerRef = useRef<number | undefined>(undefined);
+  // The card element — measured for the window height so a long notice
+  // message grows the toast instead of clipping (the static per-view map
+  // is the pre-mount fallback).
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const detection = state.detection;
   // FR-008-13 (T-069): an `auto_start` detection is already recording —
@@ -160,17 +166,43 @@ const ToastOverlay: React.FC = () => {
   }, [disarmCollapse]);
 
   // ---- Window height follows the card (no dead click zone) ------------------
+  // Prefer the measured card height (a wrapped notice message can exceed
+  // the static 104 px row); the per-view map is the fallback before mount.
   useEffect(() => {
-    const height = toastWindowHeight(view, menuOpen);
+    const measured = cardRef.current?.getBoundingClientRect().height;
+    const height =
+      measured && measured > 0
+        ? measured + 32
+        : toastWindowHeight(view, menuOpen);
     if (height > 0) {
       void invoke("toast_set_content_height", { height });
     }
-  }, [view, menuOpen]);
+    // The notice message length changes the wrapped height — re-measure on
+    // every payload swap, not just on view changes.
+  }, [view, menuOpen, state.notice?.message]);
 
   // ---- Actions --------------------------------------------------------------
   const dismissToast = useCallback(() => {
     void invoke("toast_dismiss");
   }, []);
+
+  // Buttons act on pointerdown AND click, deduped per target — whichever
+  // event survives the WebView2 focus transition wins; the second is
+  // ignored within a 400 ms window. (Same pattern as the assistant panel's
+  // stripButton.)
+  const lastPressRef = useRef<Record<string, number>>({});
+  const pressable = (id: string, action: () => void) => {
+    const run = () => {
+      const now = Date.now();
+      if (now - (lastPressRef.current[id] ?? 0) < 400) return;
+      lastPressRef.current[id] = now;
+      action();
+    };
+    return {
+      onPointerDown: () => run(),
+      onClick: () => run(),
+    };
+  };
 
   // FR-008-14/FR-009-08/09/22 (T-069): a notice carrying a known action
   // gets button(s); success dismisses, a refused/failed command keeps the
@@ -266,8 +298,13 @@ const ToastOverlay: React.FC = () => {
       state.notice?.action,
       state.notice?.meeting_id,
     );
+    // The countdown restarts per notice payload (keyed on kind+message);
+    // hover pauses it, the bar's own animationend dismisses. Check-in
+    // notices keep their 2-min answer window — no bar, no auto-dismiss.
+    const selfDismiss = noticeSelfDismisses(state.notice);
     return (
       <div
+        ref={cardRef}
         className={`tcard tnotice ${expanded && noticeAction ? "expanded" : ""}`}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -289,7 +326,7 @@ const ToastOverlay: React.FC = () => {
               type="button"
               className="sx tclose"
               aria-label={t("toast.dismiss")}
-              onClick={dismissToast}
+              {...pressable("notice-close", dismissToast)}
             >
               <X size={10} aria-hidden="true" />
             </button>
@@ -300,7 +337,10 @@ const ToastOverlay: React.FC = () => {
             <button
               type="button"
               className="tprimary"
-              onClick={() => void runNoticeAction(noticeAction)}
+              {...pressable(
+                "notice-action",
+                () => void runNoticeAction(noticeAction),
+              )}
             >
               {t(`toast.${noticeAction.labelKey}`)}
             </button>
@@ -308,14 +348,28 @@ const ToastOverlay: React.FC = () => {
               <button
                 type="button"
                 className="tsecondary"
-                onClick={() =>
-                  void runNoticeAction(noticeAction, noticeAction.secondary)
-                }
+                {...pressable(
+                  "notice-secondary",
+                  () =>
+                    void runNoticeAction(noticeAction, noticeAction.secondary),
+                )}
               >
                 {t(`toast.${noticeAction.secondary.labelKey}`)}
               </button>
             )}
           </div>
+        )}
+        {selfDismiss && (
+          <div
+            key={`${state.notice?.kind}:${state.notice?.message}`}
+            className="tnotice-life"
+            style={{
+              animationDuration: `${NOTICE_AUTO_DISMISS_MS}ms`,
+              animationPlayState: hovered ? "paused" : "running",
+            }}
+            onAnimationEnd={dismissToast}
+            aria-hidden="true"
+          />
         )}
       </div>
     );
@@ -324,7 +378,7 @@ const ToastOverlay: React.FC = () => {
   const renderMeeting = () => {
     if (view === "confirming") {
       return (
-        <div className="tcard tconfirm">
+        <div ref={cardRef} className="tcard tconfirm">
           <span className="tdot-rec" aria-hidden="true" />
           <span className="ttitle">
             {t("toast.recording", { app: confirmingApp })}
@@ -335,6 +389,7 @@ const ToastOverlay: React.FC = () => {
     const expanded = view === "expanded";
     return (
       <div
+        ref={cardRef}
         className={`tcard ${expanded ? "expanded" : ""}`}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => {
@@ -357,7 +412,7 @@ const ToastOverlay: React.FC = () => {
               type="button"
               className="sx tclose"
               aria-label={t("toast.dismiss")}
-              onClick={() => void respond("dismiss")}
+              {...pressable("meeting-close", () => void respond("dismiss"))}
             >
               <X size={10} aria-hidden="true" />
             </button>
@@ -368,7 +423,7 @@ const ToastOverlay: React.FC = () => {
             <button
               type="button"
               className="tprimary"
-              onClick={() => void respond("start")}
+              {...pressable("meeting-start", () => void respond("start"))}
             >
               {t("toast.startNotetaker")}
             </button>
@@ -378,7 +433,7 @@ const ToastOverlay: React.FC = () => {
               aria-label={t("toast.moreActions")}
               aria-expanded={menuOpen}
               aria-haspopup="menu"
-              onClick={() => setMenuOpen((v) => !v)}
+              {...pressable("meeting-menu", () => setMenuOpen((v) => !v))}
             >
               <ChevronDown size={12} aria-hidden="true" />
             </button>
@@ -392,7 +447,10 @@ const ToastOverlay: React.FC = () => {
                 type="button"
                 role="menuitem"
                 className="tmenu-item"
-                onClick={() => void respond(item.action)}
+                {...pressable(
+                  `menu-${item.action}`,
+                  () => void respond(item.action),
+                )}
               >
                 {t(`toast.${item.labelKey}`, {
                   app: detection?.app_label,

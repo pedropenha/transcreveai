@@ -73,6 +73,7 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
 - **FR-009-20** "Regenerar resumo" (ex.: com outro provedor). P2: templates personalizados ("1:1", "Entrevista", "Daily").
 - **FR-009-21** Sem chave de LLM configurada (BYOK, F011/T-016) → a reunião fica `ready` só com transcrição e notas, com aviso para configurar o resumo. Transcrição e notas nunca dependem do LLM.
 - **FR-009-22** Falha no processamento → `error` com "Tentar novamente"; áudio preservado.
+- **FR-009-27** Avisos (`toast://show`) se auto-dispensam após 30 s com uma barra de contagem regressiva visível; hover pausa a contagem. Avisos que aguardam resposta (check-in FR-009-09) são isentos.
 
 ### Exportação e busca
 

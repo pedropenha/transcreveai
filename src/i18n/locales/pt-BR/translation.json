@@ -939,7 +939,8 @@
     "experimental": "experimental",
     "thinkingVia": "Pensando via {{provider}}…",
     "queued": "na fila — envia em seguida",
-    "dictateHint": "Atalho do assistente dita · Esc fecha"
+    "dictateHint": "Atalho do assistente dita · Esc fecha",
+    "changeProvider": "Trocar provedor"
   },
   "toast": {
     "meetingDetected": "Reunião detectada",

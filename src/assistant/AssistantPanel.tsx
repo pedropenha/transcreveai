@@ -203,18 +203,31 @@ const AssistantPanel: React.FC = () => {
     });
   };
 
-  /** Title-strip buttons act on pointerdown — a plain click can be
-   * swallowed by the native focus transition the panel's mousedown handler
-   * triggers (the X "not closing" bug). */
-  const stripButton = (action: () => void) => ({
-    onPointerDown: (e: React.PointerEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+  /** Title-strip buttons act on pointerdown AND click, deduped per button —
+   * whichever event survives the WebView2 focus transition wins; the
+   * follow-up within 400 ms is ignored (a plain click alone can be
+   * swallowed by the native focus transition — the X "not closing" bug). */
+  const lastStripPressRef = useRef<Record<string, number>>({});
+  const stripButton = (id: string, action: () => void) => {
+    const run = () => {
+      const now = Date.now();
+      if (now - (lastStripPressRef.current[id] ?? 0) < 400) return;
+      lastStripPressRef.current[id] = now;
       action();
-    },
-    onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
-    onClick: (e: React.MouseEvent) => e.stopPropagation(),
-  });
+    };
+    return {
+      onPointerDown: (e: React.PointerEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        run();
+      },
+      onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
+      onClick: (e: React.MouseEvent) => {
+        e.stopPropagation();
+        run();
+      },
+    };
+  };
 
   // ---- Render -------------------------------------------------------------
 
@@ -248,15 +261,18 @@ const AssistantPanel: React.FC = () => {
           <Sparkles size={13} className="as-title-icon" aria-hidden="true" />
           <span className="as-title-text">{t("assistant.title")}</span>
           {state?.providerLabel && (
-            <span
+            <button
+              type="button"
               className={`as-provider${experimental ? " as-provider--experimental" : ""}`}
               title={state.providerId ?? undefined}
+              aria-label={t("assistant.changeProvider")}
+              {...stripButton("provider", openSettings)}
             >
               {state.providerLabel}
               {experimental && (
                 <em className="as-exp"> {t("assistant.experimental")}</em>
               )}
-            </span>
+            </button>
           )}
           <span className="as-title-spacer" />
           <button
@@ -264,7 +280,7 @@ const AssistantPanel: React.FC = () => {
             className="as-pin"
             aria-label={t("assistant.newConversation")}
             title={t("assistant.newConversation")}
-            {...stripButton(newConversation)}
+            {...stripButton("new", newConversation)}
           >
             <MessageSquarePlus size={12} aria-hidden="true" />
           </button>
@@ -274,7 +290,7 @@ const AssistantPanel: React.FC = () => {
             aria-label={t(pinToggleKey(pinned))}
             aria-pressed={pinned}
             title={t(pinToggleKey(pinned))}
-            {...stripButton(togglePin)}
+            {...stripButton("pin", togglePin)}
           >
             {pinned ? (
               <PinOff size={12} aria-hidden="true" />
@@ -286,7 +302,7 @@ const AssistantPanel: React.FC = () => {
             type="button"
             className="as-x"
             aria-label={t("assistant.close")}
-            {...stripButton(close)}
+            {...stripButton("close", close)}
           >
             <X size={12} aria-hidden="true" />
           </button>

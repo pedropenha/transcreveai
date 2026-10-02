@@ -5,6 +5,8 @@ import {
   meetingMenuItems,
   noticeActionFor,
   noticeBlocksCollapse,
+  noticeSelfDismisses,
+  NOTICE_AUTO_DISMISS_MS,
   resolveToastView,
   startsRecording,
   toastWindowHeight,
@@ -127,6 +129,12 @@ assert.equal(
 );
 assert.equal(noticeBlocksCollapse(checkinNotice), true);
 assert.equal(noticeBlocksCollapse(notice), false);
+// Auto-dismiss: ordinary notices get the 30 s countdown; check-in is exempt
+// (it awaits an answer), and no notice at all renders no bar.
+assert.equal(noticeSelfDismisses(notice), true);
+assert.equal(noticeSelfDismisses(checkinNotice), false);
+assert.equal(noticeSelfDismisses(null), false);
+assert.equal(NOTICE_AUTO_DISMISS_MS < COLLAPSE_AFTER_MS, true);
 const checkin = noticeActionFor("checkin");
 assert.equal(checkin?.command, "meeting_checkin_respond");
 assert.deepEqual(checkin?.args, { keepRecording: true });

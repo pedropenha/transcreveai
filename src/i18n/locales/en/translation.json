@@ -1009,7 +1009,8 @@
     "experimental": "experimental",
     "thinkingVia": "Thinking via {{provider}}…",
     "queued": "queued — sends next",
-    "dictateHint": "Assistant shortcut dictates · Esc closes"
+    "dictateHint": "Assistant shortcut dictates · Esc closes",
+    "changeProvider": "Change provider"
   },
   "toast": {
     "meetingDetected": "Meeting detected",
