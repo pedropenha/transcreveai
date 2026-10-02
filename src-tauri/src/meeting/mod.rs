@@ -29,7 +29,7 @@
 //! `detector://start-requested`, emitted by
 //! `commands::detector::detector_respond` and by the T-069 auto-start path).
 
-mod app_icon;
+pub(crate) mod app_icon;
 mod classifier;
 mod consent;
 mod detector;
@@ -205,6 +205,7 @@ fn emit_detector_outputs(app: &tauri::AppHandle, outputs: Vec<DetectorOutput>) {
                             detection_id: detection.detection_id.clone(),
                             app_label: detection.app_label.clone(),
                             exe: detection.exe_name.clone(),
+                            exe_path: detection.exe_path.clone(),
                             mic_only: false,
                             auto: true,
                         },
@@ -269,3 +270,4 @@ pub mod markdown;
 pub mod postprocess;
 pub mod recovery;
 pub mod session;
+pub mod view;

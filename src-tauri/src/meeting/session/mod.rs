@@ -87,6 +87,9 @@ pub struct StartRequest {
     pub detection: String,
     pub app_label: Option<String>,
     pub app_exe: Option<String>,
+    /// Full path of the detected executable — persisted (after
+    /// `app_icon::sanitize_exe_path`) so the Notetaker list can show its icon.
+    pub app_exe_path: Option<String>,
     /// `true` = mic only ("Presencial" / detector `mic_only`) — the system
     /// track stays off.
     pub mic_only: bool,
@@ -104,6 +107,7 @@ impl StartRequest {
             detection: "manual".to_string(),
             app_label: None,
             app_exe: None,
+            app_exe_path: None,
             mic_only: false,
             detection_id: None,
         }

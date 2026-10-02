@@ -21,6 +21,11 @@ pub struct Meeting {
     pub app_exe: Option<String>,
     /// e.g. "Google Meet"
     pub app_label: Option<String>,
+    /// Full path of the detected executable (migration 15) — only used to
+    /// extract the source-app icon; never sent over IPC (`serde(skip)`).
+    /// Always passed through `is_safe_exe_path` before being stored.
+    #[serde(skip)]
+    pub app_exe_path: Option<String>,
     /// 'auto_prompt' | 'auto_start' | 'manual' | 'in_person'
     pub detection: String,
     /// 'recording' | 'paused' | 'processing' | 'ready' | 'error' | 'recovered'
@@ -53,6 +58,7 @@ impl Meeting {
             title: title.to_string(),
             app_exe: None,
             app_label: None,
+            app_exe_path: None,
             detection: detection.to_string(),
             status: "recording".to_string(),
             started_at: Utc::now().timestamp(),
@@ -75,6 +81,7 @@ impl Meeting {
             title: row.get("title")?,
             app_exe: row.get("app_exe")?,
             app_label: row.get("app_label")?,
+            app_exe_path: row.get("app_exe_path")?,
             detection: row.get("detection")?,
             status: row.get("status")?,
             started_at: row.get("started_at")?,
@@ -139,8 +146,9 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                 id, title, app_exe, app_label, detection, status,
                 started_at, ended_at, capture_system_audio,
                 stt_provider_id, llm_provider_id, template_id,
-                summary_md, summary_status, audio_dir, language, error_code
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+                summary_md, summary_status, audio_dir, language, error_code,
+                app_exe_path
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params![
                 meeting.id,
                 meeting.title,
@@ -159,6 +167,7 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                 meeting.audio_dir,
                 meeting.language,
                 meeting.error_code,
+                meeting.app_exe_path,
             ],
         )?;
         Ok(())
@@ -214,8 +223,8 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                 capture_system_audio = ?8, stt_provider_id = ?9,
                 llm_provider_id = ?10, template_id = ?11, summary_md = ?12,
                 summary_status = ?13, audio_dir = ?14, language = ?15,
-                error_code = ?16
-             WHERE id = ?17",
+                error_code = ?16, app_exe_path = ?17
+             WHERE id = ?18",
             params![
                 meeting.title,
                 meeting.app_exe,
@@ -233,6 +242,7 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
                 meeting.audio_dir,
                 meeting.language,
                 meeting.error_code,
+                meeting.app_exe_path,
                 meeting.id,
             ],
         )?;
@@ -617,6 +627,32 @@ mod tests {
         )
         .expect("re-exclude");
         assert!(meetings.search(&q("segredo")).expect("search").is_empty());
+    }
+
+    #[test]
+    fn app_exe_path_round_trips_through_create_and_update() {
+        let conn = setup();
+        let meetings = SqliteMeetingRepository::new(&conn);
+        let mut m = Meeting::new("Daily", "auto_prompt");
+        assert_eq!(m.app_exe_path, None, "manual meetings have no path");
+        m.app_exe = Some("Zoom.exe".to_string());
+        m.app_exe_path = Some(r"C:\apps\Zoom.exe".to_string());
+        meetings.create(&m).expect("create");
+
+        let fetched = meetings.get(&m.id).expect("get").expect("exists");
+        assert_eq!(fetched.app_exe_path.as_deref(), Some(r"C:\apps\Zoom.exe"));
+
+        let mut edited = fetched;
+        edited.app_exe_path = None;
+        meetings.update(&edited).expect("update");
+        assert_eq!(
+            meetings
+                .get(&m.id)
+                .expect("get")
+                .expect("exists")
+                .app_exe_path,
+            None
+        );
     }
 
     #[test]

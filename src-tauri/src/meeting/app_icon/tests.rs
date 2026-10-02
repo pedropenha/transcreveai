@@ -132,6 +132,29 @@ fn icon_for_applies_priority_then_cache() {
     assert_eq!(cache.extractor.0.load(Ordering::SeqCst), 1);
 }
 
+#[test]
+fn sanitize_exe_path_keeps_only_safe_bounded_paths() {
+    assert_eq!(
+        sanitize_exe_path(Some("  C:\\apps\\Zoom.exe ".to_string())).as_deref(),
+        Some("C:\\apps\\Zoom.exe")
+    );
+    for bad in [
+        "\\\\server\\share\\x.exe",
+        "\\\\?\\C:\\x.exe",
+        "C:\\apps\\readme.txt",
+        "relative\\x.exe",
+        "C:\\a\\..\\x.exe",
+        "C:\\f.txt:evil.exe",
+        "C:/apps/x.exe",
+        "",
+    ] {
+        assert_eq!(sanitize_exe_path(Some(bad.to_string())), None, "{bad:?}");
+    }
+    assert_eq!(sanitize_exe_path(None), None);
+    let long = format!("C:\\{}\\x.exe", "a".repeat(600));
+    assert_eq!(sanitize_exe_path(Some(long)), None, "over-long path");
+}
+
 #[cfg(windows)]
 #[test]
 fn extracts_real_icon_from_notepad() {

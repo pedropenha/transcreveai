@@ -29,6 +29,9 @@ use crate::meeting::session::{
     meeting_recording_active, open_session_db, remove_meeting_audio_dir, MeetingSessionManager,
     MeetingStateEvent, StartRequest,
 };
+use crate::meeting::view::{
+    list_status_of, source_app, source_icon, MeetingListItem, MeetingListStatus, SourceApp,
+};
 use crate::portable::app_data_dir;
 use crate::settings::{get_settings, write_settings};
 
@@ -142,6 +145,10 @@ pub struct MeetingDetail {
     /// The meeting note row's markdown body ("" when the row is missing —
     /// e.g. a meeting that predates the notes-row creation).
     pub notes_md: String,
+    /// App the meeting came from (`None` for manual / in-person meetings).
+    pub source_app: Option<SourceApp>,
+    /// The single status chip the Notetaker list/details show.
+    pub list_status: MeetingListStatus,
 }
 
 /// One meeting with its segments and notes body (meeting window hydration).
@@ -179,6 +186,8 @@ pub fn meeting_get(app: AppHandle, id: String) -> CommandResult<Option<MeetingDe
         .map(|n| n.body_md)
         .unwrap_or_default();
     Ok(Some(MeetingDetail {
+        source_app: source_app(&meeting),
+        list_status: list_status_of(&meeting),
         meeting,
         segments,
         notes_md,
@@ -302,11 +311,53 @@ pub fn meeting_window_open(app: AppHandle, meeting_id: Option<String>) -> Comman
 /// Every meeting, newest first (FR-009-13 "Minhas notas" list).
 #[tauri::command]
 #[specta::specta]
-pub fn meeting_list(app: AppHandle) -> CommandResult<Vec<Meeting>> {
+pub fn meeting_list(app: AppHandle) -> CommandResult<Vec<MeetingListItem>> {
     let conn = open_session_db(&app)?;
     SqliteMeetingRepository::new(&conn)
         .list()
+        .map(into_list_items)
         .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Failed to list meetings", e))
+}
+
+fn into_list_items(meetings: Vec<Meeting>) -> Vec<MeetingListItem> {
+    meetings.into_iter().map(MeetingListItem::from).collect()
+}
+
+/// Notetaker list/details: the source app's icon as a `data:image/png` URI,
+/// extracted from the executable the detector saw and cached per exe path.
+/// `None` (never an error) when the meeting has no source app, predates the
+/// stored path, is a known app / browser (the front-end embeds those logos),
+/// or the extraction failed or exceeded its 2 s budget — the UI then shows a
+/// monogram. Runs off the main thread: the shell call can block.
+#[tauri::command]
+#[specta::specta]
+pub async fn meeting_source_icon(app: AppHandle, id: String) -> CommandResult<Option<String>> {
+    let id = canonical_meeting_id(&id);
+    tokio::task::spawn_blocking(move || {
+        let conn = open_session_db(&app)?;
+        let meeting = SqliteMeetingRepository::new(&conn)
+            .get(&id)
+            .map_err(|e| {
+                CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
+            })?
+            .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "Meeting not found"))?;
+        Ok(source_icon(&meeting, platform_icon))
+    })
+    .await
+    .map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to load the app icon", e)
+    })?
+}
+
+#[cfg(windows)]
+fn platform_icon(label: &str, exe: &str, path: Option<&str>) -> Option<String> {
+    crate::meeting::app_icon::detection_icon(label, exe, path)
+}
+
+/// Icon extraction is Windows-only for now (macOS lands with v1.0 packaging).
+#[cfg(not(windows))]
+fn platform_icon(_label: &str, _exe: &str, _path: Option<&str>) -> Option<String> {
+    None
 }
 
 /// Segments of a meeting in meeting-clock order (T-065/T-066): `speech`,
@@ -335,14 +386,16 @@ pub fn meeting_segments(app: AppHandle, meeting_id: String) -> CommandResult<Vec
 /// meetings (same result as `meeting_list`).
 #[tauri::command]
 #[specta::specta]
-pub fn meeting_search(app: AppHandle, query: String) -> CommandResult<Vec<Meeting>> {
+pub fn meeting_search(app: AppHandle, query: String) -> CommandResult<Vec<MeetingListItem>> {
     let conn = open_session_db(&app)?;
     let repo = SqliteMeetingRepository::new(&conn);
     let fail = |e| CommandError::logged(CommandErrorCode::Internal, "Failed to search meetings", e);
     match crate::db::fts_match_query(&query) {
-        Some(fts_query) => repo.search(&fts_query).map_err(fail),
-        None => repo.list().map_err(fail),
+        Some(fts_query) => repo.search(&fts_query),
+        None => repo.list(),
     }
+    .map(into_list_items)
+    .map_err(fail)
 }
 
 /// FR-009-23 / AC-009-07 (T-068): assemble the meeting as a Markdown

@@ -80,6 +80,7 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
 - **FR-009-23** "Copiar como Markdown": título, data/hora, duração, app, Minhas notas, Resumo, Transcrição (`[mm:ss] Falante: texto`).
 - **FR-009-24** P2 — salvar `.md` numa pasta de exportação (o Wispr só tem "Copy to Markdown", FR-009-23).
 - **FR-009-25** Lista de reuniões no Hub com busca full-text em título, notas, resumo e transcrição.
+- **FR-009-28** Cada item da lista (`meeting_list`/`meeting_search`) e o detalhe (`meeting_get`) trazem, além da linha da reunião: `source_app { exe, name }` (app de origem — `null` em reunião manual/presencial) e `list_status` (`recording` | `paused` | `processing` | `no_summary` | `failed` | `ready`, derivado de `status` × `summary_status`, ver [data-model §2](../../architecture/data-model.md)). O ícone do app vem de `meeting_source_icon(id)` — data URI PNG extraído do executável salvo (`meetings.app_exe_path`), em cache por caminho, ou `null` (app conhecido/navegador, reunião sem caminho, falha ou timeout de 2 s) → a UI mostra o logo embutido ou um monograma. O caminho do `.exe` nunca sai por IPC. Retentar uma linha `failed`: `meeting_retry_processing` quando `meeting.status` é `error`/`recovered`; `meeting_regenerate_summary` quando é `ready` (resumo falhou).
 - **FR-009-26** P2: exportar áudio (mix) e legendas SRT.
 
 ## Requisitos não funcionais

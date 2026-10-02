@@ -492,6 +492,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     detection_id: Option<String>,
                     app_label: Option<String>,
                     exe: Option<String>,
+                    exe_path: Option<String>,
                     mic_only: Option<bool>,
                     auto: Option<bool>,
                 }
@@ -506,6 +507,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                             },
                             app_label: payload.app_label,
                             app_exe: payload.exe,
+                            app_exe_path: payload.exe_path,
                             mic_only: payload.mic_only.unwrap_or(false),
                             detection_id: payload.detection_id,
                         },
@@ -1089,6 +1091,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_list,
             commands::meeting::meeting_segments,
             commands::meeting::meeting_search,
+            commands::meeting::meeting_source_icon,
             commands::meeting::meeting_export_markdown,
             commands::meeting::meeting_delete,
             commands::meeting::meeting_consent_accept,
