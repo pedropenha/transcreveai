@@ -63,6 +63,9 @@ function App() {
   const [railCollapsed, toggleRailCollapsed] = useRailCollapsed();
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
+  // Home and Notetaker own their scrolling (list and details scroll apart).
+  const isFullBleed =
+    currentSection === "home" || currentSection === "meetings";
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
   );
@@ -416,22 +419,20 @@ function App() {
               <div
                 ref={settingsScrollRef}
                 className={
-                  currentSection === "home"
+                  isFullBleed
                     ? "hub-panel-scroll overflow-hidden"
                     : "hub-panel-scroll overflow-y-auto"
                 }
               >
                 <div
                   className={
-                    currentSection === "home"
+                    isFullBleed
                       ? "h-full"
                       : "flex flex-col items-center p-4 gap-4"
                   }
                 >
-                  {currentSection !== "home" ? (
-                    <AccessibilityPermissions />
-                  ) : null}
-                  {currentSection !== "home" ? <SecureInputWarning /> : null}
+                  {!isFullBleed ? <AccessibilityPermissions /> : null}
+                  {!isFullBleed ? <SecureInputWarning /> : null}
                   {renderSettingsContent(currentSection)}
                 </div>
               </div>

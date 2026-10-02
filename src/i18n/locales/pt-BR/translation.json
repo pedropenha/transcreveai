@@ -624,27 +624,15 @@
       }
     },
     "meetings": {
-      "title": "Reuniões",
       "searchPlaceholder": "Buscar título, notas, resumo ou transcrição...",
       "loading": "Carregando reuniões...",
-      "empty": "Nenhuma reunião ainda. Inicie uma pela Flow Bar ou pelo botão Nova reunião.",
       "emptySearch": "Nenhuma reunião corresponde à busca.",
-      "newMeeting": "Nova reunião",
       "newMeetingCall": "Chamada no computador",
       "newMeetingInPerson": "Presencial",
-      "open": "Abrir reunião {{title}}",
       "copyMarkdown": "Copiar como Markdown",
       "copyError": "Não foi possível copiar o Markdown.",
       "delete": "Excluir reunião",
-      "deleteError": "Não foi possível excluir a reunião.",
-      "status": {
-        "recording": "Gravando",
-        "paused": "Pausada",
-        "processing": "Processando",
-        "ready": "Pronta",
-        "error": "Erro",
-        "recovered": "Recuperada"
-      }
+      "deleteError": "Não foi possível excluir a reunião."
     },
     "debug": {
       "title": "Depuração",
@@ -1192,5 +1180,71 @@
       "body": "Toque duas vezes no atalho de ditado e fale à vontade. Toque de novo para inserir.",
       "dismiss": "Dispensar dica"
     }
+  },
+  "notetaker": {
+    "start": "Iniciar Notetaker",
+    "settings": "Configurações do Notetaker",
+    "search": "Buscar reuniões",
+    "tabs": "Listas de reuniões",
+    "tab": {
+      "past": "Notas passadas",
+      "processing": "Transcrevendo"
+    },
+    "retry": "Tentar novamente",
+    "retryError": "Não foi possível tentar de novo.",
+    "copyError": "Não foi possível copiar o resumo.",
+    "renameError": "Não foi possível renomear a reunião.",
+    "noSummaryHint": "Ainda sem resumo. Abra as configurações para ativar os resumos.",
+    "status": {
+      "ready": "Resumo pronto",
+      "processing": "Transcrevendo",
+      "processingPct": "Transcrevendo {{pct}}%",
+      "noSummary": "Sem resumo",
+      "failed": "Falhou",
+      "recording": "Gravando",
+      "paused": "Pausada"
+    },
+    "live": {
+      "label": "Gravando agora",
+      "open": "Abrir a janela da reunião",
+      "pause": "Pausar",
+      "resume": "Retomar",
+      "stop": "Parar",
+      "micAndSystem": "Mic + áudio do sistema",
+      "micOnly": "Somente microfone",
+      "controlError": "Não foi possível controlar a gravação."
+    },
+    "detection": {
+      "active": "Detecção ativa: Zoom, Teams, Meet, Webex e Discord. Tudo fica neste computador.",
+      "paused": "A detecção de reuniões está pausada. Retome pelo menu da bandeja.",
+      "off": "A detecção de reuniões está desligada. Inicie uma reunião manualmente."
+    },
+    "empty": {
+      "title": "Nenhuma reunião gravada ainda",
+      "body": "Quando o Zoom, Teams, Meet, Webex ou Discord abrir uma chamada, avisamos. Ou comece agora.",
+      "processing": "Nada está sendo transcrito agora.",
+      "afterLive": "Sua reunião aparecerá aqui quando terminar."
+    },
+    "detail": {
+      "label": "Detalhes da reunião",
+      "close": "Fechar detalhes",
+      "rename": "Renomear reunião",
+      "copySummary": "Copiar resumo",
+      "confirmDelete": "Confirmar exclusão",
+      "processing": "Transcrevendo e resumindo esta reunião…",
+      "failed": "O processamento desta reunião falhou.",
+      "noSummary": "Esta reunião tem transcrição, mas não tem resumo.",
+      "configureSummary": "Configurar resumos",
+      "summary": "Resumo",
+      "transcript": "Transcrição",
+      "openFull": "Abrir transcrição completa",
+      "noTranscript": "Ainda sem transcrição.",
+      "loadError": "Não foi possível carregar os detalhes da reunião.",
+      "processingInfo": "Áudio e processamento",
+      "microphone": "Microfone",
+      "system": "Sistema",
+      "summaryProvider": "Resumo · {{provider}}"
+    },
+    "startError": "Não foi possível iniciar a reunião."
   }
 }

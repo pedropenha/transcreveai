@@ -82,6 +82,8 @@ test.describe("hub webview (mocked Tauri IPC)", () => {
       audio_dir: null,
       language: "en",
       error_code: null,
+      source_app: { exe: "chrome.exe", name: "Google Meet" },
+      list_status: "processing",
     };
     let rows: unknown[] = [];
     const mock = await installTauriMock(page, {
@@ -89,7 +91,7 @@ test.describe("hub webview (mocked Tauri IPC)", () => {
     });
     await page.goto("/");
     await page.getByTitle("Notetaker").click();
-    await expect(page.getByText("No meetings yet")).toBeVisible();
+    await expect(page.getByText("No meetings recorded yet")).toBeVisible();
     await expect
       .poll(() =>
         mock.calls.some(
@@ -110,9 +112,9 @@ test.describe("hub webview (mocked Tauri IPC)", () => {
     });
 
     await expect(
-      page.getByRole("button", { name: "Open meeting Sprint sync" }),
+      page.getByRole("button", { name: /Sprint sync/ }),
     ).toBeVisible();
-    await expect(page.getByText("Processing")).toBeVisible();
+    await expect(page.getByText("Transcribing").first()).toBeVisible();
   });
 });
 

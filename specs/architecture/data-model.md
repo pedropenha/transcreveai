@@ -187,16 +187,16 @@ CREATE TABLE meeting_app_rules (
 
 **`source_app` e status de lista (Notetaker).** O "app de origem" de uma reunião é o par `app_exe` + `app_label` (já existiam); a migração 15 só acrescenta `app_exe_path`, nullable e aditiva (reuniões antigas ficam com `NULL` e a UI cai no monograma). Nada disso é coluna nova de status: o chip da linha (`Transcrevendo` / `Sem resumo` / `Falhou` / `Resumo pronto`) é **derivado** de `status` × `summary_status`:
 
-| `status` | `summary_status` | `list_status` |
-| --- | --- | --- |
-| `recording` / `paused` | — | `recording` / `paused` (bloco "Agora") |
-| `processing` | — | `processing` |
-| `error` / `recovered` | — | `failed` |
-| `ready` | `pending` | `processing` (resumo em andamento) |
-| `ready` | `disabled` (sem chave, FR-009-21) | `no_summary` |
-| `ready` | `error` | `failed` |
-| `ready` | `ready` com `summary_md` não vazio | `ready` |
-| `ready` | `ready` sem `summary_md` | `no_summary` |
+| `status`               | `summary_status`                   | `list_status`                          |
+| ---------------------- | ---------------------------------- | -------------------------------------- |
+| `recording` / `paused` | —                                  | `recording` / `paused` (bloco "Agora") |
+| `processing`           | —                                  | `processing`                           |
+| `error` / `recovered`  | —                                  | `failed`                               |
+| `ready`                | `pending`                          | `processing` (resumo em andamento)     |
+| `ready`                | `disabled` (sem chave, FR-009-21)  | `no_summary`                           |
+| `ready`                | `error`                            | `failed`                               |
+| `ready`                | `ready` com `summary_md` não vazio | `ready`                                |
+| `ready`                | `ready` sem `summary_md`           | `no_summary`                           |
 
 Triggers mantêm as tabelas FTS sincronizadas. Migrações versionadas, aplicadas na inicialização dentro de transação (`rusqlite_migration`, herdado do Handy — [ADR-0001](../../docs/adr/0001-fork-do-handy-como-base.md)).
 

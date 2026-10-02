@@ -98,6 +98,9 @@ export function sectionForShortcut(event: ShortcutKeyEvent): HubSection | null {
   return SHORTCUT_SECTIONS[Number(event.key) - 1] ?? null;
 }
 
+/** Settings tab that holds the meeting-summary provider (Notetaker deep link). */
+export const SUMMARY_SETTINGS_TAB = "general";
+
 export interface NavigatePayload {
   section?: string;
   settingsTab?: string;

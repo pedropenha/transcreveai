@@ -11,6 +11,7 @@ import { FolderOpen, Keyboard, Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { commands, type HistoryEntry } from "@/bindings";
 import { useDismissedUi } from "@/hooks/useDismissedUi";
+import { useNow } from "@/hooks/useNow";
 import { useModelStore } from "@/stores/modelStore";
 import { useHubNavigation } from "../shell/HubNavigation";
 import { moveHistorySelection } from "../settings/history/historyView";
@@ -27,16 +28,6 @@ import {
 import { useHistoryActions } from "./useHistoryActions";
 import { useHistoryFeed } from "./useHistoryFeed";
 import "./home.css";
-
-/** Current time, refreshed each minute so day labels roll over at midnight. */
-function useNow(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
 
 const BANNER_ID = "home_banner";
 const TIP_ID = "home_tip";

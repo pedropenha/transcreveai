@@ -126,7 +126,7 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [x] **T-065** Transcrição ao vivo por trilha + coexistência com ditado. — Refs: FR-009-10, FR-009-15, AC-009-03
 - [x] **T-066** Janela da reunião (Minhas notas, Transcrição, Resumo). — Refs: FR-009-12..14, AC-009-02
 - [x] **T-067** Pós-processamento: resumo, map-reduce, título, regenerar. — Refs: FR-009-16..22, AC-009-01, AC-009-06
-- [x] **T-068** [P] Copiar como Markdown + lista/busca de reuniões. — Refs: FR-009-23, FR-009-25, AC-009-07
+- [x] **T-068** [P] Copiar como Markdown + lista/busca de reuniões. — Refs: FR-009-23, FR-009-25, AC-009-07 _(UI refeita no redesign Papel & Anil, etapa 4: FR-009-29/FR-010-26.)_
 - [x] **T-069** Auto-start/auto-stop + **roteiro manual parcial** dos apps de reunião (Zoom, Teams, Meet, Webex) — o que não dá para automatizar vira checklist de smoke entregue no fim do loop. — Refs: AC-008-04..06, AC-008-08
 
 ## Fase 4 — v1.1+ (pós-v1)

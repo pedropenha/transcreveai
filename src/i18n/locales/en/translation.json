@@ -624,27 +624,15 @@
       }
     },
     "meetings": {
-      "title": "Meetings",
       "searchPlaceholder": "Search title, notes, summary or transcript...",
       "loading": "Loading meetings...",
-      "empty": "No meetings yet. Start one from the Flow Bar or with New meeting.",
       "emptySearch": "No meetings match your search.",
-      "newMeeting": "New meeting",
       "newMeetingCall": "Computer call",
       "newMeetingInPerson": "In person",
-      "open": "Open meeting {{title}}",
       "copyMarkdown": "Copy as Markdown",
       "copyError": "Could not copy the Markdown export.",
       "delete": "Delete meeting",
-      "deleteError": "Could not delete the meeting.",
-      "status": {
-        "recording": "Recording",
-        "paused": "Paused",
-        "processing": "Processing",
-        "ready": "Ready",
-        "error": "Error",
-        "recovered": "Recovered"
-      }
+      "deleteError": "Could not delete the meeting."
     },
     "debug": {
       "title": "Debug",
@@ -1192,5 +1180,71 @@
       "body": "Double-tap your dictation shortcut and talk freely. Tap again to insert.",
       "dismiss": "Dismiss tip"
     }
+  },
+  "notetaker": {
+    "start": "Start Notetaker",
+    "settings": "Notetaker settings",
+    "search": "Search meetings",
+    "tabs": "Meeting lists",
+    "tab": {
+      "past": "Past notes",
+      "processing": "Transcribing"
+    },
+    "retry": "Try again",
+    "retryError": "Could not retry the meeting.",
+    "copyError": "Could not copy the summary.",
+    "renameError": "Could not rename the meeting.",
+    "noSummaryHint": "No summary yet. Open settings to set up summaries.",
+    "status": {
+      "ready": "Summary ready",
+      "processing": "Transcribing",
+      "processingPct": "Transcribing {{pct}}%",
+      "noSummary": "No summary",
+      "failed": "Failed",
+      "recording": "Recording",
+      "paused": "Paused"
+    },
+    "live": {
+      "label": "Recording now",
+      "open": "Open the meeting window",
+      "pause": "Pause",
+      "resume": "Resume",
+      "stop": "Stop",
+      "micAndSystem": "Mic + system audio",
+      "micOnly": "Microphone only",
+      "controlError": "Could not control the recording."
+    },
+    "detection": {
+      "active": "Detection on: Zoom, Teams, Meet, Webex and Discord. Everything stays on this computer.",
+      "paused": "Meeting detection is paused for now. Resume it from the tray menu.",
+      "off": "Meeting detection is off. Start a meeting manually."
+    },
+    "empty": {
+      "title": "No meetings recorded yet",
+      "body": "When Zoom, Teams, Meet, Webex or Discord opens a call, we will let you know. Or start now.",
+      "processing": "Nothing is being transcribed right now.",
+      "afterLive": "Your meeting will appear here when it ends."
+    },
+    "detail": {
+      "label": "Meeting details",
+      "close": "Close details",
+      "rename": "Rename meeting",
+      "copySummary": "Copy summary",
+      "confirmDelete": "Confirm delete",
+      "processing": "Transcribing and summarizing this meeting…",
+      "failed": "Processing this meeting failed.",
+      "noSummary": "This meeting has a transcript but no summary.",
+      "configureSummary": "Set up summaries",
+      "summary": "Summary",
+      "transcript": "Transcript",
+      "openFull": "Open full transcript",
+      "noTranscript": "No transcript yet.",
+      "loadError": "Could not load the meeting details.",
+      "processingInfo": "Audio & processing",
+      "microphone": "Microphone",
+      "system": "System",
+      "summaryProvider": "Summary · {{provider}}"
+    },
+    "startError": "Could not start the meeting."
   }
 }
