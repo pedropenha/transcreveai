@@ -25,3 +25,4 @@ videos/**
 
 # Agent analysis tooling artifacts
 .ua/
+docs/design/proposta-ui.html

@@ -46,12 +46,12 @@
   --dark-t-hair: color-mix(in srgb, var(--dark-flowbar-text) 8%, transparent);
   --light-t-accent-soft: color-mix(
     in srgb,
-    var(--primitive-amber-300) 22%,
+    var(--ov-processing) 22%,
     transparent
   );
   --dark-t-accent-soft: color-mix(
     in srgb,
-    var(--primitive-amber-200) 20%,
+    var(--ov-processing) 20%,
     transparent
   );
 
@@ -247,7 +247,7 @@
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--primitive-neutral-950);
+  color: var(--ov-cta-ink);
   background: var(--flowbar-accent);
   cursor: pointer;
   transition:

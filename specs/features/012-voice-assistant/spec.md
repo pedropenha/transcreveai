@@ -129,7 +129,7 @@ usando a assinatura que o usuário já tem.
   prompt. Nunca logar argv/conteúdo (política de redação do T-003).
 - **NFR-012-03** Saída do provider limitada (ex.: 32k chars); resposta muito
   longa é truncada com aviso, não estoura o painel.
-- **NFR-012-04** O painel segue a direção visual "Sinal Calmo" (T-008) e
+- **NFR-012-04** O painel segue a direção visual "Papel & Anil" ([ADR-0003](../../../docs/adr/0003-identidade-visual-papel-e-anil.md)) e
   os mesmos tokens da Flow Bar.
 
 ## Critérios de aceitação

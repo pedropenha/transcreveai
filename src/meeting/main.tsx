@@ -10,6 +10,7 @@ import {
 } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
 import "@/i18n";
+import "@/styles/fonts";
 import "@/App.css";
 
 // Normal decorated window (F009/T-066): same boot sequence as the Hub — the

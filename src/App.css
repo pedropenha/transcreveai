@@ -37,6 +37,7 @@
   --color-text-stroke: var(--color-text-stroke);
   --color-mid-gray: var(--color-mid-gray);
   --font-sans: var(--font-family-sans);
+  --font-serif: var(--font-family-serif);
   --font-mono: var(--font-family-mono);
   --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);
@@ -55,7 +56,9 @@
 :root {
   /* Typography */
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-md);
+  /* Pinned: rem-based Tailwind utilities assume a 15px root. The 14.5px UI
+     base ("Papel & Anil" scale) is applied on <body> below. */
+  font-size: 15px;
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-regular);
 
@@ -81,6 +84,10 @@
   /* Apply colors */
   color: var(--color-text);
   background-color: var(--color-background);
+}
+
+body {
+  font-size: var(--fs-body);
 }
 
 .container {

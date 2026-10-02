@@ -9,6 +9,7 @@ import {
 } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
 import "@/i18n";
+import "@/styles/fonts";
 
 // Same bootstrap as the Flow Bar webview: a separate document needs its own
 // `data-theme` — last-known theme before render (shared localStorage) to

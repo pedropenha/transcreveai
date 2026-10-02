@@ -9,6 +9,7 @@ import {
 } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
 import "@/i18n";
+import "@/styles/fonts";
 
 // A separate webview from the settings window, so the overlay has to set
 // `data-theme` on its own document: last-known theme before render (shared

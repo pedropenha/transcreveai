@@ -64,7 +64,7 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
 - **NFR-010-02** Histórico com 100.000 entradas: rolagem fluida (lista virtualizada) e busca ≤ 150 ms.
 - **NFR-010-03** Todas as strings via i18n (pt-BR, en), mantidas com a skill `i18n-sync`.
 - **NFR-010-04** Acessibilidade conforme as skills `accessibility`/`frontend-a11y` e checagens axe de `rules/react/testing.md`.
-- **NFR-010-05** O visual do Hub segue a direção de design da T-008 (`rules/web/design-quality.md` — em particular, evitar o layout genérico "sidebar + cards"), mantendo a organização de seções do Wispr.
+- **NFR-010-05** O visual do Hub segue a direção visual **Papel & Anil** ([ADR-0003](../../../docs/adr/0003-identidade-visual-papel-e-anil.md), proposta em `docs/design/proposta-ui.html`; `rules/web/design-quality.md`), mantendo a organização de seções do Wispr. Contraste WCAG 2.2 AA dos tokens é verificado por teste unitário.
 
 ## Critérios de aceitação
 

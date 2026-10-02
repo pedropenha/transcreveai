@@ -1,6 +1,6 @@
 # Direção de design — Transcreve.ai
 
-**Status:** aprovado para implementação incremental · **Tarefa:** T-008 · **Direção:** Sinal Calmo
+**Status:** aprovado para implementação incremental · **Tarefa:** T-008 · **Direção:** ~~Sinal Calmo~~ substituída por Papel & Anil ([ADR-0003](docs/adr/0003-identidade-visual-papel-e-anil.md); tokens vigentes em `src/styles/theme.css`)
 
 Este documento orienta a implementação visual do Hub, da Flow Bar, dos toasts e dos estados de gravação. Ele não implementa as telas previstas em T-040 e T-042. O contrato legível por máquina está em [`design-tokens.json`](design-tokens.json), e a referência visual autocontida está em [`design-preview.html`](design-preview.html).
 

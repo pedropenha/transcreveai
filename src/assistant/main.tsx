@@ -10,6 +10,7 @@ import {
 import { installCompatShims } from "@/lib/compat";
 import type { Theme } from "@/bindings";
 import "@/i18n";
+import "@/styles/fonts";
 
 // react-markdown's Object.hasOwn shim (same as the Hub bootstrap).
 installCompatShims();

@@ -1,197 +1,106 @@
-/* Transcreve.ai design tokens — T-008 “Sinal Calmo” */
+/* Transcreve.ai design tokens — "Papel & Anil" (ADR-0003, docs/design/proposta-ui.html)
+
+   Layout of this file:
+   1. :root          — light palette (default), overlay palette, theme-invariant
+                       tokens (type, space, radius, motion) and the compatibility
+                       aliases (--color-*, --flowbar-*, …) that existing CSS uses.
+   2. dark overrides — same semantic names, dark values. Written twice on purpose:
+                       once for `prefers-color-scheme: dark` (unless the user
+                       forced light) and once for an explicit `data-theme="dark"`.
+   The aliases resolve on the same element, so overriding a semantic token flips
+   every alias with it. src/styles/theme.test.ts parses these blocks and asserts
+   the WCAG 2.2 AA contrast pairs; keep palette values as literal hex here. */
 
 :root {
-  /* Palette source of truth. Each themed color is defined once as a
-     light/dark pair; the active tokens and `data-theme` overrides below
-     reference these, so a hex value lives in exactly one place. */
-  --primitive-neutral-0: #ffffff;
-  --primitive-neutral-25: #fbfcfa;
-  --primitive-neutral-50: #f6f8f5;
-  --primitive-neutral-100: #eef1ed;
-  --primitive-neutral-200: #dde2dc;
-  --primitive-neutral-300: #c8cfc7;
-  --primitive-neutral-400: #9ba59b;
-  --primitive-neutral-500: #707a71;
-  --primitive-neutral-600: #586159;
-  --primitive-neutral-700: #3d453f;
-  --primitive-neutral-800: #272d29;
-  --primitive-neutral-900: #181d1a;
-  --primitive-neutral-950: #0e1210;
+  /* ---- Papel & Anil · light ---- */
+  --canvas: #f1ece3; /* papel — window background behind the panel */
+  --panel: #fdfcf9; /* folha — inset content panel */
+  --sunken: #f6f3ec; /* lists, supporting cards */
+  --hover: #efe9de;
+  --selected: #e8e1d3;
+  --line: #e6dfd2; /* decorative separators only */
+  --line-strong: #8f8676; /* control borders (>= 3:1) */
+  --text: #1c1915;
+  --muted: #5c554b;
+  --subtle: #6d655a;
+  --accent: #3f3cbb; /* anil — the action color */
+  --accent-hover: #34319f;
+  --on-accent: #ffffff;
+  --accent-soft: #ebeafb;
+  --accent-ink: #2f2c9a;
+  --urucum: #b8401c; /* warm highlight — recording only */
+  --urucum-soft: #fbe7dd;
+  --urucum-ink: #8f2f12;
+  --success: #1d7149;
+  --success-soft: #e3f2e9;
+  --warning: #8a5300;
+  --warning-soft: #fbefd6;
+  --error: #b42318;
+  --error-soft: #fde8e6;
+  --elev-xs: 0 1px 2px rgb(40 30 15 / 6%);
+  --elev-panel:
+    0 0 0 1px rgb(60 45 20 / 7%), 0 1px 2px rgb(60 45 20 / 5%),
+    0 18px 40px -22px rgb(60 45 20 / 22%);
+  --elev-pop:
+    0 0 0 1px rgb(60 45 20 / 8%), 0 6px 16px -4px rgb(60 45 20 / 18%),
+    0 18px 40px -16px rgb(60 45 20 / 22%);
+  --elev-window:
+    0 0 0 1px rgb(60 45 20 / 10%), 0 30px 80px -30px rgb(60 45 20 / 40%);
+  --rail-active-bg: #fdfcf9;
+  color-scheme: light;
 
-  --primitive-teal-50: #e7f8f5;
-  --primitive-teal-100: #c7f0ea;
-  --primitive-teal-200: #95e2d8;
-  --primitive-teal-300: #63d3c5;
-  --primitive-teal-400: #35b9ad;
-  --primitive-teal-500: #158f87;
-  --primitive-teal-600: #08766f;
-  --primitive-teal-700: #075e59;
-  --primitive-teal-800: #074c48;
-  --primitive-teal-900: #063d3a;
+  /* ---- Overlays (Flow Bar, toast, assistant): dark in both themes ---- */
+  --ov-bg: #141311;
+  --ov-raised: #26241f;
+  --ov-line: #38352f;
+  --ov-text: #f5f2ec;
+  --ov-muted: #a8a092;
+  --ov-accent: #a9a7ff;
+  --ov-rec: #ff7a66;
+  --ov-cta: #f6efd9;
+  --ov-cta-ink: #1c1915;
+  --ov-processing: #f0bf5e;
+  --ov-success: #6fd2a0;
+  --ov-error: #ff8a80;
+  --ov-command: #cfceff;
 
-  --primitive-coral-50: #fff0f3;
-  --primitive-coral-100: #ffdde4;
-  --primitive-coral-200: #ffb8c6;
-  --primitive-coral-300: #fa899f;
-  --primitive-coral-400: #eb617d;
-  --primitive-coral-500: #d94263;
-  --primitive-coral-600: #ba304f;
-  --primitive-coral-700: #982642;
-  --primitive-coral-800: #7f233b;
-  --primitive-coral-900: #6c2135;
-
-  --primitive-amber-50: #fff7e0;
-  --primitive-amber-100: #fdeab0;
-  --primitive-amber-200: #f7d573;
-  --primitive-amber-300: #e9b949;
-  --primitive-amber-400: #c99116;
-  --primitive-amber-500: #9b6908;
-  --primitive-amber-600: #7a5008;
-  --primitive-amber-700: #603d0a;
-
-  --primitive-green-50: #eaf8ef;
-  --primitive-green-100: #bfe8ce;
-  --primitive-green-200: #74d89b;
-  --primitive-green-300: #3ba86b;
-  --primitive-green-400: #247a4a;
-  --primitive-green-500: #185e39;
-  --primitive-green-600: #124a2d;
-
-  --primitive-violet-50: #f1efff;
-  --primitive-violet-100: #dcd7ff;
-  --primitive-violet-200: #b8aeff;
-  --primitive-violet-300: #8878e8;
-  --primitive-violet-400: #6857c7;
-  --primitive-violet-500: #5041a3;
-  --primitive-violet-600: #3e337f;
-
-  --primitive-red-50: #fff1ef;
-  --primitive-red-100: #ffd8d3;
-  --primitive-red-200: #ffaaa1;
-  --primitive-red-300: #ff7d73;
-  --primitive-red-400: #e94f44;
-  --primitive-red-500: #b42318;
-  --primitive-red-600: #8f1d15;
-  --primitive-red-700: #721a14;
-
-  --light-color-canvas: var(--primitive-neutral-50);
-  --light-color-surface: var(--primitive-neutral-0);
-  --light-color-surface-raised: var(--primitive-neutral-25);
-  --light-color-surface-inset: var(--primitive-neutral-100);
-  --light-color-text: var(--primitive-neutral-900);
-  --light-color-text-muted: var(--primitive-neutral-600);
-  --light-color-text-subtle: var(--primitive-neutral-500);
-  --light-color-border: var(--primitive-neutral-200);
-  --light-color-border-strong: var(--primitive-neutral-400);
-  --light-color-accent: var(--primitive-teal-600);
-  --light-color-accent-hover: var(--primitive-teal-700);
-  --light-color-accent-active: var(--primitive-teal-800);
-  --light-color-accent-soft: var(--primitive-teal-50);
-  --light-color-accent-contrast: var(--primitive-neutral-0);
-  --light-color-focus-ring: var(--primitive-teal-600);
-  --light-color-selection: var(--primitive-teal-100);
-  --light-color-recording: var(--primitive-coral-600);
-  --light-color-recording-soft: var(--primitive-coral-50);
-  --light-color-processing: var(--primitive-amber-600);
-  --light-color-processing-soft: var(--primitive-amber-50);
-  --light-color-success: var(--primitive-green-500);
-  --light-color-success-soft: var(--primitive-green-50);
-  --light-color-warning: var(--primitive-amber-600);
-  --light-color-warning-soft: var(--primitive-amber-50);
-  --light-color-error: var(--primitive-red-500);
-  --light-color-error-soft: var(--primitive-red-50);
-  --light-color-command: var(--primitive-violet-500);
-  --light-color-command-soft: var(--primitive-violet-50);
-
-  --dark-color-canvas: var(--primitive-neutral-950);
-  --dark-color-surface: var(--primitive-neutral-900);
-  --dark-color-surface-raised: var(--primitive-neutral-800);
-  --dark-color-surface-inset: var(--primitive-neutral-950);
-  --dark-color-text: var(--primitive-neutral-50);
-  --dark-color-text-muted: var(--primitive-neutral-300);
-  --dark-color-text-subtle: var(--primitive-neutral-400);
-  --dark-color-border: var(--primitive-neutral-700);
-  --dark-color-border-strong: var(--primitive-neutral-500);
-  --dark-color-accent: var(--primitive-teal-300);
-  --dark-color-accent-hover: var(--primitive-teal-200);
-  --dark-color-accent-active: var(--primitive-teal-100);
-  --dark-color-accent-soft: var(--primitive-teal-900);
-  --dark-color-accent-contrast: var(--primitive-neutral-950);
-  --dark-color-focus-ring: var(--primitive-teal-300);
-  --dark-color-selection: var(--primitive-teal-800);
-  --dark-color-recording: var(--primitive-coral-300);
-  --dark-color-recording-soft: var(--primitive-coral-900);
-  --dark-color-processing: var(--primitive-amber-200);
-  --dark-color-processing-soft: var(--primitive-amber-700);
-  --dark-color-success: var(--primitive-green-200);
-  --dark-color-success-soft: var(--primitive-green-600);
-  --dark-color-warning: var(--primitive-amber-200);
-  --dark-color-warning-soft: var(--primitive-amber-700);
-  --dark-color-error: var(--primitive-red-300);
-  --dark-color-error-soft: var(--primitive-red-700);
-  --dark-color-command: var(--primitive-violet-200);
-  --dark-color-command-soft: var(--primitive-violet-600);
-
-  --light-color-background: var(--light-color-canvas);
-  --light-color-logo-primary: var(--light-color-accent);
-  --light-color-logo-stroke: var(--light-color-text);
-  --dark-color-background: var(--dark-color-canvas);
-  --dark-color-logo-primary: var(--dark-color-accent);
-  --dark-color-logo-stroke: var(--dark-color-text);
-
-  /* Flow Bar pairs stay dark in both themes for predictable contrast over
-     external apps; light/dark still tune surface depth and text hierarchy. */
-  --light-flowbar-surface: var(--primitive-neutral-900);
-  --light-flowbar-surface-raised: var(--primitive-neutral-800);
-  --light-flowbar-text: var(--primitive-neutral-50);
-  --light-flowbar-text-muted: var(--primitive-neutral-300);
-  --light-flowbar-border: var(--primitive-neutral-700);
-  --light-flowbar-accent: var(--primitive-teal-300);
-  --light-flowbar-recording: var(--primitive-coral-300);
-  --light-flowbar-processing: var(--primitive-amber-200);
-  --light-flowbar-success: var(--primitive-green-200);
-  --light-flowbar-warning: var(--primitive-amber-200);
-  --light-flowbar-error: var(--primitive-red-300);
-  --light-flowbar-command: var(--primitive-violet-200);
-
-  --dark-flowbar-surface: var(--primitive-neutral-950);
-  --dark-flowbar-surface-raised: var(--primitive-neutral-900);
-  --dark-flowbar-text: var(--primitive-neutral-50);
-  --dark-flowbar-text-muted: var(--primitive-neutral-400);
-  --dark-flowbar-border: var(--primitive-neutral-700);
-  --dark-flowbar-accent: var(--primitive-teal-300);
-  --dark-flowbar-recording: var(--primitive-coral-300);
-  --dark-flowbar-processing: var(--primitive-amber-200);
-  --dark-flowbar-success: var(--primitive-green-200);
-  --dark-flowbar-warning: var(--primitive-amber-200);
-  --dark-flowbar-error: var(--primitive-red-300);
-  --dark-flowbar-command: var(--primitive-violet-200);
-
-  /* Tokens that do not change between light and dark */
+  /* ---- Typography ---- */
   --font-family-sans:
-    "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
-    sans-serif;
-  --font-family-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  --font-size-xxs: 0.6875rem;
-  --font-size-xs: 0.75rem;
-  --font-size-sm: 0.8125rem;
-  --font-size-md: 0.9375rem;
-  --font-size-lg: 1.0625rem;
-  --font-size-xl: 1.25rem;
-  --font-size-2xl: 1.5rem;
-  --font-size-3xl: 1.875rem;
+    "Instrument Sans Variable", "Segoe UI Variable", "Segoe UI", system-ui,
+    -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-serif: "Instrument Serif", Georgia, serif;
+  --font-family-mono:
+    "Cascadia Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --fs-label: 11px; /* CAPS, +0.08em */
+  --fs-caption: 12.5px;
+  --fs-sm: 13.5px;
+  --fs-body: 14.5px;
+  --fs-lead: 16px;
+  --fs-h3: 19px;
+  --fs-h1: 26px;
+  --fs-display: 34px; /* serif */
+  --fs-hero: 46px; /* serif, numbers */
+  --font-size-xxs: var(--fs-label);
+  --font-size-xs: var(--fs-caption);
+  --font-size-sm: var(--fs-sm);
+  --font-size-md: var(--fs-body);
+  --font-size-lg: var(--fs-lead);
+  --font-size-xl: var(--fs-h3);
+  --font-size-2xl: var(--fs-h1);
+  --font-size-3xl: var(--fs-display);
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
   --line-height-compact: 1.2;
   --line-height-snug: 1.35;
-  --line-height-body: 1.5;
+  --line-height-body: 1.55;
   --line-height-relaxed: 1.65;
   --letter-spacing-tight: -0.015em;
   --letter-spacing-normal: 0;
-  --letter-spacing-wide: 0.06em;
+  --letter-spacing-wide: 0.08em;
 
+  /* ---- Space (4 px base) ---- */
   --space-0: 0;
   --space-0-5: 0.125rem;
   --space-1: 0.25rem;
@@ -206,13 +115,15 @@
   --space-12: 3rem;
   --space-16: 4rem;
 
-  --radius-xs: 0.25rem;
-  --radius-sm: 0.375rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 0.875rem;
-  --radius-xl: 1.25rem;
+  /* ---- Radius: nested, outer = inner + breathing room ---- */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-pill: 999px;
 
+  /* ---- Motion ---- */
   --motion-duration-instant: 0ms;
   --motion-duration-fast: 90ms;
   --motion-duration-interaction: 140ms;
@@ -239,6 +150,12 @@
   --control-target-comfortable: 40px;
   --control-target-preferred: 44px;
 
+  /* ---- Shell geometry (Hub) ---- */
+  --rail-width: 236px;
+  --rail-width-collapsed: 64px;
+  --panel-inset: 8px;
+
+  /* ---- Flow Bar geometry ---- */
   --flowbar-size-idle-width: 48px;
   --flowbar-size-idle-height: 8px;
   --flowbar-size-hover-width: 88px;
@@ -269,64 +186,80 @@
   --flowbar-size-meeting-width: 96px;
   --flowbar-size-meeting-height: 24px;
 
-  --light-shadow-raised:
-    0 1px 2px rgb(14 18 16 / 8%), 0 8px 24px rgb(14 18 16 / 10%);
-  --light-shadow-floating:
-    0 2px 5px rgb(14 18 16 / 14%), 0 16px 40px rgb(14 18 16 / 18%);
-  --light-shadow-modal:
-    0 4px 12px rgb(14 18 16 / 14%), 0 28px 72px rgb(14 18 16 / 22%);
-  --dark-shadow-raised: 0 1px 2px rgb(0 0 0 / 24%), 0 8px 24px rgb(0 0 0 / 30%);
-  --dark-shadow-floating:
-    0 2px 5px rgb(0 0 0 / 34%), 0 16px 40px rgb(0 0 0 / 42%);
-  --dark-shadow-modal:
-    0 4px 12px rgb(0 0 0 / 34%), 0 28px 72px rgb(0 0 0 / 52%);
+  /* ---- Compatibility aliases (pre-"Papel & Anil" token names) ----
+     Existing CSS and Tailwind utilities keep working; new code should prefer
+     the semantic names above. Declared once: they follow whichever theme the
+     tokens above currently resolve to. */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--panel);
+  --color-surface-raised: var(--panel);
+  --color-surface-inset: var(--sunken);
+  --color-text: var(--text);
+  --color-text-muted: var(--muted);
+  --color-text-subtle: var(--subtle);
+  --color-border: var(--line);
+  --color-border-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-active: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-contrast: var(--on-accent);
+  --color-focus-ring: var(--accent);
+  --color-selection: var(--selected);
+  --color-recording: var(--urucum);
+  --color-recording-soft: var(--urucum-soft);
+  --color-processing: var(--warning);
+  --color-processing-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-error: var(--error);
+  --color-error-soft: var(--error-soft);
+  --color-command: var(--accent);
+  --color-command-soft: var(--accent-soft);
+  --shadow-raised: var(--elev-panel);
+  --shadow-floating: var(--elev-pop);
+  --shadow-modal: var(--elev-window);
 
-  /* Active palette — defaults to light, follows the OS via the media query
-     below, or is forced by `data-theme` (see the overrides below). */
-  --color-canvas: var(--light-color-canvas);
-  --color-surface: var(--light-color-surface);
-  --color-surface-raised: var(--light-color-surface-raised);
-  --color-surface-inset: var(--light-color-surface-inset);
-  --color-text: var(--light-color-text);
-  --color-text-muted: var(--light-color-text-muted);
-  --color-text-subtle: var(--light-color-text-subtle);
-  --color-border: var(--light-color-border);
-  --color-border-strong: var(--light-color-border-strong);
-  --color-accent: var(--light-color-accent);
-  --color-accent-hover: var(--light-color-accent-hover);
-  --color-accent-active: var(--light-color-accent-active);
-  --color-accent-soft: var(--light-color-accent-soft);
-  --color-accent-contrast: var(--light-color-accent-contrast);
-  --color-focus-ring: var(--light-color-focus-ring);
-  --color-selection: var(--light-color-selection);
-  --color-recording: var(--light-color-recording);
-  --color-recording-soft: var(--light-color-recording-soft);
-  --color-processing: var(--light-color-processing);
-  --color-processing-soft: var(--light-color-processing-soft);
-  --color-success: var(--light-color-success);
-  --color-success-soft: var(--light-color-success-soft);
-  --color-warning: var(--light-color-warning);
-  --color-warning-soft: var(--light-color-warning-soft);
-  --color-error: var(--light-color-error);
-  --color-error-soft: var(--light-color-error-soft);
-  --color-command: var(--light-color-command);
-  --color-command-soft: var(--light-color-command-soft);
-  --shadow-raised: var(--light-shadow-raised);
-  --shadow-floating: var(--light-shadow-floating);
-  --shadow-modal: var(--light-shadow-modal);
-
-  --flowbar-surface: var(--light-flowbar-surface);
-  --flowbar-surface-raised: var(--light-flowbar-surface-raised);
-  --flowbar-text: var(--light-flowbar-text);
-  --flowbar-text-muted: var(--light-flowbar-text-muted);
-  --flowbar-border: var(--light-flowbar-border);
-  --flowbar-accent: var(--light-flowbar-accent);
-  --flowbar-recording: var(--light-flowbar-recording);
-  --flowbar-processing: var(--light-flowbar-processing);
-  --flowbar-success: var(--light-flowbar-success);
-  --flowbar-warning: var(--light-flowbar-warning);
-  --flowbar-error: var(--light-flowbar-error);
-  --flowbar-command: var(--light-flowbar-command);
+  /* Overlay surfaces are theme-independent, so the legacy light/dark pairs
+     (read by overlay and toast CSS) point at the same overlay palette. */
+  --flowbar-surface: var(--ov-bg);
+  --flowbar-surface-raised: var(--ov-raised);
+  --flowbar-text: var(--ov-text);
+  --flowbar-text-muted: var(--ov-muted);
+  --flowbar-border: var(--ov-line);
+  --flowbar-accent: var(--ov-accent);
+  --flowbar-recording: var(--ov-rec);
+  --flowbar-processing: var(--ov-processing);
+  --flowbar-success: var(--ov-success);
+  --flowbar-warning: var(--ov-processing);
+  --flowbar-error: var(--ov-error);
+  --flowbar-command: var(--ov-command);
+  --light-flowbar-surface: var(--ov-bg);
+  --light-flowbar-surface-raised: var(--ov-raised);
+  --light-flowbar-text: var(--ov-text);
+  --light-flowbar-text-muted: var(--ov-muted);
+  --light-flowbar-border: var(--ov-line);
+  --light-flowbar-accent: var(--ov-accent);
+  --light-flowbar-recording: var(--ov-rec);
+  --light-flowbar-processing: var(--ov-processing);
+  --light-flowbar-success: var(--ov-success);
+  --light-flowbar-warning: var(--ov-processing);
+  --light-flowbar-error: var(--ov-error);
+  --light-flowbar-command: var(--ov-command);
+  --dark-flowbar-surface: var(--ov-bg);
+  --dark-flowbar-surface-raised: var(--ov-raised);
+  --dark-flowbar-text: var(--ov-text);
+  --dark-flowbar-text-muted: var(--ov-muted);
+  --dark-flowbar-border: var(--ov-line);
+  --dark-flowbar-accent: var(--ov-accent);
+  --dark-flowbar-recording: var(--ov-rec);
+  --dark-flowbar-processing: var(--ov-processing);
+  --dark-flowbar-success: var(--ov-success);
+  --dark-flowbar-warning: var(--ov-processing);
+  --dark-flowbar-error: var(--ov-error);
+  --dark-flowbar-command: var(--ov-command);
 
   --state-default-surface: var(--color-surface);
   --state-default-foreground: var(--color-text);
@@ -360,157 +293,88 @@
   --color-mid-gray: var(--color-text-muted);
 }
 
+/* ---- Dark: follows the OS unless the user forced light ---- */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: var(--dark-color-canvas);
-    --color-surface: var(--dark-color-surface);
-    --color-surface-raised: var(--dark-color-surface-raised);
-    --color-surface-inset: var(--dark-color-surface-inset);
-    --color-text: var(--dark-color-text);
-    --color-text-muted: var(--dark-color-text-muted);
-    --color-text-subtle: var(--dark-color-text-subtle);
-    --color-border: var(--dark-color-border);
-    --color-border-strong: var(--dark-color-border-strong);
-    --color-accent: var(--dark-color-accent);
-    --color-accent-hover: var(--dark-color-accent-hover);
-    --color-accent-active: var(--dark-color-accent-active);
-    --color-accent-soft: var(--dark-color-accent-soft);
-    --color-accent-contrast: var(--dark-color-accent-contrast);
-    --color-focus-ring: var(--dark-color-focus-ring);
-    --color-selection: var(--dark-color-selection);
-    --color-recording: var(--dark-color-recording);
-    --color-recording-soft: var(--dark-color-recording-soft);
-    --color-processing: var(--dark-color-processing);
-    --color-processing-soft: var(--dark-color-processing-soft);
-    --color-success: var(--dark-color-success);
-    --color-success-soft: var(--dark-color-success-soft);
-    --color-warning: var(--dark-color-warning);
-    --color-warning-soft: var(--dark-color-warning-soft);
-    --color-error: var(--dark-color-error);
-    --color-error-soft: var(--dark-color-error-soft);
-    --color-command: var(--dark-color-command);
-    --color-command-soft: var(--dark-color-command-soft);
-    --shadow-raised: var(--dark-shadow-raised);
-    --shadow-floating: var(--dark-shadow-floating);
-    --shadow-modal: var(--dark-shadow-modal);
-
-    --flowbar-surface: var(--dark-flowbar-surface);
-    --flowbar-surface-raised: var(--dark-flowbar-surface-raised);
-    --flowbar-text: var(--dark-flowbar-text);
-    --flowbar-text-muted: var(--dark-flowbar-text-muted);
-    --flowbar-border: var(--dark-flowbar-border);
-    --flowbar-accent: var(--dark-flowbar-accent);
-    --flowbar-recording: var(--dark-flowbar-recording);
-    --flowbar-processing: var(--dark-flowbar-processing);
-    --flowbar-success: var(--dark-flowbar-success);
-    --flowbar-warning: var(--dark-flowbar-warning);
-    --flowbar-error: var(--dark-flowbar-error);
-    --flowbar-command: var(--dark-flowbar-command);
+  :root:not([data-theme="light"]) {
+    --canvas: #121110;
+    --panel: #1c1a17;
+    --sunken: #22201c;
+    --hover: #2a2723;
+    --selected: #312e29;
+    --line: #2f2c27;
+    --line-strong: #6f685b;
+    --text: #f2ede4;
+    --muted: #bfb7a9;
+    --subtle: #9a9284;
+    --accent: #a9a7ff;
+    --accent-hover: #c0beff;
+    --on-accent: #16143f;
+    --accent-soft: #26244a;
+    --accent-ink: #cfceff;
+    --urucum: #ff8f6b;
+    --urucum-soft: #3a2017;
+    --urucum-ink: #ffb69e;
+    --success: #6fd2a0;
+    --success-soft: #173326;
+    --warning: #f0bf5e;
+    --warning-soft: #3a2c12;
+    --error: #ff8a80;
+    --error-soft: #3d1a17;
+    --elev-xs: 0 1px 2px rgb(0 0 0 / 30%);
+    --elev-panel:
+      0 0 0 1px rgb(255 245 225 / 6%), 0 18px 40px -22px rgb(0 0 0 / 70%);
+    --elev-pop:
+      0 0 0 1px rgb(255 245 225 / 8%), 0 10px 30px -8px rgb(0 0 0 / 70%);
+    --elev-window:
+      0 0 0 1px rgb(255 245 225 / 7%), 0 30px 80px -30px rgb(0 0 0 / 80%);
+    --rail-active-bg: #23211d;
+    color-scheme: dark;
   }
 }
 
 /*
  * Explicit theme override, driven by the `theme` setting via
- * `document.documentElement.dataset.theme`. When set, the higher-specificity
- * attribute selectors win over the `prefers-color-scheme` media query above,
- * so a user can keep the app light or dark regardless of the OS setting.
- * `system` (or no attribute) leaves the OS in charge.
+ * `document.documentElement.dataset.theme`. The attribute selector out-ranks
+ * the `prefers-color-scheme` block above, so a user can keep the app light or
+ * dark regardless of the OS. `system` (or no attribute) leaves the OS in charge.
  *
  * Lives here (not in App.css) so every window that imports the shared palette —
- * the settings window and the recording overlay alike — honours the override.
+ * the Hub and the overlays alike — honours the override.
  */
-:root[data-theme="light"] {
-  --color-canvas: var(--light-color-canvas);
-  --color-surface: var(--light-color-surface);
-  --color-surface-raised: var(--light-color-surface-raised);
-  --color-surface-inset: var(--light-color-surface-inset);
-  --color-text: var(--light-color-text);
-  --color-text-muted: var(--light-color-text-muted);
-  --color-text-subtle: var(--light-color-text-subtle);
-  --color-border: var(--light-color-border);
-  --color-border-strong: var(--light-color-border-strong);
-  --color-accent: var(--light-color-accent);
-  --color-accent-hover: var(--light-color-accent-hover);
-  --color-accent-active: var(--light-color-accent-active);
-  --color-accent-soft: var(--light-color-accent-soft);
-  --color-accent-contrast: var(--light-color-accent-contrast);
-  --color-focus-ring: var(--light-color-focus-ring);
-  --color-selection: var(--light-color-selection);
-  --color-recording: var(--light-color-recording);
-  --color-recording-soft: var(--light-color-recording-soft);
-  --color-processing: var(--light-color-processing);
-  --color-processing-soft: var(--light-color-processing-soft);
-  --color-success: var(--light-color-success);
-  --color-success-soft: var(--light-color-success-soft);
-  --color-warning: var(--light-color-warning);
-  --color-warning-soft: var(--light-color-warning-soft);
-  --color-error: var(--light-color-error);
-  --color-error-soft: var(--light-color-error-soft);
-  --color-command: var(--light-color-command);
-  --color-command-soft: var(--light-color-command-soft);
-  --shadow-raised: var(--light-shadow-raised);
-  --shadow-floating: var(--light-shadow-floating);
-  --shadow-modal: var(--light-shadow-modal);
-
-  --flowbar-surface: var(--light-flowbar-surface);
-  --flowbar-surface-raised: var(--light-flowbar-surface-raised);
-  --flowbar-text: var(--light-flowbar-text);
-  --flowbar-text-muted: var(--light-flowbar-text-muted);
-  --flowbar-border: var(--light-flowbar-border);
-  --flowbar-accent: var(--light-flowbar-accent);
-  --flowbar-recording: var(--light-flowbar-recording);
-  --flowbar-processing: var(--light-flowbar-processing);
-  --flowbar-success: var(--light-flowbar-success);
-  --flowbar-warning: var(--light-flowbar-warning);
-  --flowbar-error: var(--light-flowbar-error);
-  --flowbar-command: var(--light-flowbar-command);
-}
-
 :root[data-theme="dark"] {
-  --color-canvas: var(--dark-color-canvas);
-  --color-surface: var(--dark-color-surface);
-  --color-surface-raised: var(--dark-color-surface-raised);
-  --color-surface-inset: var(--dark-color-surface-inset);
-  --color-text: var(--dark-color-text);
-  --color-text-muted: var(--dark-color-text-muted);
-  --color-text-subtle: var(--dark-color-text-subtle);
-  --color-border: var(--dark-color-border);
-  --color-border-strong: var(--dark-color-border-strong);
-  --color-accent: var(--dark-color-accent);
-  --color-accent-hover: var(--dark-color-accent-hover);
-  --color-accent-active: var(--dark-color-accent-active);
-  --color-accent-soft: var(--dark-color-accent-soft);
-  --color-accent-contrast: var(--dark-color-accent-contrast);
-  --color-focus-ring: var(--dark-color-focus-ring);
-  --color-selection: var(--dark-color-selection);
-  --color-recording: var(--dark-color-recording);
-  --color-recording-soft: var(--dark-color-recording-soft);
-  --color-processing: var(--dark-color-processing);
-  --color-processing-soft: var(--dark-color-processing-soft);
-  --color-success: var(--dark-color-success);
-  --color-success-soft: var(--dark-color-success-soft);
-  --color-warning: var(--dark-color-warning);
-  --color-warning-soft: var(--dark-color-warning-soft);
-  --color-error: var(--dark-color-error);
-  --color-error-soft: var(--dark-color-error-soft);
-  --color-command: var(--dark-color-command);
-  --color-command-soft: var(--dark-color-command-soft);
-  --shadow-raised: var(--dark-shadow-raised);
-  --shadow-floating: var(--dark-shadow-floating);
-  --shadow-modal: var(--dark-shadow-modal);
-
-  --flowbar-surface: var(--dark-flowbar-surface);
-  --flowbar-surface-raised: var(--dark-flowbar-surface-raised);
-  --flowbar-text: var(--dark-flowbar-text);
-  --flowbar-text-muted: var(--dark-flowbar-text-muted);
-  --flowbar-border: var(--dark-flowbar-border);
-  --flowbar-accent: var(--dark-flowbar-accent);
-  --flowbar-recording: var(--dark-flowbar-recording);
-  --flowbar-processing: var(--dark-flowbar-processing);
-  --flowbar-success: var(--dark-flowbar-success);
-  --flowbar-warning: var(--dark-flowbar-warning);
-  --flowbar-error: var(--dark-flowbar-error);
-  --flowbar-command: var(--dark-flowbar-command);
+  --canvas: #121110;
+  --panel: #1c1a17;
+  --sunken: #22201c;
+  --hover: #2a2723;
+  --selected: #312e29;
+  --line: #2f2c27;
+  --line-strong: #6f685b;
+  --text: #f2ede4;
+  --muted: #bfb7a9;
+  --subtle: #9a9284;
+  --accent: #a9a7ff;
+  --accent-hover: #c0beff;
+  --on-accent: #16143f;
+  --accent-soft: #26244a;
+  --accent-ink: #cfceff;
+  --urucum: #ff8f6b;
+  --urucum-soft: #3a2017;
+  --urucum-ink: #ffb69e;
+  --success: #6fd2a0;
+  --success-soft: #173326;
+  --warning: #f0bf5e;
+  --warning-soft: #3a2c12;
+  --error: #ff8a80;
+  --error-soft: #3d1a17;
+  --elev-xs: 0 1px 2px rgb(0 0 0 / 30%);
+  --elev-panel:
+    0 0 0 1px rgb(255 245 225 / 6%), 0 18px 40px -22px rgb(0 0 0 / 70%);
+  --elev-pop:
+    0 0 0 1px rgb(255 245 225 / 8%), 0 10px 30px -8px rgb(0 0 0 / 70%);
+  --elev-window:
+    0 0 0 1px rgb(255 245 225 / 7%), 0 30px 80px -30px rgb(0 0 0 / 80%);
+  --rail-active-bg: #23211d;
+  color-scheme: dark;
 }
 
 @media (prefers-reduced-motion: reduce) {
