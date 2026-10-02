@@ -331,7 +331,9 @@ test.describe("Notetaker (mocked Tauri IPC)", () => {
       .locator("li", { hasText: "Legal alignment" })
       .getByRole("button", { name: "No summary" })
       .click();
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Settings sections" }),
+    ).toBeVisible();
   });
 
   test("selecting a meeting shows summary sections and the transcript excerpt", async ({

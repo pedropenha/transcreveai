@@ -13,29 +13,21 @@
 
 import { listen } from "@tauri-apps/api/event";
 
-/** Valid Settings hub tabs — kept in sync with `SettingsHub`'s TABS. */
-export const SETTINGS_TABS = [
-  "general",
-  "models",
-  "system",
-  "privacy",
-  "advanced",
-] as const;
-export type SettingsTab = (typeof SETTINGS_TABS)[number];
+import { resolveSettingsPage, type SettingsPage } from "./settingsNav";
 
 /** A stashed tab this old is assumed to come from an earlier interaction
  * and must not hijack an unrelated later mount. */
 const PENDING_TAB_TTL_MS = 10_000;
 
-let pending: { tab: SettingsTab; at: number } | null = null;
-const subscribers = new Set<(tab: SettingsTab) => void>();
+let pending: { tab: SettingsPage; at: number } | null = null;
+const subscribers = new Set<(tab: SettingsPage) => void>();
 
 /** Route one `hub://navigate` payload — deliver to a live hub, or stash
  * while none is mounted. Exported for tests; the module listener calls it. */
 export function handleNavigatePayload(payload: { settingsTab?: string }): void {
-  const tab = payload.settingsTab;
-  if (!tab || !(SETTINGS_TABS as readonly string[]).includes(tab)) return;
-  const target = tab as SettingsTab;
+  // Old flat names ("models"), bare categories and `category/page` paths.
+  const target = resolveSettingsPage(payload.settingsTab);
+  if (target === null) return;
   if (subscribers.size === 0) {
     pending = { tab: target, at: Date.now() };
   } else {
@@ -55,7 +47,7 @@ try {
 
 /** Read + clear a tab stashed while the hub was unmounted. Expired stashes
  * never hijack a later mount. */
-export function takePendingSettingsTab(): SettingsTab | null {
+export function takePendingSettingsTab(): SettingsPage | null {
   const stashed = pending;
   pending = null;
   if (stashed && Date.now() - stashed.at <= PENDING_TAB_TTL_MS) {
@@ -65,7 +57,7 @@ export function takePendingSettingsTab(): SettingsTab | null {
 }
 
 /** Live tab navigation while the hub is mounted — returns the unsubscribe. */
-export function onSettingsTabNavigate(fn: (tab: SettingsTab) => void) {
+export function onSettingsTabNavigate(fn: (tab: SettingsPage) => void) {
   subscribers.add(fn);
   return () => {
     subscribers.delete(fn);

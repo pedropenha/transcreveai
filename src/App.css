@@ -410,29 +410,3 @@ body {
   color: var(--color-accent);
   font-size: var(--font-size-sm);
 }
-
-.settings-tabs {
-  display: flex;
-  gap: var(--space-1);
-  margin-bottom: var(--space-6);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.settings-tabs button {
-  min-height: var(--control-target-comfortable);
-  padding-inline: var(--space-3);
-  border-bottom: 2px solid transparent;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-
-.settings-tabs button[aria-current="page"] {
-  border-bottom-color: var(--color-accent);
-  color: var(--color-text);
-  font-weight: var(--font-weight-semibold);
-}
-
-.settings-panel:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: var(--space-1);
-}

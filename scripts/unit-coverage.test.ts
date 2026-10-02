@@ -11,6 +11,8 @@ const standaloneTests = [
   "../src/components/shell/setupItems.test.ts",
   "../src/components/home/homeView.test.ts",
   "../src/components/notetaker/notetakerView.test.ts",
+  "../src/components/settings/hub/settingsNav.test.ts",
+  "../src/components/settings/models/modelsView.test.ts",
 ];
 
 for (const standaloneTest of standaloneTests) {

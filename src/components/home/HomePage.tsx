@@ -253,7 +253,7 @@ export const HomePage: React.FC = () => {
   const filtering =
     feed.query.trim() !== "" || Object.values(feed.filters).some(Boolean);
   const goToModels = () =>
-    navigate({ section: "settings", settingsTab: "models" });
+    navigate({ section: "settings", settingsTab: "transcription/models" });
 
   const dayLabel = (row: Extract<HomeRow, { kind: "heading" }>) =>
     row.dayKind === "today"

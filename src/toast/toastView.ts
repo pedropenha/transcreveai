@@ -183,7 +183,7 @@ const NOTICE_ACTIONS: Readonly<Record<string, NoticeAction>> = {
     command: "show_main_window_command",
     labelKey: "openSettings",
     navigateSection: "settings",
-    navigateSettingsTab: "general",
+    navigateSettingsTab: "intelligence/summaries",
   },
   // FR-009-02: the every-start consent reminder carries the notice text —
   // "Copiar aviso" puts it on the clipboard to paste in the meeting chat.

@@ -142,7 +142,9 @@ test.describe("hub shell (Papel & Anil)", () => {
     await expect(page.getByRole("heading", { name: "Help" })).toBeVisible();
 
     await page.keyboard.press("Control+Comma");
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Settings sections" }),
+    ).toBeVisible();
 
     await page.keyboard.press("Control+1");
     await expect(
@@ -237,9 +239,11 @@ test.describe("hub shell (Papel & Anil)", () => {
       .getByRole("button", { name: "Test the microphone" })
       .click();
 
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "General", exact: true }),
+      page.getByRole("navigation", { name: "Settings sections" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Microphone & sounds", exact: true }),
     ).toHaveAttribute("aria-current", "page");
     expect(
       mock.calls.find((call) => call.cmd === "change_dismissed_ui_setting")

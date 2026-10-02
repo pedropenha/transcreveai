@@ -232,8 +232,6 @@
       }
     },
     "models": {
-      "title": "Modelos e Provedores",
-      "description": "Selecione um modelo de transcrição ou baixe modelos adicionais. Diferentes modelos oferecem diferentes níveis de precisão e velocidade.",
       "deleteConfirm": "Tem certeza de que deseja excluir {{modelName}}? Você precisará baixá-lo novamente para usá-lo.",
       "deleteActiveConfirm": "{{modelName}} é o seu modelo ativo. Excluí-lo interromperá as transcrições até que você selecione um novo modelo. Tem certeza?",
       "deleteTitle": "Excluir Modelo",
@@ -243,8 +241,6 @@
         "translation": "Filtrar modelos compatíveis com tradução para inglês"
       },
       "noModelsMatch": "Nenhum modelo corresponde a este filtro.",
-      "yourModels": "Modelos baixados",
-      "availableModels": "Disponíveis para download",
       "searchPlaceholder": "Buscar modelos por nome…",
       "rescan": {
         "label": "Reescanear",
@@ -273,7 +269,46 @@
         "title": "Importar Modelo",
         "filterName": "Arquivo de modelo",
         "success": "{{modelName}} importado com sucesso.\nSHA-256: {{sha256}}"
-      }
+      },
+      "where": {
+        "label": "Onde transcrever",
+        "local": "Neste computador",
+        "api": "API com chave própria"
+      },
+      "inUse": "Em uso",
+      "catalog": "Modelos",
+      "catalogNote": "Os rótulos de adequação vêm da detecção de hardware. Excluir um modelo baixado fica no botão de lixeira da linha.",
+      "hero": {
+        "noneTitle": "Nenhum modelo ativo",
+        "noneBody": "Baixe um modelo abaixo e toque em Usar para começar a transcrever.",
+        "acceleration": "Aceleração",
+        "gpu": "GPU · {{device}}",
+        "cpu": "CPU"
+      },
+      "columns": {
+        "model": "Modelo",
+        "languages": "Idiomas",
+        "size": "Tamanho",
+        "speed": "Veloc.",
+        "accuracy": "Precisão",
+        "actions": "Ações"
+      },
+      "scoreLabel": "{{metric}}: {{value}} de 5",
+      "row": {
+        "downloading": "Baixando",
+        "download": "Baixar",
+        "downloadNamed": "Baixar {{modelName}}",
+        "downloaded": "Baixado",
+        "use": "Usar",
+        "useNamed": "Usar {{modelName}}"
+      },
+      "chips": {
+        "label": "Filtros rápidos",
+        "all": "Todos",
+        "language": "Meu idioma",
+        "fast": "Mais rápidos"
+      },
+      "actionError": "Algo deu errado com esse modelo. Tente de novo."
     },
     "sound": {
       "title": "Som",
@@ -1055,15 +1090,7 @@
   },
   "settingsHub": {
     "title": "Configurações",
-    "subtitle": "As alterações são aplicadas imediatamente.",
     "sectionsLabel": "Seções das configurações",
-    "tabs": {
-      "general": "Geral",
-      "system": "Sistema",
-      "privacy": "Privacidade",
-      "advanced": "Avançado",
-      "models": "Modelos"
-    },
     "groups": {
       "startup": "Inicialização e bandeja",
       "flowbar": "Flow Bar",
@@ -1073,14 +1100,16 @@
       "performance": "Desempenho",
       "assistant": "Assistente",
       "summary": "Resumo de reunião (LLM)",
-      "diagnostics": "Diagnóstico e dados"
+      "diagnostics": "Diagnóstico e dados",
+      "appearance": "Aparência"
     },
     "assistant": {
       "provider": {
         "title": "Provedor",
         "description": "Qual provedor de IA responde ao assistente flutuante. Automático prefere o provedor configurado e cai para um agente CLI detectado.",
         "auto": "Automático (recomendado)"
-      }
+      },
+      "shortcutNote": "O atalho do assistente fica em Uso → Atalhos."
     },
     "limits": {
       "duration": {
@@ -1092,6 +1121,72 @@
         "title": "Tamanho da fila de sessões",
         "description": "Ditados pendentes mantidos enquanto outra sessão está em processamento."
       }
+    },
+    "soon": "v1.1+",
+    "categories": {
+      "usage": "Uso",
+      "transcription": "Transcrição",
+      "intelligence": "Inteligência",
+      "app": "App"
+    },
+    "pages": {
+      "general": {
+        "title": "Geral",
+        "description": "Aparência e idioma da interface. As mudanças valem na hora."
+      },
+      "shortcuts": {
+        "title": "Atalhos",
+        "description": "Teclas que iniciam, param e cancelam o ditado e abrem o assistente."
+      },
+      "audio": {
+        "title": "Microfone e sons",
+        "description": "Dispositivo de entrada, nível e os sons que confirmam início e fim."
+      },
+      "models": {
+        "title": "Modelos",
+        "description": "Escolha onde sua voz vira texto. Modelos locais funcionam offline e nada sai do computador.",
+        "heading": "Modelos de transcrição"
+      },
+      "languages": {
+        "title": "Idiomas",
+        "description": "O idioma em que você dita e o que o modelo ativo suporta."
+      },
+      "api": {
+        "title": "API com chave própria",
+        "description": "Transcreva na nuvem com uma chave sua (chega na v1.1)."
+      },
+      "summaries": {
+        "title": "Resumos de reunião",
+        "description": "Qual provedor escreve o resumo depois da reunião. Sem um, a reunião guarda só transcrição e notas."
+      },
+      "assistant": {
+        "title": "Assistente",
+        "description": "Qual IA responde no painel do assistente."
+      },
+      "system": {
+        "title": "Sistema",
+        "description": "Inicialização, ícone na bandeja e a Flow Bar."
+      },
+      "privacy": {
+        "title": "Privacidade",
+        "description": "O que fica neste computador e por quanto tempo."
+      },
+      "advanced": {
+        "title": "Avançado",
+        "description": "Inserção de texto, desempenho e diagnóstico."
+      }
+    },
+    "api": {
+      "cardTitle": "Transcrever pela nuvem",
+      "cardBody": "Usada só quando você escolher API acima. A chave ficará no cofre do sistema, nunca em arquivo.",
+      "provider": "Provedor",
+      "model": "Modelo",
+      "key": "Chave de API",
+      "vault": "Ficará guardada no cofre do sistema quando for lançada.",
+      "summaryNote": "O resumo de reuniões usa outra chave, em Inteligência → Resumos de reunião."
+    },
+    "languages": {
+      "supportedBy": "Idiomas suportados por {{model}}"
     }
   },
   "secureInput": {

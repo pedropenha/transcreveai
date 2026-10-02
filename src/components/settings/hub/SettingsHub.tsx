@@ -1,135 +1,123 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  ChevronRight,
+  Cpu,
+  FileText,
+  Globe,
+  Keyboard,
+  KeyRound,
+  Mic,
+  Monitor,
+  Settings as SettingsIcon,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { GeneralSettings } from "../general/GeneralSettings";
-import { ModelsSettings } from "../models/ModelsSettings";
-import { SettingsGroup } from "../../ui/SettingsGroup";
-import { AutostartToggle } from "../AutostartToggle";
-import { StartHidden } from "../StartHidden";
-import { ShowOverlay } from "../ShowOverlay";
-import { ShowTrayIcon } from "../ShowTrayIcon";
-import { HistoryLimit } from "../HistoryLimit";
-import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
-import { ClipboardHandlingSetting } from "../ClipboardHandling";
-import { PasteMethodSetting } from "../PasteMethod";
-import { TypingToolSetting } from "../TypingTool";
-import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
-import { AppDataDirectory } from "../AppDataDirectory";
-import { PasteDelay } from "../debug/PasteDelay";
-import { LogLevelSelector } from "../debug/LogLevelSelector";
-import { RecordingBuffer } from "../debug/RecordingBuffer";
-import { SessionLimits } from "../SessionLimits";
-import { AssistantProvider } from "../AssistantProvider";
 import {
   onSettingsTabNavigate,
-  SETTINGS_TABS as TABS,
   takePendingSettingsTab,
-  type SettingsTab,
 } from "./pendingSettingsTab";
+import { SettingsPageContent } from "./SettingsPages";
+import {
+  DEFAULT_SETTINGS_PAGE,
+  SETTINGS_CATEGORIES,
+  categoryOf,
+  pagesOf,
+  type SettingsPage,
+} from "./settingsNav";
+import "./settings.css";
 
+const PAGE_ICONS: Record<SettingsPage, LucideIcon> = {
+  "usage/general": SlidersHorizontal,
+  "usage/shortcuts": Keyboard,
+  "usage/audio": Mic,
+  "transcription/models": Cpu,
+  "transcription/languages": Globe,
+  "transcription/api": KeyRound,
+  "intelligence/summaries": FileText,
+  "intelligence/assistant": Sparkles,
+  "app/system": Monitor,
+  "app/privacy": ShieldCheck,
+  "app/advanced": SettingsIcon,
+};
+
+/**
+ * Configurações (F010 FR-010-27): sub-navigation by category on the left, one
+ * page on the right. Deep links (`pendingSettingsTab`) accept old flat names
+ * and `category/page` paths.
+ */
 export const SettingsHub: React.FC = () => {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [page, setPage] = useState<SettingsPage>(DEFAULT_SETTINGS_PAGE);
+  const scrollRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const firstPage = useRef(true);
 
-  // F012: deep-linkable tab — the assistant panel's "Abrir configurações"
-  // emits `hub://navigate` with `settingsTab` to land directly on the
-  // tab carrying the assistant controls (App.tsx handles `section`).
-  // The same event is what navigates the sidebar here, so a mount-time
-  // listener can never see its own deep-link: `pendingSettingsTab` listens
-  // from module load and stashes the tab until this first effect drains it.
+  // The navigation event that mounts this hub fires before any listener here
+  // exists, so `pendingSettingsTab` stashes it and the first effect drains it.
   useEffect(() => {
     const stashed = takePendingSettingsTab();
-    if (stashed) setTab(stashed);
-    return onSettingsTabNavigate(setTab);
+    if (stashed) setPage(stashed);
+    return onSettingsTabNavigate(setPage);
   }, []);
 
+  // A page change is announced by moving focus to the new page title (not on
+  // the very first render, which would steal focus from the Hub).
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+    if (firstPage.current) {
+      firstPage.current = false;
+      return;
+    }
+    headingRef.current?.focus({ preventScroll: true });
+  }, [page]);
+
+  const category = categoryOf(page);
+  const slug = page.split("/")[1] as string;
+
   return (
-    <main className="settings-hub">
-      <header className="section-page-header">
-        <h1>{t("settingsHub.title")}</h1>
-        <p>{t("settingsHub.subtitle")}</p>
-      </header>
-      <nav
-        className="settings-tabs"
-        aria-label={t("settingsHub.sectionsLabel")}
-      >
-        {TABS.map((value) => (
-          <button
-            key={value}
-            type="button"
-            aria-current={tab === value ? "page" : undefined}
-            onClick={() => setTab(value)}
-          >
-            {t(`settingsHub.tabs.${value}`)}
-          </button>
+    <div className="st-root">
+      <nav className="st-subnav" aria-label={t("settingsHub.sectionsLabel")}>
+        <p className="st-subnav-title">{t("settingsHub.title")}</p>
+        {SETTINGS_CATEGORIES.map((cat) => (
+          <div key={cat} className="st-subnav-group">
+            <span className="caps">{t(`settingsHub.categories.${cat}`)}</span>
+            {pagesOf(cat).map((entry) => {
+              const Icon = PAGE_ICONS[entry.id];
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  className="st-subnav-item"
+                  aria-current={page === entry.id ? "page" : undefined}
+                  onClick={() => setPage(entry.id)}
+                >
+                  <Icon width={16} height={16} aria-hidden="true" />
+                  {t(`settingsHub.pages.${entry.slug}.title`)}
+                </button>
+              );
+            })}
+          </div>
         ))}
       </nav>
-      <section className="settings-panel">
-        {tab === "general" ? <GeneralSettings /> : null}
-        {tab === "models" ? <ModelsSettings /> : null}
-        {tab === "system" ? <SystemSettings /> : null}
-        {tab === "privacy" ? <PrivacySettings /> : null}
-        {tab === "advanced" ? <AdvancedHubSettings /> : null}
-      </section>
-    </main>
-  );
-};
-
-const SystemSettings: React.FC = () => {
-  const { t } = useTranslation();
-  return (
-    <div className="max-w-3xl w-full space-y-6">
-      <SettingsGroup title={t("settingsHub.groups.startup")}>
-        <AutostartToggle descriptionMode="tooltip" grouped />
-        <StartHidden descriptionMode="tooltip" grouped />
-        <ShowTrayIcon descriptionMode="tooltip" grouped />
-      </SettingsGroup>
-      <SettingsGroup title={t("settingsHub.groups.flowbar")}>
-        <ShowOverlay descriptionMode="tooltip" grouped />
-      </SettingsGroup>
-    </div>
-  );
-};
-
-const PrivacySettings: React.FC = () => {
-  const { t } = useTranslation();
-  return (
-    <div className="max-w-3xl w-full space-y-6">
-      <SettingsGroup title={t("settingsHub.groups.retention")}>
-        <HistoryLimit descriptionMode="tooltip" grouped />
-        <RecordingRetentionPeriodSelector descriptionMode="tooltip" grouped />
-      </SettingsGroup>
-      <SettingsGroup title={t("settingsHub.groups.clipboard")}>
-        <ClipboardHandlingSetting descriptionMode="tooltip" grouped />
-      </SettingsGroup>
-    </div>
-  );
-};
-
-const AdvancedHubSettings: React.FC = () => {
-  const { t } = useTranslation();
-  return (
-    <div className="max-w-3xl w-full space-y-6">
-      <SettingsGroup title={t("settingsHub.groups.insertion")}>
-        <PasteMethodSetting descriptionMode="tooltip" grouped />
-        <TypingToolSetting descriptionMode="tooltip" grouped />
-        <PasteDelay descriptionMode="tooltip" grouped />
-        <PasteDelay
-          descriptionMode="tooltip"
-          grouped
-          settingKey="paste_delay_after_ms"
-          labelKey="settings.debug.pasteDelayAfter.title"
-          descriptionKey="settings.debug.pasteDelayAfter.description"
-        />
-      </SettingsGroup>
-      <SettingsGroup title={t("settingsHub.groups.performance")}>
-        <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped />
-        <RecordingBuffer descriptionMode="tooltip" grouped />
-        <SessionLimits grouped />
-      </SettingsGroup>
-      <SettingsGroup title={t("settingsHub.groups.diagnostics")}>
-        <LogLevelSelector descriptionMode="tooltip" grouped />
-        <AppDataDirectory descriptionMode="tooltip" grouped />
-      </SettingsGroup>
+      <main className="st-main" ref={scrollRef}>
+        <div className="st-crumb">
+          {t("settingsHub.title")}
+          <ChevronRight width={13} height={13} aria-hidden="true" />
+          {t(`settingsHub.categories.${category}`)}
+        </div>
+        <header className="st-page-head">
+          <h1 ref={headingRef} tabIndex={-1}>
+            {t(`settingsHub.pages.${slug}.heading`, {
+              defaultValue: t(`settingsHub.pages.${slug}.title`),
+            })}
+          </h1>
+          <p>{t(`settingsHub.pages.${slug}.description`)}</p>
+        </header>
+        <SettingsPageContent page={page} />
+      </main>
     </div>
   );
 };

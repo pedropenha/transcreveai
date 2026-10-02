@@ -217,4 +217,93 @@ test.describe("hub screenshots", () => {
       });
     }
   }
+
+  for (const scheme of SCHEMES) {
+    for (const width of WIDTHS) {
+      test(`settings models ${scheme} ${width}px`, async ({ page }) => {
+        const model = (id: string, name: string, over: object = {}) => ({
+          id,
+          name,
+          description: "Melhor equilíbrio entre precisão e velocidade.",
+          filename: `${id}.gguf`,
+          source: { HuggingFace: { repo_id: "x/y", revision: "main" } },
+          size_mb: 1638,
+          is_downloaded: true,
+          is_downloading: false,
+          partial_size: 0,
+          is_directory: false,
+          engine_type: "TranscribeCpp",
+          accuracy_score: 0.9,
+          speed_score: 0.8,
+          supports_translation: true,
+          is_recommended: false,
+          supported_languages: ["pt", "en", "es", "fr"],
+          supports_language_selection: true,
+          is_custom: false,
+          supports_streaming: false,
+          supports_language_detection: true,
+          ...over,
+        });
+        await installTauriMock(page, {
+          get_app_settings: {
+            onboarding_completed: true,
+            app_language: "en",
+            selected_model: "turbo",
+            selected_language: "pt",
+          },
+          get_available_models: [
+            model("turbo", "Whisper Large v3 Turbo", { is_recommended: true }),
+            model("large", "Whisper Large v3", {
+              size_mb: 3100,
+              accuracy_score: 1,
+              speed_score: 0.4,
+              is_downloaded: false,
+            }),
+            model("medium", "Whisper Medium", {
+              size_mb: 1500,
+              speed_score: 0.6,
+            }),
+            model("small", "Whisper Small", {
+              size_mb: 487,
+              accuracy_score: 0.6,
+              is_downloaded: false,
+            }),
+            model("moonshine", "Moonshine Base", {
+              size_mb: 58,
+              accuracy_score: 0.4,
+              speed_score: 1,
+              supported_languages: ["en"],
+              is_downloaded: false,
+            }),
+          ],
+          get_current_model: "turbo",
+          get_model_recommendations: {
+            hardware: {
+              total_ram_mb: 16000,
+              cpu_cores: 8,
+              has_avx2: true,
+              gpu_names: ["NVIDIA RTX 3060"],
+              max_gpu_vram_mb: 12000,
+              tier: "gpu",
+            },
+            default_model_id: "turbo",
+            labels: [],
+          },
+        });
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto("/");
+        await page.getByTitle("Settings").click();
+        await page
+          .getByRole("navigation", { name: "Settings sections" })
+          .getByRole("button", { name: "Models", exact: true })
+          .click();
+        await page.waitForSelector(".st-mtable");
+        await page.waitForTimeout(400);
+        await page.screenshot({
+          path: `docs/design/screens/${process.env.SCREEN_PREFIX ?? "hub"}-settings-models-${scheme}-${width}.png`,
+        });
+      });
+    }
+  }
 });

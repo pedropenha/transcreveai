@@ -273,11 +273,11 @@ const AssistantPanel: React.FC = () => {
     void invokeChecked("show_main_window", () =>
       commands.showMainWindowCommand(),
     );
-    // Lands on the Settings section's general tab, where the assistant
+    // Lands on Settings → Intelligence → Assistant, where the assistant
     // provider picker lives (`settingsTab` is read by SettingsHub).
     void emit("hub://navigate", {
       section: "settings",
-      settingsTab: "general",
+      settingsTab: "intelligence/assistant",
     }).catch((e) => console.warn("hub://navigate emit failed:", e));
   };
 

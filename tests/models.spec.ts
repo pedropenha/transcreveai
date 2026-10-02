@@ -91,15 +91,14 @@ test.describe("Models & Providers screen (mocked Tauri IPC)", () => {
       page.getByRole("button", { name: "Same as dictation" }),
     ).toBeVisible();
 
-    // Catalog sections.
+    // Active model in the hero, the rest in the catalog table.
     await expect(
-      page.getByRole("heading", { name: "Downloaded Models" }),
+      page.getByTestId("model-hero").getByRole("heading", {
+        name: /Whisper Small/,
+      }),
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Whisper Small" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Whisper Turbo" }),
+      page.getByRole("table", { name: "Models" }).getByText("Whisper Turbo"),
     ).toBeVisible();
   });
 

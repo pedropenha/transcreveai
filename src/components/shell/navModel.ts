@@ -99,7 +99,7 @@ export function sectionForShortcut(event: ShortcutKeyEvent): HubSection | null {
 }
 
 /** Settings tab that holds the meeting-summary provider (Notetaker deep link). */
-export const SUMMARY_SETTINGS_TAB = "general";
+export const SUMMARY_SETTINGS_TAB = "intelligence/summaries";
 
 export interface NavigatePayload {
   section?: string;
@@ -113,7 +113,7 @@ export interface Navigation {
 
 /** Sections that moved into Settings: old deep links keep working. */
 const LEGACY_SETTINGS_TAB: Readonly<Record<string, string>> = {
-  models: "models",
+  models: "transcription/models",
 };
 
 const isHubSection = (value: string): value is HubSection =>

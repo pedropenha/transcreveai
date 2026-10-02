@@ -8,8 +8,14 @@ import {
 // A valid tab arriving while no hub is mounted is stashed, then drained
 // exactly once by the next mount.
 handleNavigatePayload({ settingsTab: "advanced" });
-assert.equal(takePendingSettingsTab(), "advanced");
+assert.equal(takePendingSettingsTab(), "app/advanced");
 assert.equal(takePendingSettingsTab(), null);
+
+// New paths and the old flat spelling resolve to the same page.
+handleNavigatePayload({ settingsTab: "transcription/models" });
+assert.equal(takePendingSettingsTab(), "transcription/models");
+handleNavigatePayload({ settingsTab: "models" });
+assert.equal(takePendingSettingsTab(), "transcription/models");
 
 // Unknown/absent tabs never stash.
 handleNavigatePayload({ settingsTab: "not-a-tab" });
@@ -21,7 +27,7 @@ assert.equal(takePendingSettingsTab(), null);
   const seen: string[] = [];
   const off = onSettingsTabNavigate((tab) => seen.push(tab));
   handleNavigatePayload({ settingsTab: "privacy" });
-  assert.deepEqual(seen, ["privacy"]);
+  assert.deepEqual(seen, ["app/privacy"]);
   assert.equal(takePendingSettingsTab(), null);
   off();
 }
@@ -29,13 +35,13 @@ assert.equal(takePendingSettingsTab(), null);
 // The flow the bug broke: navigate → stash (hub not mounted) → mount drains
 // the stash → later navigations arrive live again.
 handleNavigatePayload({ settingsTab: "advanced" });
-assert.equal(takePendingSettingsTab(), "advanced");
+assert.equal(takePendingSettingsTab(), "app/advanced");
 {
   const seen: string[] = [];
   const off = onSettingsTabNavigate((tab) => seen.push(tab));
   handleNavigatePayload({ settingsTab: "system" });
   off();
-  assert.deepEqual(seen, ["system"]);
+  assert.deepEqual(seen, ["app/system"]);
 }
 
 console.log("pendingSettingsTab: all assertions passed");

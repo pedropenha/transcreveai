@@ -10,16 +10,16 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
 
 O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredondado; só o painel rola. Largura 236 px, colapsável para 64 px (só ícones + tooltip; a escolha persiste por usuário no navegador). A barra de título nativa é mantida ([ADR-0003](../../../docs/adr/0003-identidade-visual-papel-e-anil.md)).
 
-| Grupo / seção               | Release                       | Conteúdo                                                                                     |
-| --------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------- |
-| **Início**                  | v1                            | Histórico de ditados + estatísticas                                                          |
-| **Notetaker** (reuniões)    | v1                            | Lista e detalhes (F009)                                                                      |
-| **Notas**                   | v1.1+ (visível, desabilitada) | Scratchpad (F007); item com tag "v1.1", sem navegação                                        |
-| _Personalizar_ · Dicionário | v1 (vocab + muletas) / v1.1+  | Termos, muletas e substituições                                                              |
-| _Personalizar_ · Assistente | v1.1+ (visível, desabilitada) | Painel do assistente (F012); item com tag "v1.1", sem navegação                              |
-| Snippets / Estilos          | v1.1+                         | Gatilhos e expansões; perfis de app (ainda sem item no rail)                                 |
-| Rodapé · **Configurações**  | v1                            | Geral, **Modelos**, Sistema, Privacidade, Avançado (sub-navegação por categorias na etapa 5) |
-| Rodapé · **Ajuda**          | v1                            | Atalhos de teclado e sobre o app                                                             |
+| Grupo / seção               | Release                       | Conteúdo                                                                      |
+| --------------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
+| **Início**                  | v1                            | Histórico de ditados + estatísticas                                           |
+| **Notetaker** (reuniões)    | v1                            | Lista e detalhes (F009)                                                       |
+| **Notas**                   | v1.1+ (visível, desabilitada) | Scratchpad (F007); item com tag "v1.1", sem navegação                         |
+| _Personalizar_ · Dicionário | v1 (vocab + muletas) / v1.1+  | Termos, muletas e substituições                                               |
+| _Personalizar_ · Assistente | v1.1+ (visível, desabilitada) | Painel do assistente (F012); item com tag "v1.1", sem navegação               |
+| Snippets / Estilos          | v1.1+                         | Gatilhos e expansões; perfis de app (ainda sem item no rail)                  |
+| Rodapé · **Configurações**  | v1                            | Sub-navegação por categorias: Uso, Transcrição, Inteligência, App (FR-010-27) |
+| Rodapé · **Ajuda**          | v1                            | Atalhos de teclado e sobre o app                                              |
 
 **Modelos & Provedores não é mais uma seção do rail**: vive em Configurações → Modelos (F003; provedores em nuvem na v1.1+). O deep link antigo `hub://navigate { section: "models" }` continua funcionando e leva a Configurações → Modelos.
 
@@ -42,6 +42,7 @@ O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredonda
 - **FR-010-24** Linha do histórico: hora, texto (até 3 linhas), app de origem, nº de palavras e chips de estado; ações (copiar, sinalizar, mais detalhes) aparecem no hover **e** no foco por teclado; falhas mostram o chip "Falhou" e "Tentar novamente" (quando o áudio existe). "Mais detalhes" abre o painel de detalhe (FR-010-03/04) com Esc para fechar. Ouvir o áudio da entrada fica para a v1.1+ (sem comando de reprodução no backend).
 - **FR-010-25** Card de estatísticas: palavras totais, ppm, dias seguidos, tempo economizado (vs. 40 ppm) e modelo ativo. A sequência é calculada no frontend sobre as entradas mais recentes **sem filtros** (até 5 páginas de 100, parando quando a sequência não pode mais crescer); acima de ~500 ditados contíguos ela é subestimada até o backend expor o dado.
 - **FR-010-26** Layout do Notetaker (etapa 4): ver FR-009-29. O Início e o Notetaker rolam por conta própria (lista e detalhes rolam separados); as demais seções rolam o painel inteiro.
+- **FR-010-27** Configurações com sub-navegação própria (coluna à esquerda; abaixo de ~760 px de painel vira uma faixa horizontal no topo) e migalha "Configurações › Categoria". Páginas: **Uso** (Geral — aparência e idioma da interface; Atalhos; Microfone e sons) · **Transcrição** (Modelos; Idiomas; API com chave própria) · **Inteligência** (Resumos de reunião; Assistente) · **App** (Sistema; Privacidade; Avançado). O deep link `settingsTab` (`hub://navigate`, checklist, toasts, painel do assistente, banner do Início) aceita o caminho `categoria/página` (ex.: `transcription/models`, `intelligence/summaries`), uma categoria sozinha (cai na primeira página) e os nomes planos antigos (`general`, `models`, `system`, `privacy`, `advanced`); valores desconhecidos são ignorados. Destinos: banner/checklist de modelo → `transcription/models`; checklist de microfone → `usage/audio`; áudio do sistema → `app/privacy`; chave de resumos e toast "abrir configurações de resumo" → `intelligence/summaries`; painel do assistente → `intelligence/assistant`.
 - **FR-010-06** Navegação por teclado (↑/↓ entre entradas, Enter abre, Ctrl+C copia) e compatível com leitor de tela.
 
 ### Configurações

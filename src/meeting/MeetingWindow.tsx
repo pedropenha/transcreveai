@@ -778,7 +778,7 @@ const MeetingWindow: React.FC = () => {
                         void commands.showMainWindowCommand();
                         void emit("hub://navigate", {
                           section: "settings",
-                          settingsTab: "general",
+                          settingsTab: "intelligence/summaries",
                         });
                       }}
                     >

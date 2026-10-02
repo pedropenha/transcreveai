@@ -35,7 +35,7 @@ assert.equal(sectionForShortcut(key("a")), null);
 // Legacy deep link: the "models" rail section moved into Settings.
 assert.deepEqual(resolveNavigation({ section: "models" }), {
   section: "settings",
-  settingsTab: "models",
+  settingsTab: "transcription/models",
 });
 // An explicit tab on a legacy payload wins over the redirect default.
 assert.deepEqual(

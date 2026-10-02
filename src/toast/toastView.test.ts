@@ -176,7 +176,7 @@ assert.equal(
 const summaryNotice = noticeActionFor("open_summary_settings");
 assert.equal(summaryNotice?.command, "show_main_window_command");
 assert.equal(summaryNotice?.navigateSection, "settings");
-assert.equal(summaryNotice?.navigateSettingsTab, "general");
+assert.equal(summaryNotice?.navigateSettingsTab, "intelligence/summaries");
 
 // Actions the toast cannot answer inline keep the compact notice face.
 assert.equal(

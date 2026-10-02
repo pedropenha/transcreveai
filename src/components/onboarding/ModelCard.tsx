@@ -26,7 +26,7 @@ import { Button } from "../ui/Button";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 // Get display text for model's language support
-const getLanguageDisplayText = (
+export const getLanguageDisplayText = (
   supportedLanguages: string[],
   t: (key: string, options?: Record<string, unknown>) => string,
 ): string => {

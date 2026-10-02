@@ -232,11 +232,7 @@
       }
     },
     "models": {
-      "title": "Models & Providers",
-      "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",
       "searchPlaceholder": "Search models by name…",
-      "yourModels": "Downloaded Models",
-      "availableModels": "Available to Download",
       "deleteConfirm": "Are you sure you want to delete {{modelName}}? You will need to download it again to use it.",
       "deleteActiveConfirm": "{{modelName}} is your active model. Deleting it will stop transcriptions until you select a new model. Are you sure?",
       "deleteTitle": "Delete Model",
@@ -273,7 +269,46 @@
         "title": "Import Model",
         "filterName": "Model file",
         "success": "{{modelName}} imported successfully.\nSHA-256: {{sha256}}"
-      }
+      },
+      "where": {
+        "label": "Where to transcribe",
+        "local": "On this computer",
+        "api": "API with your own key"
+      },
+      "inUse": "In use",
+      "catalog": "Models",
+      "catalogNote": "Fit labels come from hardware detection. Deleting a downloaded model is in the trash button on its row.",
+      "hero": {
+        "noneTitle": "No active model",
+        "noneBody": "Download a model below and press Use to start transcribing.",
+        "acceleration": "Acceleration",
+        "gpu": "GPU · {{device}}",
+        "cpu": "CPU"
+      },
+      "columns": {
+        "model": "Model",
+        "languages": "Languages",
+        "size": "Size",
+        "speed": "Speed",
+        "accuracy": "Accuracy",
+        "actions": "Actions"
+      },
+      "scoreLabel": "{{metric}}: {{value}} of 5",
+      "row": {
+        "downloading": "Downloading",
+        "download": "Download",
+        "downloadNamed": "Download {{modelName}}",
+        "downloaded": "Downloaded",
+        "use": "Use",
+        "useNamed": "Use {{modelName}}"
+      },
+      "chips": {
+        "label": "Quick filters",
+        "all": "All",
+        "language": "My language",
+        "fast": "Fastest"
+      },
+      "actionError": "Something went wrong with that model. Try again."
     },
     "sound": {
       "title": "Sound",
@@ -1055,15 +1090,7 @@
   },
   "settingsHub": {
     "title": "Settings",
-    "subtitle": "Changes apply immediately.",
     "sectionsLabel": "Settings sections",
-    "tabs": {
-      "general": "General",
-      "system": "System",
-      "privacy": "Privacy",
-      "advanced": "Advanced",
-      "models": "Models"
-    },
     "groups": {
       "startup": "Startup and tray",
       "flowbar": "Flow Bar",
@@ -1073,14 +1100,16 @@
       "performance": "Performance",
       "assistant": "Assistant",
       "summary": "Meeting summary (LLM)",
-      "diagnostics": "Diagnostics and data"
+      "diagnostics": "Diagnostics and data",
+      "appearance": "Appearance"
     },
     "assistant": {
       "provider": {
         "title": "Provider",
         "description": "Which AI provider answers the assistant overlay. Auto prefers the configured provider and falls back to a detected CLI agent.",
         "auto": "Auto (recommended)"
-      }
+      },
+      "shortcutNote": "The assistant shortcut is under Usage → Shortcuts."
     },
     "limits": {
       "duration": {
@@ -1092,6 +1121,72 @@
         "title": "Session queue size",
         "description": "Pending dictations kept while another session is processing."
       }
+    },
+    "soon": "v1.1+",
+    "categories": {
+      "usage": "Usage",
+      "transcription": "Transcription",
+      "intelligence": "Intelligence",
+      "app": "App"
+    },
+    "pages": {
+      "general": {
+        "title": "General",
+        "description": "Appearance and interface language. Changes apply immediately."
+      },
+      "shortcuts": {
+        "title": "Shortcuts",
+        "description": "Keys that start, stop and cancel dictation and open the assistant."
+      },
+      "audio": {
+        "title": "Microphone & sounds",
+        "description": "Input device, level and the sounds that confirm start and stop."
+      },
+      "models": {
+        "title": "Models",
+        "description": "Choose where your voice becomes text. Local models work offline and nothing leaves your computer.",
+        "heading": "Transcription models"
+      },
+      "languages": {
+        "title": "Languages",
+        "description": "The language you dictate in and what the active model supports."
+      },
+      "api": {
+        "title": "API with your own key",
+        "description": "Transcribe in the cloud with a key of your own (coming in v1.1)."
+      },
+      "summaries": {
+        "title": "Meeting summaries",
+        "description": "Which provider writes the summary after a meeting. Without one, meetings keep transcript and notes only."
+      },
+      "assistant": {
+        "title": "Assistant",
+        "description": "Which AI answers the assistant panel."
+      },
+      "system": {
+        "title": "System",
+        "description": "Startup, tray icon and the Flow Bar."
+      },
+      "privacy": {
+        "title": "Privacy",
+        "description": "What stays on this computer and for how long."
+      },
+      "advanced": {
+        "title": "Advanced",
+        "description": "Text insertion, performance and diagnostics."
+      }
+    },
+    "api": {
+      "cardTitle": "Transcribe in the cloud",
+      "cardBody": "Used only when you choose API above. The key will live in the OS keychain, never in a file.",
+      "provider": "Provider",
+      "model": "Model",
+      "key": "API key",
+      "vault": "Stored in the OS keychain once this ships.",
+      "summaryNote": "Meeting summaries use their own key, under Intelligence → Meeting summaries."
+    },
+    "languages": {
+      "supportedBy": "Languages supported by {{model}}"
     }
   },
   "secureInput": {

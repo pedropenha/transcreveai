@@ -63,9 +63,12 @@ function App() {
   const [railCollapsed, toggleRailCollapsed] = useRailCollapsed();
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
-  // Home and Notetaker own their scrolling (list and details scroll apart).
+  // Home, Notetaker and Settings own their scrolling (nav / list / details
+  // scroll apart from the page).
   const isFullBleed =
-    currentSection === "home" || currentSection === "meetings";
+    currentSection === "home" ||
+    currentSection === "meetings" ||
+    currentSection === "settings";
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
   );
