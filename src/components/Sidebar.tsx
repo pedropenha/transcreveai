@@ -13,12 +13,8 @@ import {
 import { useTranslation } from "react-i18next";
 import SoundBarsIcon from "./icons/SoundBarsIcon";
 import { HelpPage } from "./help/HelpPage";
-import {
-  DictionarySettings,
-  HistorySettings,
-  MeetingsSettings,
-  SettingsHub,
-} from "./settings";
+import { HomePage } from "./home/HomePage";
+import { DictionarySettings, MeetingsSettings, SettingsHub } from "./settings";
 import { SetupChecklist } from "./shell/SetupChecklist";
 import {
   RAIL_ENTRIES,
@@ -41,7 +37,7 @@ export const SECTIONS_CONFIG: Record<
   HubSection,
   { component: React.ComponentType }
 > = {
-  home: { component: HistorySettings },
+  home: { component: HomePage },
   meetings: { component: MeetingsSettings },
   dictionary: { component: DictionarySettings },
   settings: { component: SettingsHub },

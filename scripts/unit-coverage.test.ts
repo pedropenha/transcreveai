@@ -9,6 +9,7 @@ const standaloneTests = [
   "../src/styles/theme.test.ts",
   "../src/components/shell/navModel.test.ts",
   "../src/components/shell/setupItems.test.ts",
+  "../src/components/home/homeView.test.ts",
 ];
 
 for (const standaloneTest of standaloneTests) {

@@ -1140,5 +1140,57 @@
       "help": "Go to Help",
       "settingsAlt": "Open Settings"
     }
+  },
+  "home": {
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening"
+    },
+    "shortcuts": "Shortcuts",
+    "banner": {
+      "titlePre": "Your voice, ",
+      "titleEm": "your",
+      "titlePost": " computer.",
+      "body": "100% local transcription with Whisper. Nothing leaves your machine without a key of your own.",
+      "cta": "Choose a model",
+      "dismiss": "Dismiss banner"
+    },
+    "day": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "words_one": "{{count}} word",
+    "words_other": "{{count}} words",
+    "row": {
+      "more": "More details",
+      "retry": "Try again"
+    },
+    "detail": {
+      "close": "Close details"
+    },
+    "empty": {
+      "title": "Your dictations will show up here",
+      "body": "Hold your dictation shortcut in any app and start talking."
+    },
+    "stats": {
+      "words_one": "word",
+      "words_other": "words",
+      "wpm": "wpm",
+      "streak_one": "day in a row",
+      "streak_other": "days in a row",
+      "savedHours": "≈ {{hours}} h {{minutes}} min",
+      "savedMinutes": "≈ {{minutes}} min",
+      "savedCaption": "saved vs. typing at 40 wpm",
+      "noModel": "No model selected",
+      "local": "Local",
+      "manageModels": "Manage models"
+    },
+    "tip": {
+      "label": "Tip",
+      "title": "Hands-free",
+      "body": "Double-tap your dictation shortcut and talk freely. Tap again to insert.",
+      "dismiss": "Dismiss tip"
+    }
   }
 }

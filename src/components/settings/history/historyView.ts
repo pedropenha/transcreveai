@@ -1,47 +1,7 @@
-export interface HistoryEntryView {
-  id: number;
-  timestamp: number;
-  appName: string | null;
-  appExe: string | null;
-  mode: string;
-  status: string;
-  rawText: string;
-  finalText: string;
-}
-
-export interface HistoryDayGroup<T extends HistoryEntryView> {
-  key: string;
-  label: string;
-  entries: T[];
-}
-
 export type DiffPart = {
   kind: "equal" | "added" | "removed";
   text: string;
 };
-
-export function groupHistoryEntries<T extends HistoryEntryView>(
-  entries: T[],
-  locale: string,
-): HistoryDayGroup<T>[] {
-  const formatter = new Intl.DateTimeFormat(locale, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-  const groups = new Map<string, HistoryDayGroup<T>>();
-
-  for (const entry of entries) {
-    const date = new Date(entry.timestamp * 1000);
-    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-    const current = groups.get(key);
-    if (current) current.entries.push(entry);
-    else
-      groups.set(key, { key, label: formatter.format(date), entries: [entry] });
-  }
-
-  return [...groups.values()];
-}
 
 export function moveHistorySelection(
   ids: number[],

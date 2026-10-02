@@ -1140,5 +1140,57 @@
       "help": "Ir para Ajuda",
       "settingsAlt": "Abrir Configurações"
     }
+  },
+  "home": {
+    "greeting": {
+      "morning": "Bom dia",
+      "afternoon": "Boa tarde",
+      "evening": "Boa noite"
+    },
+    "shortcuts": "Atalhos",
+    "banner": {
+      "titlePre": "Sua voz, ",
+      "titleEm": "seu",
+      "titlePost": " computador.",
+      "body": "Transcrição 100% local com Whisper. Nada sai da sua máquina sem uma chave sua.",
+      "cta": "Escolher modelo",
+      "dismiss": "Dispensar banner"
+    },
+    "day": {
+      "today": "Hoje",
+      "yesterday": "Ontem"
+    },
+    "words_one": "{{count}} palavra",
+    "words_other": "{{count}} palavras",
+    "row": {
+      "more": "Mais detalhes",
+      "retry": "Tentar novamente"
+    },
+    "detail": {
+      "close": "Fechar detalhes"
+    },
+    "empty": {
+      "title": "Seus ditados aparecem aqui",
+      "body": "Segure o atalho de ditado em qualquer app e comece a falar."
+    },
+    "stats": {
+      "words_one": "palavra",
+      "words_other": "palavras",
+      "wpm": "ppm",
+      "streak_one": "dia seguido",
+      "streak_other": "dias seguidos",
+      "savedHours": "≈ {{hours}} h {{minutes}} min",
+      "savedMinutes": "≈ {{minutes}} min",
+      "savedCaption": "economizados vs. digitar a 40 ppm",
+      "noModel": "Nenhum modelo selecionado",
+      "local": "Local",
+      "manageModels": "Gerenciar modelos"
+    },
+    "tip": {
+      "label": "Dica",
+      "title": "Mãos livres",
+      "body": "Toque duas vezes no atalho de ditado e fale à vontade. Toque de novo para inserir.",
+      "dismiss": "Dispensar dica"
+    }
   }
 }

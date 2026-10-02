@@ -24,6 +24,7 @@ import { type OnboardingPreviewStep } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { useRailCollapsed } from "./components/shell/useRailCollapsed";
+import { HubNavigationContext } from "./components/shell/HubNavigation";
 import {
   resolveNavigation,
   sectionForShortcut,
@@ -394,50 +395,52 @@ function App() {
     content = <Onboarding onModelSelected={handleModelSelected} />;
   } else {
     content = (
-      <div dir={direction} className="hub-shell select-none cursor-default">
-        <ErrorBoundary context="What's New">
-          <WhatsNewGate />
-        </ErrorBoundary>
-        <ErrorBoundary context="Meeting Consent">
-          <MeetingConsentGate />
-        </ErrorBoundary>
-        {/* Canvas (rail) + inset panel (content) */}
-        <div className="hub-body">
-          <Sidebar
-            activeSection={currentSection}
-            onSectionChange={setCurrentSection}
-            onNavigate={goTo}
-            collapsed={railCollapsed}
-            onToggleCollapsed={toggleRailCollapsed}
-          />
-          <div className="hub-panel">
-            <div
-              ref={settingsScrollRef}
-              className={
-                currentSection === "home"
-                  ? "hub-panel-scroll overflow-hidden"
-                  : "hub-panel-scroll overflow-y-auto"
-              }
-            >
+      <HubNavigationContext.Provider value={goTo}>
+        <div dir={direction} className="hub-shell select-none cursor-default">
+          <ErrorBoundary context="What's New">
+            <WhatsNewGate />
+          </ErrorBoundary>
+          <ErrorBoundary context="Meeting Consent">
+            <MeetingConsentGate />
+          </ErrorBoundary>
+          {/* Canvas (rail) + inset panel (content) */}
+          <div className="hub-body">
+            <Sidebar
+              activeSection={currentSection}
+              onSectionChange={setCurrentSection}
+              onNavigate={goTo}
+              collapsed={railCollapsed}
+              onToggleCollapsed={toggleRailCollapsed}
+            />
+            <div className="hub-panel">
               <div
+                ref={settingsScrollRef}
                 className={
                   currentSection === "home"
-                    ? "h-full"
-                    : "flex flex-col items-center p-4 gap-4"
+                    ? "hub-panel-scroll overflow-hidden"
+                    : "hub-panel-scroll overflow-y-auto"
                 }
               >
-                {currentSection !== "home" ? (
-                  <AccessibilityPermissions />
-                ) : null}
-                {currentSection !== "home" ? <SecureInputWarning /> : null}
-                {renderSettingsContent(currentSection)}
+                <div
+                  className={
+                    currentSection === "home"
+                      ? "h-full"
+                      : "flex flex-col items-center p-4 gap-4"
+                  }
+                >
+                  {currentSection !== "home" ? (
+                    <AccessibilityPermissions />
+                  ) : null}
+                  {currentSection !== "home" ? <SecureInputWarning /> : null}
+                  {renderSettingsContent(currentSection)}
+                </div>
               </div>
             </div>
           </div>
+          {/* Fixed footer at bottom */}
+          <Footer />
         </div>
-        {/* Fixed footer at bottom */}
-        <Footer />
-      </div>
+      </HubNavigationContext.Provider>
     );
   }
 

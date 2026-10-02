@@ -14,8 +14,17 @@ test.describe("hub webview (mocked Tauri IPC)", () => {
     await expect(page.getByTitle("Settings")).toBeVisible();
     await expect(page.getByTitle("Help")).toBeVisible();
     // "Models" left the rail: it now lives under Settings.
-    await expect(page.getByTitle("Models")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+    await expect(
+      page
+        .getByRole("navigation", { name: "Hub sections" })
+        .getByTitle("Models"),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: /Good (morning|afternoon|evening)/,
+      }),
+    ).toBeVisible();
 
     // The IPC mock actually got exercised by startup.
     expect(mock.calls.map((c) => c.cmd)).toContain("get_app_settings");
@@ -111,7 +120,12 @@ test.describe("hub shell (Papel & Anil)", () => {
   test("Ctrl+1..5 and Ctrl+, switch sections", async ({ page }) => {
     await installTauriMock(page);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: /Good (morning|afternoon|evening)/,
+      }),
+    ).toBeVisible();
 
     await page.keyboard.press("Control+3");
     await expect(
@@ -129,7 +143,12 @@ test.describe("hub shell (Papel & Anil)", () => {
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
     await page.keyboard.press("Control+1");
-    await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: /Good (morning|afternoon|evening)/,
+      }),
+    ).toBeVisible();
   });
 
   test("legacy section 'models' lands on Settings > Models", async ({
@@ -137,15 +156,17 @@ test.describe("hub shell (Papel & Anil)", () => {
   }) => {
     const mock = await installTauriMock(page);
     await page.goto("/");
+    // Two listeners: pendingSettingsTab (module load) and App (effect).
     await expect
-      .poll(() =>
-        mock.calls.some(
-          (call) =>
-            call.cmd === "plugin:event|listen" &&
-            call.args.event === "hub://navigate",
-        ),
+      .poll(
+        () =>
+          mock.calls.filter(
+            (call) =>
+              call.cmd === "plugin:event|listen" &&
+              call.args.event === "hub://navigate",
+          ).length,
       )
-      .toBe(true);
+      .toBeGreaterThanOrEqual(2);
 
     await emitTauriEvent(page, "hub://navigate", { section: "models" });
 
@@ -160,7 +181,12 @@ test.describe("hub shell (Papel & Anil)", () => {
     const notes = page.getByTitle("Notes · Coming in v1.1");
     await expect(notes).toHaveAttribute("aria-disabled", "true");
     await notes.click({ force: true });
-    await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: /Good (morning|afternoon|evening)/,
+      }),
+    ).toBeVisible();
   });
 
   test("rail collapses to icons and remembers the choice", async ({ page }) => {
@@ -233,7 +259,12 @@ test.describe("hub shell (Papel & Anil)", () => {
       },
     });
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: /Good (morning|afternoon|evening)/,
+      }),
+    ).toBeVisible();
     await expect(page.getByTestId("setup-checklist")).toHaveCount(0);
   });
 });
