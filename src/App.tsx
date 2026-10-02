@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useState,
@@ -22,6 +23,13 @@ import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
 import { type OnboardingPreviewStep } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
+import { useRailCollapsed } from "./components/shell/useRailCollapsed";
+import {
+  resolveNavigation,
+  sectionForShortcut,
+  type Navigation,
+} from "./components/shell/navModel";
+import { handleNavigatePayload } from "./components/settings/hub/pendingSettingsTab";
 import { WhatsNewGate } from "./components/whats-new";
 import MeetingConsentGate from "./components/MeetingConsentGate";
 import { useSettings } from "./hooks/useSettings";
@@ -51,6 +59,7 @@ function App() {
   // (vs a new user who needs full onboarding including model selection)
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [currentSection, setCurrentSection] = useState<SidebarSection>("home");
+  const [railCollapsed, toggleRailCollapsed] = useRailCollapsed();
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
@@ -204,20 +213,48 @@ function App() {
     };
   }, [t]);
 
-  // Toast actions can deep-link a sidebar section ("open_summary_settings"
-  // → Settings). Only navigate to sections the sidebar actually exposes;
-  // a `settingsTab` in the payload is routed by `pendingSettingsTab`.
+  // Move to a section, optionally landing on a Settings tab. The tab goes
+  // through `pendingSettingsTab`, which delivers it to a mounted hub or stashes
+  // it for the hub this navigation is about to mount.
+  const goTo = useCallback((navigation: Navigation) => {
+    if (navigation.section) setCurrentSection(navigation.section);
+    if (navigation.settingsTab) {
+      handleNavigatePayload({ settingsTab: navigation.settingsTab });
+    }
+  }, []);
+
+  // Toast/assistant actions deep-link a section via `hub://navigate`. Legacy
+  // `models` redirects to Settings → Models. An explicit `settingsTab` in the
+  // payload is already routed by `pendingSettingsTab`'s own listener, so only
+  // a tab derived by the redirect is forwarded here.
   useEffect(() => {
-    const unlisten = listen<{ section?: string }>("hub://navigate", (event) => {
-      const section = event.payload.section;
-      if (section !== undefined && section in SECTIONS_CONFIG) {
-        setCurrentSection(section as SidebarSection);
-      }
-    });
+    const unlisten = listen<{ section?: string; settingsTab?: string }>(
+      "hub://navigate",
+      (event) => {
+        const navigation = resolveNavigation(event.payload);
+        if (navigation.section) setCurrentSection(navigation.section);
+        if (navigation.settingsTab && event.payload.settingsTab === undefined) {
+          handleNavigatePayload({ settingsTab: navigation.settingsTab });
+        }
+      },
+    );
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [settings]);
+  }, []);
+
+  // Ctrl/Cmd+1..5 switch sections, Ctrl/Cmd+, opens Settings.
+  useEffect(() => {
+    if (onboardingStep !== "done") return;
+    const handleShortcut = (event: KeyboardEvent) => {
+      const section = sectionForShortcut(event);
+      if (!section) return;
+      event.preventDefault();
+      setCurrentSection(section);
+    };
+    document.addEventListener("keydown", handleShortcut);
+    return () => document.removeEventListener("keydown", handleShortcut);
+  }, [onboardingStep]);
 
   const revealMainWindowForPermissions = async () => {
     try {
@@ -357,30 +394,29 @@ function App() {
     content = <Onboarding onModelSelected={handleModelSelected} />;
   } else {
     content = (
-      <div
-        dir={direction}
-        className="h-screen flex flex-col select-none cursor-default"
-      >
+      <div dir={direction} className="hub-shell select-none cursor-default">
         <ErrorBoundary context="What's New">
           <WhatsNewGate />
         </ErrorBoundary>
         <ErrorBoundary context="Meeting Consent">
           <MeetingConsentGate />
         </ErrorBoundary>
-        {/* Main content area that takes remaining space */}
-        <div className="flex-1 flex overflow-hidden">
+        {/* Canvas (rail) + inset panel (content) */}
+        <div className="hub-body">
           <Sidebar
             activeSection={currentSection}
             onSectionChange={setCurrentSection}
+            onNavigate={goTo}
+            collapsed={railCollapsed}
+            onToggleCollapsed={toggleRailCollapsed}
           />
-          {/* Scrollable content area */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="hub-panel">
             <div
               ref={settingsScrollRef}
               className={
                 currentSection === "home"
-                  ? "flex-1 overflow-hidden"
-                  : "flex-1 overflow-y-auto"
+                  ? "hub-panel-scroll overflow-hidden"
+                  : "hub-panel-scroll overflow-y-auto"
               }
             >
               <div

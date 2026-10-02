@@ -552,6 +552,14 @@ async changeUpdateChecksSetting(enabled: boolean) : Promise<Result<null, Command
     else return { status: "error", error: e  as any };
 }
 },
+async changeDismissedUiSetting(ids: string[]) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_dismissed_ui_setting", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeShowWhatsNewOnUpdateSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_show_whats_new_on_update_setting", { enabled }) };
@@ -1939,7 +1947,13 @@ audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundThe
  * upgrading from before this key existed are blanked by the migration so they
  * see the current release's notes — see `apply_settings_migrations`.
  */
-whats_new_last_seen_version?: string; selected_model?: string; onboarding_completed?: boolean; always_on_microphone?: boolean; selected_microphone?: string | null; 
+whats_new_last_seen_version?: string; 
+/**
+ * Hub UI elements the user dismissed (home banner, tip card, setup
+ * checklist). Stable string ids owned by the frontend; sanitized on write
+ * by `sanitize_dismissed_ui`.
+ */
+dismissed_ui?: string[]; selected_model?: string; onboarding_completed?: boolean; always_on_microphone?: boolean; selected_microphone?: string | null; 
 /**
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).

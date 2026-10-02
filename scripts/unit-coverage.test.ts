@@ -7,6 +7,8 @@ const standaloneTests = [
   "../src/components/settings/history/clipboard.test.ts",
   "../src/components/settings/history/historyView.test.ts",
   "../src/styles/theme.test.ts",
+  "../src/components/shell/navModel.test.ts",
+  "../src/components/shell/setupItems.test.ts",
 ];
 
 for (const standaloneTest of standaloneTests) {

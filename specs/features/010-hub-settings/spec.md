@@ -8,16 +8,26 @@ O Hub é a janela principal: onde o usuário vê o que ditou, gerencia notas e r
 
 ## Estrutura do Hub (barra lateral)
 
-| Seção                    | Release                      | Conteúdo                              |
-| ------------------------ | ---------------------------- | ------------------------------------- |
-| **Início**               | v1                           | Histórico de ditados + estatísticas   |
-| **Notas**                | v1.1+                        | Scratchpad (F007)                     |
-| **Reuniões**             | v1                           | Lista e detalhes (F009)               |
-| **Dicionário**           | v1 (vocab + muletas) / v1.1+ | Termos, muletas e substituições       |
-| **Snippets**             | v1.1+                        | Gatilhos e expansões                  |
-| **Estilos**              | v1.1+                        | Perfis de app, nível de limpeza       |
-| **Modelos & Provedores** | v1 (só modelos locais)       | F003; provedores em nuvem na v1.1+    |
-| **Configurações**        | v1                           | Geral, Sistema, Privacidade, Avançado |
+O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredondado; só o painel rola. Largura 236 px, colapsável para 64 px (só ícones + tooltip; a escolha persiste por usuário no navegador). A barra de título nativa é mantida ([ADR-0003](../../../docs/adr/0003-identidade-visual-papel-e-anil.md)).
+
+| Grupo / seção               | Release                       | Conteúdo                                                                                     |
+| --------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------- |
+| **Início**                  | v1                            | Histórico de ditados + estatísticas                                                          |
+| **Notetaker** (reuniões)    | v1                            | Lista e detalhes (F009)                                                                      |
+| **Notas**                   | v1.1+ (visível, desabilitada) | Scratchpad (F007); item com tag "v1.1", sem navegação                                        |
+| _Personalizar_ · Dicionário | v1 (vocab + muletas) / v1.1+  | Termos, muletas e substituições                                                              |
+| _Personalizar_ · Assistente | v1.1+ (visível, desabilitada) | Painel do assistente (F012); item com tag "v1.1", sem navegação                              |
+| Snippets / Estilos          | v1.1+                         | Gatilhos e expansões; perfis de app (ainda sem item no rail)                                 |
+| Rodapé · **Configurações**  | v1                            | Geral, **Modelos**, Sistema, Privacidade, Avançado (sub-navegação por categorias na etapa 5) |
+| Rodapé · **Ajuda**          | v1                            | Atalhos de teclado e sobre o app                                                             |
+
+**Modelos & Provedores não é mais uma seção do rail**: vive em Configurações → Modelos (F003; provedores em nuvem na v1.1+). O deep link antigo `hub://navigate { section: "models" }` continua funcionando e leva a Configurações → Modelos.
+
+### Navegação e checklist
+
+- **FR-010-20** Atalhos: `Ctrl/Cmd+1…5` trocam para Início, Notetaker, Dicionário, Configurações e Ajuda (itens v1.1+ são pulados); `Ctrl/Cmd+,` abre Configurações.
+- **FR-010-21** Card "Configurar Notetaker" no pé do rail com 4 itens (baixar modelo, testar microfone, permitir áudio do sistema, chave para resumos), barra de progresso e deep link por item para a aba de Configurações correspondente. Itens de modelo e de provedor de resumo são derivados do estado real; os demais são marcados ao serem visitados. O card some ao concluir tudo ou ao ser dispensado; o estado persiste no setting `dismissed_ui` (lista de ids; ids `setup_checklist` e `setup:<item>`).
+- **FR-010-22** `dismissed_ui` é saneado no backend (trim, sem duplicatas/vazios, ids ≤ 64 caracteres, no máximo 32 ids).
 
 ## Requisitos funcionais
 

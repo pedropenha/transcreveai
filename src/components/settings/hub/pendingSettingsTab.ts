@@ -16,6 +16,7 @@ import { listen } from "@tauri-apps/api/event";
 /** Valid Settings hub tabs — kept in sync with `SettingsHub`'s TABS. */
 export const SETTINGS_TABS = [
   "general",
+  "models",
   "system",
   "privacy",
   "advanced",

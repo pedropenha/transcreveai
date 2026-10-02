@@ -556,6 +556,11 @@ pub struct AppSettings {
     /// see the current release's notes — see `apply_settings_migrations`.
     #[serde(default = "default_whats_new_last_seen_version")]
     pub whats_new_last_seen_version: String,
+    /// Hub UI elements the user dismissed (home banner, tip card, setup
+    /// checklist). Stable string ids owned by the frontend; sanitized on write
+    /// by `sanitize_dismissed_ui`.
+    #[serde(default)]
+    pub dismissed_ui: Vec<String>,
     #[serde(default = "default_model")]
     pub selected_model: String,
     #[serde(default)]
@@ -922,6 +927,31 @@ fn default_update_checks_enabled() -> bool {
 
 fn default_show_whats_new_on_update() -> bool {
     true
+}
+
+/// Upper bounds for `dismissed_ui`: the frontend only ever stores a handful of
+/// short ids, so anything beyond these limits is malformed input.
+const MAX_DISMISSED_UI_IDS: usize = 32;
+const MAX_DISMISSED_UI_ID_LEN: usize = 64;
+
+/// Normalizes the dismissed-UI id list: trims, drops blanks and over-long ids
+/// and duplicates (keeping first-seen order), and caps the list length.
+pub fn sanitize_dismissed_ui(ids: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in ids {
+        let id = raw.trim();
+        if id.is_empty() || id.len() > MAX_DISMISSED_UI_ID_LEN {
+            continue;
+        }
+        if out.iter().any(|existing| existing == id) {
+            continue;
+        }
+        out.push(id.to_string());
+        if out.len() == MAX_DISMISSED_UI_IDS {
+            break;
+        }
+    }
+    out
 }
 
 fn default_whats_new_last_seen_version() -> String {
@@ -1423,6 +1453,7 @@ pub fn get_default_settings() -> AppSettings {
         update_checks_enabled: default_update_checks_enabled(),
         show_whats_new_on_update: default_show_whats_new_on_update(),
         whats_new_last_seen_version: default_whats_new_last_seen_version(),
+        dismissed_ui: Vec::new(),
         selected_model: "".to_string(),
         onboarding_completed: false,
         always_on_microphone: false,
@@ -1879,6 +1910,36 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dismissed_ui_defaults_to_empty_and_tolerates_old_stores() {
+        assert!(get_default_settings().dismissed_ui.is_empty());
+        // A store written before the field existed still deserializes.
+        let raw = serde_json::json!({ "onboarding_completed": true });
+        let settings: AppSettings = serde_json::from_value(raw).unwrap();
+        assert!(settings.dismissed_ui.is_empty());
+    }
+
+    #[test]
+    fn sanitize_dismissed_ui_trims_dedupes_and_drops_invalid_ids() {
+        let cleaned = sanitize_dismissed_ui(vec![
+            " home_banner ".into(),
+            "home_banner".into(),
+            "".into(),
+            "   ".into(),
+            "x".repeat(MAX_DISMISSED_UI_ID_LEN + 1),
+            "setup_checklist".into(),
+        ]);
+        assert_eq!(cleaned, vec!["home_banner", "setup_checklist"]);
+    }
+
+    #[test]
+    fn sanitize_dismissed_ui_caps_the_list_length() {
+        let many: Vec<String> = (0..100).map(|i| format!("id{i}")).collect();
+        let cleaned = sanitize_dismissed_ui(many);
+        assert_eq!(cleaned.len(), MAX_DISMISSED_UI_IDS);
+        assert_eq!(cleaned[0], "id0");
+    }
+
     use super::*;
 
     #[test]

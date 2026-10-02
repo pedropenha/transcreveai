@@ -1,0 +1,380 @@
+/* Hub shell — "Papel & Anil" (docs/design/proposta-ui.html §Estrutura).
+   The rail sits directly on the warm canvas; content lives in an inset panel
+   that scrolls while the rail never does. */
+
+.hub-shell {
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
+  background: var(--canvas);
+  color: var(--text);
+}
+
+.hub-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+/* ---- Panel ---- */
+.hub-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  margin: 0 var(--panel-inset) var(--panel-inset) 0;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--panel);
+  box-shadow: var(--elev-panel);
+  container-type: inline-size;
+  container-name: panel;
+  /* Settings components use `bg-background`: inside the panel that is the sheet. */
+  --color-background: var(--panel);
+}
+
+.hub-panel-scroll {
+  min-width: 0;
+  flex: 1;
+}
+
+/* ---- Rail ---- */
+.hub-rail {
+  display: flex;
+  width: var(--rail-width);
+  height: 100%;
+  flex: none;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-3) var(--space-2) var(--space-4);
+  overflow: hidden;
+  transition: width var(--motion-duration-state) var(--motion-easing-standard);
+}
+
+.hub-rail[data-collapsed="true"] {
+  width: var(--rail-width-collapsed);
+  padding-inline: var(--space-2);
+}
+
+.rail-logo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-0-5) var(--space-1) var(--space-5);
+}
+
+.hub-rail[data-collapsed="true"] .rail-logo {
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rail-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius-sm);
+}
+
+.rail-mark {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
+}
+
+.rail-wordmark {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.rail-wordmark em {
+  margin-left: 1px;
+  color: var(--urucum);
+  font-family: var(--font-family-serif);
+  font-size: 19px;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.hub-rail[data-collapsed="true"] .rail-wordmark,
+.hub-rail[data-collapsed="true"] .rail-label-text,
+.hub-rail[data-collapsed="true"] .rail-tag,
+.hub-rail[data-collapsed="true"] .rail-group-label {
+  display: none;
+}
+
+.rail-group {
+  display: grid;
+  gap: 2px;
+}
+
+.rail-group-label {
+  padding: var(--space-4) 10px var(--space-1-5);
+}
+
+.caps {
+  color: var(--subtle);
+  font-size: var(--fs-label);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+}
+
+.rail-item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 36px;
+  align-items: center;
+  gap: 11px;
+  padding-inline: 10px;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: var(--font-weight-medium);
+  text-align: start;
+  transition: background var(--motion-duration-fast)
+    var(--motion-easing-standard);
+}
+
+.rail-item svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.rail-item:hover {
+  background: var(--hover);
+}
+
+.rail-item[aria-current="page"] {
+  background: var(--rail-active-bg);
+  box-shadow:
+    var(--elev-xs),
+    0 0 0 1px var(--line);
+  font-weight: var(--font-weight-semibold);
+}
+
+.rail-item[aria-current="page"] svg {
+  color: var(--accent);
+}
+
+.rail-item[aria-disabled="true"] {
+  color: var(--subtle);
+  cursor: default;
+}
+
+.rail-item[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.hub-rail[data-collapsed="true"] .rail-item {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.rail-tag {
+  margin-left: auto;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--subtle);
+  font-size: 10.5px;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  line-height: 17px;
+}
+
+.rail-spacer {
+  flex: 1;
+  min-height: var(--space-3);
+}
+
+.rail-foot {
+  display: grid;
+  gap: 2px;
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  transition:
+    background var(--motion-duration-fast),
+    color var(--motion-duration-fast);
+}
+
+.icon-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+:where(.hub-rail, .hub-panel) :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* ---- Setup checklist ---- */
+.setup-card {
+  padding: 14px 14px var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow:
+    var(--elev-xs),
+    0 0 0 1px var(--line);
+}
+
+.setup-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.setup-card-head h2 {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.setup-card-head .icon-button {
+  width: 24px;
+  height: 24px;
+  margin-right: -4px;
+}
+
+.setup-progress {
+  height: 5px;
+  margin: 10px 0 var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.setup-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 60%, var(--urucum))
+  );
+}
+
+.setup-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding-block: 6px;
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  text-align: start;
+}
+
+.setup-item[data-done="true"] {
+  color: var(--subtle);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--subtle) 50%, transparent);
+}
+
+.setup-check {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  place-items: center;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--on-accent);
+}
+
+.setup-item[data-done="true"] .setup-check {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* ---- Help page ---- */
+.help-shortcuts {
+  margin-bottom: var(--space-6);
+}
+
+.help-shortcuts ul {
+  margin-top: var(--space-2);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.help-shortcuts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-sm);
+}
+
+.help-shortcuts li:first-child {
+  border-top: 0;
+}
+
+.help-keys {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.kbd {
+  display: inline-grid;
+  min-width: 24px;
+  height: 24px;
+  place-items: center;
+  padding-inline: 7px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Narrow windows behave as if the rail were collapsed. */
+@media (max-width: 760px) {
+  .hub-rail {
+    width: var(--rail-width-collapsed);
+    padding-inline: var(--space-2);
+  }
+  .hub-rail .rail-wordmark,
+  .hub-rail .rail-label-text,
+  .hub-rail .rail-tag,
+  .hub-rail .rail-group-label,
+  .hub-rail .setup-card {
+    display: none;
+  }
+  .hub-rail .rail-item {
+    justify-content: center;
+    padding-inline: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-rail {
+    transition: none;
+  }
+}

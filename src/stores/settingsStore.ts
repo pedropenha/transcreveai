@@ -101,6 +101,7 @@ const settingUpdaters: {
     commands.changeUpdateChecksSetting(value as boolean),
   show_whats_new_on_update: (value) =>
     commands.changeShowWhatsNewOnUpdateSetting(value as boolean),
+  dismissed_ui: (value) => commands.changeDismissedUiSetting(value as string[]),
   whats_new_last_seen_version: (value) =>
     commands.changeWhatsNewLastSeenVersionSetting(value as string),
   shortcut_activation: (value) =>

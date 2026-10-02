@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { GeneralSettings } from "../general/GeneralSettings";
+import { ModelsSettings } from "../models/ModelsSettings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { AutostartToggle } from "../AutostartToggle";
 import { StartHidden } from "../StartHidden";
@@ -64,6 +65,7 @@ export const SettingsHub: React.FC = () => {
       </nav>
       <section className="settings-panel">
         {tab === "general" ? <GeneralSettings /> : null}
+        {tab === "models" ? <ModelsSettings /> : null}
         {tab === "system" ? <SystemSettings /> : null}
         {tab === "privacy" ? <PrivacySettings /> : null}
         {tab === "advanced" ? <AdvancedHubSettings /> : null}

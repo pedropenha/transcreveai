@@ -811,6 +811,25 @@ pub fn change_update_checks_setting(app: AppHandle, enabled: bool) -> CommandRes
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_dismissed_ui_setting(app: AppHandle, ids: Vec<String>) -> CommandResult<()> {
+    let ids = settings::sanitize_dismissed_ui(ids);
+    let mut settings = settings::get_settings(&app);
+    settings.dismissed_ui = ids.clone();
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "dismissed_ui",
+            "value": ids
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_show_whats_new_on_update_setting(app: AppHandle, enabled: bool) -> CommandResult<()> {
     let mut settings = settings::get_settings(&app);
     settings.show_whats_new_on_update = enabled;

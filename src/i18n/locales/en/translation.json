@@ -22,10 +22,19 @@
     "label": "Hub sections",
     "productName": "Transcreve.ai",
     "home": "Home",
-    "meetings": "Meetings",
+    "meetings": "Notetaker",
     "dictionary": "Dictionary",
-    "models": "Models",
-    "settings": "Settings"
+    "settings": "Settings",
+    "notes": "Notes",
+    "assistant": "Assistant",
+    "help": "Help",
+    "soonTag": "v1.1",
+    "groupCustomize": "Personalize",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "wordmarkBase": "transcreve",
+    "wordmarkSuffix": ".ai",
+    "soonHint": "Coming in v1.1"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -1064,7 +1073,8 @@
       "general": "General",
       "system": "System",
       "privacy": "Privacy",
-      "advanced": "Advanced"
+      "advanced": "Advanced",
+      "models": "Models"
     },
     "groups": {
       "startup": "Startup and tray",
@@ -1106,5 +1116,29 @@
     "learnMore": "How to fix",
     "recorderBlocked": "Can't record shortcuts right now — macOS Secure Input is blocking key events. Resolve the Secure Input warning first.",
     "dismiss": "Dismiss"
+  },
+  "setupChecklist": {
+    "title": "Set up Notetaker",
+    "progress": "{{done}} of {{total}} done",
+    "dismiss": "Dismiss checklist",
+    "items": {
+      "model": "Download a model",
+      "microphone": "Test the microphone",
+      "systemAudio": "Allow system audio",
+      "summaryKey": "Key for summaries"
+    }
+  },
+  "help": {
+    "title": "Help",
+    "subtitle": "Shortcuts and about this app.",
+    "shortcutsTitle": "Keyboard shortcuts",
+    "shortcuts": {
+      "home": "Go to Home",
+      "meetings": "Go to Notetaker",
+      "dictionary": "Go to Dictionary",
+      "settings": "Go to Settings",
+      "help": "Go to Help",
+      "settingsAlt": "Open Settings"
+    }
   }
 }

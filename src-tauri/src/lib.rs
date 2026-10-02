@@ -976,6 +976,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_filler_word_removal_enabled_setting,
             shortcut::change_app_language_setting,
             shortcut::change_update_checks_setting,
+            shortcut::change_dismissed_ui_setting,
             shortcut::change_show_whats_new_on_update_setting,
             shortcut::change_whats_new_last_seen_version_setting,
             shortcut::change_keyboard_implementation_setting,

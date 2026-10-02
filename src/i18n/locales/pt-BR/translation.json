@@ -22,10 +22,19 @@
     "label": "Seções do Hub",
     "productName": "Transcreve.ai",
     "home": "Início",
-    "meetings": "Reuniões",
+    "meetings": "Notetaker",
     "dictionary": "Dicionário",
-    "models": "Modelos",
-    "settings": "Configurações"
+    "settings": "Configurações",
+    "notes": "Notas",
+    "assistant": "Assistente",
+    "help": "Ajuda",
+    "soonTag": "v1.1",
+    "groupCustomize": "Personalizar",
+    "collapse": "Recolher barra lateral",
+    "expand": "Expandir barra lateral",
+    "wordmarkBase": "transcreve",
+    "wordmarkSuffix": ".ai",
+    "soonHint": "Disponível na v1.1"
   },
   "onboarding": {
     "subtitle": "Para começar, escolha um modelo de transcrição",
@@ -1064,7 +1073,8 @@
       "general": "Geral",
       "system": "Sistema",
       "privacy": "Privacidade",
-      "advanced": "Avançado"
+      "advanced": "Avançado",
+      "models": "Modelos"
     },
     "groups": {
       "startup": "Inicialização e bandeja",
@@ -1106,5 +1116,29 @@
     "learnMore": "Como resolver isso",
     "recorderBlocked": "Não é possível gravar atalhos agora — o Secure Input do macOS está bloqueando os eventos de tecla. Resolva primeiro o aviso do Secure Input.",
     "dismiss": "Dispensar"
+  },
+  "setupChecklist": {
+    "title": "Configurar Notetaker",
+    "progress": "{{done}} de {{total}} concluídos",
+    "dismiss": "Dispensar checklist",
+    "items": {
+      "model": "Baixar modelo",
+      "microphone": "Testar microfone",
+      "systemAudio": "Permitir áudio do sistema",
+      "summaryKey": "Chave para resumos"
+    }
+  },
+  "help": {
+    "title": "Ajuda",
+    "subtitle": "Atalhos e informações sobre o app.",
+    "shortcutsTitle": "Atalhos de teclado",
+    "shortcuts": {
+      "home": "Ir para Início",
+      "meetings": "Ir para Notetaker",
+      "dictionary": "Ir para Dicionário",
+      "settings": "Ir para Configurações",
+      "help": "Ir para Ajuda",
+      "settingsAlt": "Abrir Configurações"
+    }
   }
 }
