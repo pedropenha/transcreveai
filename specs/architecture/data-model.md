@@ -133,8 +133,11 @@ CREATE VIRTUAL TABLE notes_fts USING fts5(title, body_md, content='notes', conte
 CREATE TABLE meetings (
   id            TEXT PRIMARY KEY,
   title         TEXT NOT NULL,
-  app_exe       TEXT,                           -- Zoom.exe, chrome.exe…
-  app_label     TEXT,                           -- "Google Meet"
+  app_exe       TEXT,                           -- Zoom.exe, chrome.exe…  ┐ `source_app` = (app_exe, app_label);
+  app_label     TEXT,                           -- "Google Meet"          ┘ manuais/presenciais: NULL
+  app_exe_path  TEXT,                           -- caminho do .exe detectado, só para extrair o ícone (migração 15);
+                                                -- NULL em reuniões anteriores/sem detecção; só gravado se passar
+                                                -- is_safe_exe_path (X:\…\*.exe local); nunca sai por IPC
   detection     TEXT NOT NULL CHECK (detection IN ('auto_prompt','auto_start','manual','in_person')),
   status        TEXT NOT NULL CHECK (status IN ('recording','paused','processing','ready','error','recovered')),
   started_at    INTEGER NOT NULL,
@@ -181,6 +184,19 @@ CREATE TABLE meeting_app_rules (
   builtin       INTEGER NOT NULL DEFAULT 0
 );
 ```
+
+**`source_app` e status de lista (Notetaker).** O "app de origem" de uma reunião é o par `app_exe` + `app_label` (já existiam); a migração 15 só acrescenta `app_exe_path`, nullable e aditiva (reuniões antigas ficam com `NULL` e a UI cai no monograma). Nada disso é coluna nova de status: o chip da linha (`Transcrevendo` / `Sem resumo` / `Falhou` / `Resumo pronto`) é **derivado** de `status` × `summary_status`:
+
+| `status` | `summary_status` | `list_status` |
+| --- | --- | --- |
+| `recording` / `paused` | — | `recording` / `paused` (bloco "Agora") |
+| `processing` | — | `processing` |
+| `error` / `recovered` | — | `failed` |
+| `ready` | `pending` | `processing` (resumo em andamento) |
+| `ready` | `disabled` (sem chave, FR-009-21) | `no_summary` |
+| `ready` | `error` | `failed` |
+| `ready` | `ready` com `summary_md` não vazio | `ready` |
+| `ready` | `ready` sem `summary_md` | `no_summary` |
 
 Triggers mantêm as tabelas FTS sincronizadas. Migrações versionadas, aplicadas na inicialização dentro de transação (`rusqlite_migration`, herdado do Handy — [ADR-0001](../../docs/adr/0001-fork-do-handy-como-base.md)).
 

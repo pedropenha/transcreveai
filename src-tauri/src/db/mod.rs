@@ -596,6 +596,52 @@ mod tests {
         assert_eq!(stale, 0);
     }
 
+    /// Migration 15 adds the nullable `meetings.app_exe_path`. A meeting that
+    /// already existed at v14 must survive intact (path NULL) and stay
+    /// searchable; new rows can carry a path.
+    #[test]
+    fn migration_15_adds_nullable_app_exe_path_without_losing_meetings() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        configure_connection(&conn).expect("configure connection");
+        Migrations::new(migrations::MIGRATIONS[..14].to_vec())
+            .to_latest(&mut conn)
+            .expect("apply migrations 1-14");
+        conn.execute(
+            "INSERT INTO meetings (id, title, app_exe, app_label, detection, status, started_at)
+             VALUES ('m-old', 'Daily antiga', 'Zoom.exe', 'Zoom', 'auto_prompt', 'ready', 100)",
+            [],
+        )
+        .expect("insert meeting at v14");
+
+        run_migrations(&mut conn).expect("migrate to latest");
+
+        let (title, exe, label, path): (String, String, String, Option<String>) = conn
+            .query_row(
+                "SELECT title, app_exe, app_label, app_exe_path FROM meetings WHERE id = 'm-old'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read migrated meeting");
+        assert_eq!(title, "Daily antiga");
+        assert_eq!(exe, "Zoom.exe");
+        assert_eq!(label, "Zoom");
+        assert_eq!(path, None, "backfill-safe: old rows keep a NULL path");
+
+        conn.execute(
+            "UPDATE meetings SET app_exe_path = 'C:\\apps\\Zoom.exe' WHERE id = 'm-old'",
+            [],
+        )
+        .expect("the column is writable");
+        let hits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM meetings_fts WHERE meetings_fts MATCH 'antiga'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fts still indexes the old meeting");
+        assert_eq!(hits, 1);
+    }
+
     #[test]
     fn sqlx_tracking_is_adopted_without_rerunning_old_migrations() {
         let mut conn = Connection::open_in_memory().expect("open in-memory db");

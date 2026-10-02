@@ -490,4 +490,12 @@ Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todo
             VALUES (new.rowid, new.final_text, new.raw_text);
         END;",
     ),
+    // --- meetings.app_exe_path (15, Notetaker list: source app icon) ----------
+    // The Notetaker list shows each meeting's source-app logo extracted from
+    // the detected executable. `app_exe` (file name) + `app_label` (friendly
+    // name) already form the `source_app` pair; what a restart loses is the
+    // *path* the icon is extracted from, so it is persisted here. Nullable and
+    // additive: existing rows keep every column and simply have no path (the
+    // UI falls back to a monogram). Written only after `is_safe_exe_path`.
+    M::up("ALTER TABLE meetings ADD COLUMN app_exe_path TEXT;"),
 ];

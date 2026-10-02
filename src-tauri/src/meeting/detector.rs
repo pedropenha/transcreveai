@@ -237,6 +237,11 @@ pub struct DetectorStartRequest {
     pub detection_id: String,
     pub app_label: String,
     pub exe: String,
+    /// Full executable path of the detection (registry-sourced, untrusted —
+    /// the session re-validates it before persisting; used only to extract
+    /// the source-app icon later). Absent for packaged apps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exe_path: Option<String>,
     /// `start_mic_only` → mic track only; `start`/`always` → full capture.
     pub mic_only: bool,
     /// `true` when the request came from FR-008-13 auto-start (a rule

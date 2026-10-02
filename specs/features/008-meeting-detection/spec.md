@@ -54,6 +54,7 @@ Na **v1** o conjunto embutido é **Zoom, Teams, Meet (navegador) e Webex** (ADR-
   - Sempre iniciar automaticamente para <App>
   - Nunca perguntar para <App>
   - Ignorar esta reunião
+- **FR-008-16** A detecção entrega ao iniciar (`detector://start-requested`) o rótulo, o nome do exe **e o caminho do exe** (`exe_path`, opcional). A sessão valida o caminho (`is_safe_exe_path`: local `X:\…\*.exe`, ≤ 520 caracteres) e o persiste em `meetings.app_exe_path` junto com `app_exe`/`app_label`, para a lista do Notetaker exibir o ícone do app (F009 FR-009-28).
 - **FR-008-09** "Iniciar Notetaker" → chama `meeting_start` (F009) com app/rótulo; o toast vira confirmação "Gravando · <App>" por 3 s e some; a Flow Bar passa a `meeting_recording`.
 - **FR-008-10** Sem interação, o toast recolhe após 60 s para um indicador pequeno na Flow Bar (ponto âmbar) que reabre o toast ao hover, até a reunião terminar.
 - **FR-008-11** Som de notificação opcional (padrão desligado).

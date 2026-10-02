@@ -83,7 +83,24 @@ pub(crate) fn is_safe_exe_path(path: &str) -> bool {
         && path
             .get(path.len() - 4..)
             .is_some_and(|ext| ext.eq_ignore_ascii_case(".exe"));
-    drive_form && exe && !path.contains('\0')
+    // No NUL, forward slashes, NTFS alternate streams (`:` past the drive
+    // letter) or `..` segments.
+    let clean = !path.contains('\0')
+        && !path.contains('/')
+        && !path.get(2..).is_some_and(|rest| rest.contains(':'))
+        && !path.split('\\').any(|segment| segment == "..");
+    drive_form && exe && clean
+}
+
+/// Longest exe path persisted (Windows `MAX_PATH` is 260; long-path
+/// installs stay well below this).
+const MAX_EXE_PATH_CHARS: usize = 520;
+
+/// Boundary gate for an exe path arriving over IPC before it is stored on a
+/// meeting: trimmed, bounded and [`is_safe_exe_path`]-safe, else dropped.
+pub(crate) fn sanitize_exe_path(raw: Option<String>) -> Option<String> {
+    raw.map(|path| path.trim().to_string())
+        .filter(|path| path.chars().count() <= MAX_EXE_PATH_CHARS && is_safe_exe_path(path))
 }
 
 /// The exe path whose icon should be extracted, or `None` when the app has

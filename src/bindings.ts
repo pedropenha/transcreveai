@@ -1626,7 +1626,7 @@ async meetingWindowOpen(meetingId: string | null) : Promise<Result<null, Command
 /**
  * Every meeting, newest first (FR-009-13 "Minhas notas" list).
  */
-async meetingList() : Promise<Result<Meeting[], CommandError>> {
+async meetingList() : Promise<Result<MeetingListItem[], CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("meeting_list") };
 } catch (e) {
@@ -1655,9 +1655,25 @@ async meetingSegments(meetingId: string) : Promise<Result<MeetingSegment[], Comm
  * everything FTS5 would choke on; an empty/unindexable query lists all
  * meetings (same result as `meeting_list`).
  */
-async meetingSearch(query: string) : Promise<Result<Meeting[], CommandError>> {
+async meetingSearch(query: string) : Promise<Result<MeetingListItem[], CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("meeting_search", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Notetaker list/details: the source app's icon as a `data:image/png` URI,
+ * extracted from the executable the detector saw and cached per exe path.
+ * `None` (never an error) when the meeting has no source app, predates the
+ * stored path, is a known app / browser (the front-end embeds those logos),
+ * or the extraction failed or exceeded its 2 s budget — the UI then shows a
+ * monogram. Runs off the main thread: the shell call can block.
+ */
+async meetingSourceIcon(id: string) : Promise<Result<string | null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_source_icon", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2673,7 +2689,92 @@ segments: MeetingSegment[];
  * The meeting note row's markdown body ("" when the row is missing —
  * e.g. a meeting that predates the notes-row creation).
  */
-notes_md: string }
+notes_md: string; 
+/**
+ * App the meeting came from (`None` for manual / in-person meetings).
+ */
+source_app: SourceApp | null; 
+/**
+ * The single status chip the Notetaker list/details show.
+ */
+list_status: MeetingListStatus }
+/**
+ * A meeting row for the list/search commands: the full [`Meeting`] (flattened,
+ * so existing consumers keep working) plus the derived fields.
+ */
+export type MeetingListItem = ({ 
+/**
+ * uuid
+ */
+id: string; title: string; 
+/**
+ * e.g. "Zoom.exe", "chrome.exe"
+ */
+app_exe: string | null; 
+/**
+ * e.g. "Google Meet"
+ */
+app_label: string | null; 
+/**
+ * 'auto_prompt' | 'auto_start' | 'manual' | 'in_person'
+ */
+detection: string; 
+/**
+ * 'recording' | 'paused' | 'processing' | 'ready' | 'error' | 'recovered'
+ */
+status: string; 
+/**
+ * Unix epoch seconds.
+ */
+started_at: number; ended_at: number | null; capture_system_audio: boolean; stt_provider_id: string | null; llm_provider_id: string | null; template_id: string | null; 
+/**
+ * Editable markdown summary.
+ */
+summary_md: string | null; 
+/**
+ * 'pending' | 'ready' | 'disabled' | 'error' — FR-009-16 step (4).
+ * 'disabled' is FR-009-21 (no BYOK key): the meeting is `ready` with
+ * transcript + notes but no summary.
+ */
+summary_status: string; 
+/**
+ * Directory with the 60 s audio blocks; NULL after retention expiry.
+ */
+audio_dir: string | null; language: string | null; error_code: string | null }) & { source_app: SourceApp | null; list_status: MeetingListStatus }
+/**
+ * The one chip a Notetaker list row shows (design: "Estados da linha").
+ * Labels live in the front-end: `processing` = "Transcrevendo",
+ * `no_summary` = "Sem resumo", `failed` = "Falhou", `ready` = "Resumo pronto".
+ */
+export type MeetingListStatus = 
+/**
+ * Being recorded now — shown in the "Agora" block, not in the list.
+ */
+"recording" | 
+/**
+ * Recording paused — same "Agora" block.
+ */
+"paused" | 
+/**
+ * Transcribing / summarizing (also a summary regeneration in flight).
+ */
+"processing" | 
+/**
+ * Transcript and notes exist but there is no summary (FR-009-21: no
+ * BYOK key). Clicking leads to Settings → Summaries.
+ */
+"no_summary" | 
+/**
+ * Processing failed (`error`), the app crashed mid-recording
+ * (`recovered`) or the summary failed. Retry with
+ * `meeting_retry_processing` when `meeting.status` is `error` /
+ * `recovered`, with `meeting_regenerate_summary` when it is `ready`.
+ */
+"failed" | 
+/**
+ * Transcript and summary are ready.
+ */
+"ready"
 export type MeetingSegment = { 
 /**
  * uuid
@@ -2837,6 +2938,21 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * The app a meeting was started from (detector or toast), when known.
+ * Manual / in-person meetings have none.
+ */
+export type SourceApp = { 
+/**
+ * Executable file name, e.g. `Zoom.exe` (`None` when only a label is
+ * known).
+ */
+exe: string | null; 
+/**
+ * Friendly name, e.g. "Google Meet"; falls back to the exe name without
+ * its `.exe` suffix.
+ */
+name: string }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */

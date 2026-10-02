@@ -302,6 +302,9 @@ impl Worker {
         );
         meeting.app_label = app_label;
         meeting.app_exe = app_exe;
+        // Persisted only to extract the Notetaker-list icon later; the path
+        // crosses an IPC event, so it must still pass the safe-path gate.
+        meeting.app_exe_path = crate::meeting::app_icon::sanitize_exe_path(req.app_exe_path);
         meeting.capture_system_audio = !req.mic_only;
         // `stt_provider_id` REFERENCES providers(id) — pseudo-ids
         // `local_model:*` (a seleção da v1) não são chaves da tabela e

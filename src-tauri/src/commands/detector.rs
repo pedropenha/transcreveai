@@ -38,6 +38,7 @@ fn emit_start_request(app: &AppHandle, detection: &Detection, mic_only: bool) ->
             detection_id: detection.detection_id.clone(),
             app_label: detection.app_label.clone(),
             exe: detection.exe_name.clone(),
+            exe_path: detection.exe_path.clone(),
             mic_only,
             // User clicked a toast action — 'auto_prompt', not 'auto_start'.
             auto: false,
