@@ -933,6 +933,8 @@
     }
   },
   "common": {
+    "moreInformation": "More information",
+    "restoreDefaults": "Restore defaults",
     "loading": "Loading...",
     "delete": "Delete",
     "close": "Close",
@@ -1069,6 +1071,8 @@
     "copyNotice": "Copy notice"
   },
   "dictionary": {
+    "saveError": "Could not save vocabulary. Your changes were kept for retry.",
+    "retry": "Try again",
     "title": "Dictionary",
     "subtitle": "Teach Transcreve.ai your vocabulary and which filler words light cleanup removes.",
     "add": "Add",
@@ -1085,7 +1089,45 @@
       "inputLabel": "New filler word or phrase",
       "placeholder": "Add a filler word or phrase",
       "reset": "Restore defaults",
-      "saveError": "Could not update filler words."
+      "saveError": "Could not update filler words.",
+      "loading": "Loading filler words…",
+      "loadError": "Could not load filler words. Try again before editing."
+    },
+    "addWord": "Add word",
+    "duplicate": "“{{term}}” is already in the list.",
+    "search": "Search",
+    "yours": "Yours",
+    "tabs": {
+      "label": "Kind of entry",
+      "vocabulary": "Vocabulary",
+      "replacements": "Replacements",
+      "crutches": "Crutches"
+    },
+    "replacements": {
+      "title": "Replacements are coming",
+      "body": "Swap what the model hears for what you want written, after transcription. Arrives in v1.1 with the text pipeline.",
+      "exampleFrom": "de vê esse code",
+      "exampleTo": "VS Code"
+    },
+    "empty": {
+      "noMatch": "Nothing matches",
+      "vocabulary": {
+        "title": "No words yet",
+        "body": "Teach names, acronyms and jargon. They help the model hear them right in dictation and meetings."
+      },
+      "crutches": {
+        "title": "No crutches listed",
+        "body": "Add the words light cleanup should remove, or restore the defaults."
+      }
+    },
+    "preview": {
+      "titlePre": "How the dictionary ",
+      "titleEm": "acts",
+      "body": "Vocabulary becomes a hint for the local model; crutches are removed afterwards by light cleanup.",
+      "said": "You said",
+      "written": "Came out written",
+      "sample": "send the s r t file to transcreve ai, um, like, today",
+      "note": "Approximate preview using your own lists; the text pipeline is the source of truth."
     }
   },
   "settingsHub": {

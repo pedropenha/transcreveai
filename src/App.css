@@ -327,86 +327,13 @@ body {
   letter-spacing: var(--letter-spacing-tight);
 }
 
-.section-page-header p,
-.dictionary-section p {
+.section-page-header p {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
 }
 
-.dictionary-page,
 .settings-hub {
   width: min(100%, 60rem);
   margin-inline: auto;
   padding: var(--space-6);
-}
-
-.dictionary-section {
-  display: grid;
-  gap: var(--space-4);
-  padding-block: var(--space-5);
-  border-top: 1px solid var(--color-border);
-}
-
-.dictionary-section h2 {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-}
-
-.dictionary-section-heading {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.dictionary-form {
-  display: flex;
-  max-width: 34rem;
-  gap: var(--space-2);
-}
-
-.dictionary-form > :first-of-type {
-  flex: 1;
-}
-
-.dictionary-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.dictionary-list li {
-  display: inline-flex;
-  min-height: var(--control-target-comfortable);
-  align-items: center;
-  gap: var(--space-2);
-  padding-inline-start: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  font-size: var(--font-size-sm);
-}
-
-.dictionary-list button {
-  display: inline-flex;
-  width: var(--control-target-comfortable);
-  height: var(--control-target-comfortable);
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-subtle);
-}
-
-.dictionary-list svg,
-.dictionary-reset svg {
-  width: 0.9rem;
-  height: 0.9rem;
-}
-
-.dictionary-reset {
-  display: inline-flex;
-  min-height: var(--control-target-comfortable);
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-accent);
-  font-size: var(--font-size-sm);
 }

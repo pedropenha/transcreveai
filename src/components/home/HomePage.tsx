@@ -263,7 +263,7 @@ export const HomePage: React.FC = () => {
         : dayFormatter.format(row.date);
 
   return (
-    <div className="home-root" aria-busy={feed.loading}>
+    <main className="home-root" aria-busy={feed.loading}>
       <div ref={scrollRef} className="home-page">
         <header className="home-head">
           <h1>{t(`home.greeting.${greetingPeriod(now.getHours())}`)}</h1>
@@ -491,6 +491,6 @@ export const HomePage: React.FC = () => {
           />
         </aside>
       ) : null}
-    </div>
+    </main>
   );
 };

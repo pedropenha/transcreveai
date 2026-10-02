@@ -68,6 +68,7 @@ function App() {
   const isFullBleed =
     currentSection === "home" ||
     currentSection === "meetings" ||
+    currentSection === "dictionary" ||
     currentSection === "settings";
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,

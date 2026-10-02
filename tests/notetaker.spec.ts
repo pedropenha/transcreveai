@@ -479,7 +479,8 @@ test.describe("Notetaker (mocked Tauri IPC)", () => {
   }) => {
     const mock = await openNotetaker(page);
     await page
-      .getByRole("banner")
+      .getByRole("main")
+      .locator("header")
       .getByRole("button", { name: "Start Notetaker" })
       .click();
     await page.getByRole("menuitem", { name: "In person" }).click();

@@ -37,7 +37,7 @@ test.describe("hub webview (mocked Tauri IPC)", () => {
 
     await page.getByTitle("Dictionary").click();
     await expect(
-      page.getByRole("heading", { name: "Dictionary" }),
+      page.getByRole("heading", { level: 1, name: "Dictionary", exact: true }),
     ).toBeVisible();
   });
 
@@ -131,7 +131,7 @@ test.describe("hub shell (Papel & Anil)", () => {
 
     await page.keyboard.press("Control+3");
     await expect(
-      page.getByRole("heading", { name: "Dictionary" }),
+      page.getByRole("heading", { level: 1, name: "Dictionary", exact: true }),
     ).toBeVisible();
     await expect(page.getByTitle("Dictionary")).toHaveAttribute(
       "aria-current",

@@ -13,6 +13,7 @@ const standaloneTests = [
   "../src/components/notetaker/notetakerView.test.ts",
   "../src/components/settings/hub/settingsNav.test.ts",
   "../src/components/settings/models/modelsView.test.ts",
+  "../src/components/settings/dictionary/dictionaryView.test.ts",
 ];
 
 for (const standaloneTest of standaloneTests) {

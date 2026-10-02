@@ -198,7 +198,7 @@ export const NotetakerPage: React.FC = () => {
   const searching = debouncedQuery.trim() !== "";
 
   return (
-    <div className="nt-root">
+    <main className="nt-root">
       <div className="nt-page">
         <header className="nt-head">
           <h1>{t("sidebar.meetings")}</h1>
@@ -332,7 +332,7 @@ export const NotetakerPage: React.FC = () => {
           onOpenSummarySettings={openSummarySettings}
         />
       ) : null}
-    </div>
+    </main>
   );
 };
 

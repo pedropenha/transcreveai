@@ -1,5 +1,6 @@
 import React from "react";
 import ResetIcon from "../icons/ResetIcon";
+import { useTranslation } from "react-i18next";
 
 interface ResetButtonProps {
   onClick: () => void;
@@ -10,19 +11,22 @@ interface ResetButtonProps {
 }
 
 export const ResetButton: React.FC<ResetButtonProps> = React.memo(
-  ({ onClick, disabled = false, className = "", ariaLabel, children }) => (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      className={`p-1 rounded-md border border-transparent transition-all duration-150 ${
-        disabled
-          ? "opacity-50 cursor-not-allowed text-text/40"
-          : "hover:bg-logo-primary/30 active:bg-logo-primary/50 active:translate-y-[1px] hover:cursor-pointer hover:border-logo-primary text-text/80"
-      } ${className}`}
-      onClick={onClick}
-      disabled={disabled}
-    >
-      {children ?? <ResetIcon />}
-    </button>
-  ),
+  ({ onClick, disabled = false, className = "", ariaLabel, children }) => {
+    const { t } = useTranslation();
+    return (
+      <button
+        type="button"
+        aria-label={ariaLabel ?? t("common.restoreDefaults")}
+        className={`p-1 rounded-md border border-transparent transition-all duration-150 ${
+          disabled
+            ? "opacity-50 cursor-not-allowed text-text/40"
+            : "hover:bg-logo-primary/30 active:bg-logo-primary/50 active:translate-y-[1px] hover:cursor-pointer hover:border-logo-primary text-text/80"
+        } ${className}`}
+        onClick={onClick}
+        disabled={disabled}
+      >
+        {children ?? <ResetIcon />}
+      </button>
+    );
+  },
 );

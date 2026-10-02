@@ -24,6 +24,7 @@ type BaseProps = {
   onChange: (value: string | null, action: ActionMeta<SelectOption>) => void;
   onBlur?: () => void;
   className?: string;
+  ariaLabel?: string;
   formatCreateLabel?: (input: string) => string;
 };
 
@@ -130,6 +131,7 @@ export const Select: React.FC<SelectProps> = React.memo(
     onChange,
     onBlur,
     className = "",
+    ariaLabel,
     isCreatable,
     formatCreateLabel,
     onCreateOption,
@@ -149,6 +151,7 @@ export const Select: React.FC<SelectProps> = React.memo(
     };
 
     const sharedProps: Partial<ReactSelectProps<SelectOption, false>> = {
+      "aria-label": ariaLabel,
       className,
       classNamePrefix: "app-select",
       value: selectValue,

@@ -56,8 +56,20 @@ Não há definição de pronto própria: vale o workflow das ECC rules (`rules/c
 - [x] **T-005** [P] **Adaptar** settings (`settings.rs`, `settings.json` via `tauri-plugin-store`) para o schema versionado do data-model; i18n: o Handy tem `pt` e mais 25 idiomas. Manter **só pt-BR e en** (decisão do ADR-0002); remover os demais locales (skill `i18n-sync`). — Refs: NFR-010-03
 - [x] **T-006** [P] **Adaptar** IPC: `tauri-specta` já gera `src/bindings.ts`; alinhar comandos e erros ao envelope `ok/error` do contrato. — Refs: [contracts §5](architecture/contracts.md#5-ipc-tauri)
 - [x] **T-007** **Adaptar** instância única, autostart e bandeja (já existem no Handy): verificar contra os AC e ajustar o menu à FR-010-14. — Refs: FR-010-13..15, FR-010-18
-- [x] **T-008** [P] **Direção de design** (`rules/web/design-quality.md`): estilo, paleta, tipografia e tokens a partir dos prints do Wispr, com as skills `frontend-design-direction` / `design-system`. Saída: `DESIGN.md` + tokens. Antes de T-040/T-042. Direção substituída por **Papel & Anil** ([ADR-0003](../docs/adr/0003-identidade-visual-papel-e-anil.md)); implementação em etapas (tokens/fontes, shell, Início, …) conforme `docs/design/proposta-ui.html`. Etapas 1 (tokens/fontes) e 2 (shell/rail/checklist) concluídas; 3 (Início) concluídas; 4 em diante pendentes (Notetaker, Configurações com sub-navegação, Dicionário/overlays). — Refs: F001, NFR-010-05
+- [x] **T-008** [P] **Direção de design** (`rules/web/design-quality.md`): estilo, paleta, tipografia e tokens a partir dos prints do Wispr, com as skills `frontend-design-direction` / `design-system`. Saída: `DESIGN.md` + tokens. Antes de T-040/T-042. Direção substituída por **Papel & Anil** ([ADR-0003](../docs/adr/0003-identidade-visual-papel-e-anil.md)); implementação em etapas (tokens/fontes, shell, Início, …) conforme `docs/design/proposta-ui.html`. Etapas 1–6 concluídas no frontend; aceitação nativa e limites registrados no acompanhamento do redesign abaixo. — Refs: F001, NFR-010-05
 - [x] **T-009** [P] **Base de testes E2E**: Playwright nas webviews (`e2e-testing`) + `windows-desktop-e2e` (pywinauto/UI Automation) para fluxos nativos, com fonte de áudio WAV em builds de teste. Inclui fixtures WAV pt-BR (fala curta/longa com muletas) usados também pela T-035. — Refs: `rules/common/testing.md`, F002 notas técnicas
+
+## Redesign Papel & Anil — acompanhamento
+
+- [x] Etapas 1–3: tokens e fontes, shell/rail e Início.
+- [x] Etapa 4: backend de origem/ícones e UI do Notetaker.
+- [x] Etapa 5: Configurações com sub-navegação e Transcrição → Modelos.
+- [x] Etapa 6 (frontend): Dicionário com três grupos, prévia aproximada, persistência de vocabulário/muletas, estados vazios/erro; overlays nos tokens `--ov-*`; acessibilidade axe e teclado. Substituições e aprendizado continuam fora da v1, documentados em FR-010-28.
+- [x] Regressão visual: 36 prints `stage6-*` em `docs/design/screens/`, 900/1280/1600 px, claro/escuro (Início, Notetaker, Modelos e três grupos do Dicionário).
+- [ ] Aceitação no app nativo com backend real: janela/processo Transcreve.ai não estava aberto durante esta etapa; testes usam Chromium com IPC Tauri simulado. Não foi iniciado outro `tauri dev`. Gravação, colagem, persistência em disco e comportamento de foco das janelas requerem smoke nativo.
+- [ ] Auditoria manual com leitor de tela e latência: axe/teclado automatizados não concluem a T-085.
+
+Evidências e limites: [relatório da etapa 6](../docs/design/stage6-validation.md).
 
 ## Fase 1 — Ditado (v1)
 

@@ -860,6 +860,8 @@
     "portableUpdateBrowseButton": "Abrir GitHub Releases"
   },
   "common": {
+    "moreInformation": "Mais informações",
+    "restoreDefaults": "Restaurar padrão",
     "loading": "Carregando...",
     "delete": "Excluir",
     "close": "Fechar",
@@ -1069,6 +1071,8 @@
     }
   },
   "dictionary": {
+    "saveError": "Não foi possível salvar o vocabulário. Suas alterações foram mantidas para tentar novamente.",
+    "retry": "Tentar novamente",
     "title": "Dicionário",
     "subtitle": "Ensine seu vocabulário ao Transcreve.ai e escolha quais muletas a limpeza leve remove.",
     "add": "Adicionar",
@@ -1085,7 +1089,45 @@
       "inputLabel": "Nova muleta ou expressão",
       "placeholder": "Adicione uma muleta ou expressão",
       "reset": "Restaurar padrão",
-      "saveError": "Não foi possível atualizar as muletas."
+      "saveError": "Não foi possível atualizar as muletas.",
+      "loading": "Carregando muletas…",
+      "loadError": "Não foi possível carregar as muletas. Tente novamente antes de editar."
+    },
+    "addWord": "Adicionar palavra",
+    "duplicate": "“{{term}}” já está na lista.",
+    "search": "Buscar",
+    "yours": "Sua",
+    "tabs": {
+      "label": "Tipo de entrada",
+      "vocabulary": "Vocabulário",
+      "replacements": "Substituições",
+      "crutches": "Muletas"
+    },
+    "replacements": {
+      "title": "Substituições chegam em breve",
+      "body": "Troque o que o modelo ouve pelo que você quer escrito, depois da transcrição. Chega na v1.1 com o pipeline de texto.",
+      "exampleFrom": "de vê esse code",
+      "exampleTo": "VS Code"
+    },
+    "empty": {
+      "noMatch": "Nada corresponde",
+      "vocabulary": {
+        "title": "Nenhuma palavra ainda",
+        "body": "Ensine nomes, siglas e jargões. Eles ajudam o modelo a ouvir certo no ditado e nas reuniões."
+      },
+      "crutches": {
+        "title": "Nenhuma muleta na lista",
+        "body": "Adicione o que a limpeza leve deve remover, ou restaure o padrão."
+      }
+    },
+    "preview": {
+      "titlePre": "Como o dicionário ",
+      "titleEm": "age",
+      "body": "O vocabulário vira dica para o modelo local; as muletas são removidas depois pela limpeza leve.",
+      "said": "Você disse",
+      "written": "Saiu escrito",
+      "sample": "manda o arquivo s r t pro transcreve ai, tipo assim, né, hoje",
+      "note": "Prévia aproximada com as suas listas; o pipeline de texto é a fonte da verdade."
     }
   },
   "settingsHub": {

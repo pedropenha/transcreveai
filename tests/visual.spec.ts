@@ -1,4 +1,4 @@
-import { test } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { installTauriMock } from "./helpers/tauri-mock";
 
 /**
@@ -151,6 +151,61 @@ const SCHEMES = ["light", "dark"] as const;
 
 test.describe("hub screenshots", () => {
   test.skip(!process.env.CAPTURE_SCREENS, "set CAPTURE_SCREENS=1 to capture");
+
+  for (const scheme of SCHEMES) {
+    for (const width of WIDTHS) {
+      for (const tab of ["Vocabulary", "Replacements", "Crutches"] as const) {
+        test(`dictionary ${tab} ${scheme} ${width}px`, async ({ page }) => {
+          await installTauriMock(page, {
+            get_app_settings: {
+              onboarding_completed: true,
+              app_language: "en",
+              custom_words: [
+                "Transcreve.ai",
+                "whisper.cpp",
+                "Tauri",
+                "eixo pedagógico",
+                "Kubernetes",
+                "SRT",
+                "Parakeet",
+              ],
+              filler_word_removal_enabled: true,
+            },
+            get_filler_words: [
+              "um",
+              "like",
+              "you know",
+              "né",
+              "tipo",
+              "então assim",
+            ],
+          });
+          await page.emulateMedia({ colorScheme: scheme });
+          await page.setViewportSize({ width, height: 800 });
+          await page.goto("/");
+          await page.getByTitle("Dictionary").click();
+          await page
+            .getByRole("group", { name: "Kind of entry" })
+            .getByRole("button", { name: new RegExp(tab) })
+            .click();
+          await page
+            .getByLabel("You said")
+            .fill("um, send the SRT file to Transcreve.ai, like, today.");
+          await expect(page.getByTestId("dictionary-after")).toContainText(
+            "Send the SRT file",
+          );
+          await page.evaluate(() => document.fonts.ready);
+          await page.getByLabel("You said").blur();
+          await page.locator(".dict-page").evaluate((element) => {
+            element.scrollTop = 0;
+          });
+          await page.screenshot({
+            path: `docs/design/screens/${process.env.SCREEN_PREFIX ?? "hub"}-dictionary-${tab.toLowerCase()}-${scheme}-${width}.png`,
+          });
+        });
+      }
+    }
+  }
 
   for (const scheme of SCHEMES) {
     for (const width of WIDTHS) {

@@ -58,7 +58,7 @@ export const ProvidersSection: React.FC<ProvidersSectionProps> = ({
                   </Badge>
                 ))}
               </div>
-              <p className="text-xs text-text/50 mt-0.5">
+              <p className="text-xs text-mid-gray mt-0.5">
                 {provider.downloading
                   ? t("settings.providers.downloadingModels", {
                       downloaded: provider.downloadedModels,
@@ -73,7 +73,7 @@ export const ProvidersSection: React.FC<ProvidersSectionProps> = ({
           </div>
         );
       })}
-      <p className="px-4 py-2.5 text-xs text-text/50 border-t border-mid-gray/20">
+      <p className="px-4 py-2.5 text-xs text-mid-gray border-t border-mid-gray/20">
         {t("settings.providers.localOnlyNote")}
       </p>
     </SettingsGroup>

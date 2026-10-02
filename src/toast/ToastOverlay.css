@@ -14,17 +14,18 @@
    ============================================================ */
 
 :root {
-  /* Detection card ("Reunião detectada") — dark surface + cream CTA. */
-  --toast-card-bg: #1c1c1e;
-  --toast-card-border: rgb(255 255 255 / 0.08);
-  --toast-card-text: #f5f5f7;
-  --toast-card-muted: #8e8e93;
+  /* Detection card ("Reunião detectada") — overlay tokens (--ov-*, dark in
+     both themes) + cream CTA. */
+  --toast-card-bg: var(--ov-bg);
+  --toast-card-border: var(--ov-line);
+  --toast-card-text: var(--ov-text);
+  --toast-card-muted: var(--ov-muted);
   --toast-card-radius: 20px;
-  --toast-cta-bg: #fffbe6;
-  --toast-cta-bg-hover: #fff6c4;
-  --toast-cta-text: #1c1c1e;
-  --toast-cta-divider: rgb(28 28 30 / 0.14);
-  --toast-live: #34c759;
+  --toast-cta-bg: var(--ov-cta);
+  --toast-cta-bg-hover: color-mix(in srgb, var(--ov-cta) 88%, white);
+  --toast-cta-text: var(--ov-cta-ink);
+  --toast-cta-divider: color-mix(in srgb, var(--ov-cta-ink) 14%, transparent);
+  --toast-live: var(--ov-success);
   --t-surface: color-mix(in srgb, var(--flowbar-surface) 98%, transparent);
   --t-accent: var(--flowbar-warning); /* amber signal for detections */
   --t-recording: var(--flowbar-recording); /* coral for "Gravando" */
@@ -466,7 +467,7 @@
   align-items: center;
   justify-content: center;
   color: var(--toast-card-text);
-  background: rgb(255 255 255 / 0.1);
+  background: color-mix(in srgb, var(--ov-text) 10%, transparent);
 }
 
 /* Cream split button: "Iniciar Notetaker" | ▾ */
@@ -534,7 +535,7 @@
   align-items: center;
   justify-content: center;
   color: var(--toast-card-muted);
-  background: rgb(255 255 255 / 0.1);
+  background: color-mix(in srgb, var(--ov-text) 10%, transparent);
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--motion-duration-interaction)
@@ -546,7 +547,7 @@
 }
 .tdismiss:hover {
   color: var(--toast-card-text);
-  background: rgb(255 255 255 / 0.2);
+  background: color-mix(in srgb, var(--ov-text) 20%, transparent);
 }
 .tdismiss:focus-visible {
   outline: 2px solid var(--toast-card-text);
@@ -559,5 +560,5 @@
   color: var(--toast-card-text);
 }
 .tmeeting .tmenu-item:hover {
-  background: rgb(255 255 255 / 0.08);
+  background: color-mix(in srgb, var(--ov-text) 8%, transparent);
 }
