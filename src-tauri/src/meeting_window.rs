@@ -113,27 +113,33 @@ fn meeting_title(app: &AppHandle, meeting_id: &str) -> CommandResult<String> {
 /// `meeting_window_open` — create-or-focus the meeting window on `meeting_id`.
 ///
 /// Never blocks the caller: the id + title are resolved on the calling thread
-/// (cheap SQLite reads) and the window work is dispatched to the main thread —
-/// safe both from the async command runtime and from the tray's main-thread
-/// menu handler. Window failures are logged and surfaced as a `toast://show`
-/// warning rather than a stale `Ok`.
+/// (cheap SQLite reads) and the window work runs on a dedicated thread. This
+/// MUST NOT go through `run_on_main_thread`: on Windows, `WebviewWindowBuilder
+/// ::build()` inside an event-loop handler leaves the WebView2 controller
+/// waiting on a nested message pump that never completes — the window ends up
+/// stuck on `about:blank` with no IPC (dead window). Called from a worker
+/// thread instead, `build()` dispatches `CreateWindow` through the event-loop
+/// proxy and the webview initializes normally. This also keeps the tray path
+/// (already on the main thread) working.
 pub fn open(app: &AppHandle, meeting_id: Option<String>) -> CommandResult<()> {
     let id = resolve_meeting_id(app, meeting_id)?;
     let title = meeting_title(app, &id)?;
     let handle = app.clone();
-    app.run_on_main_thread(move || {
-        if let Err(e) = open_on_main(&handle, &id, &title) {
-            log::error!("Failed to open the meeting window: {}", e.message);
-            emit_error_toast(&handle);
-        }
-    })
-    .map_err(|e| {
-        CommandError::logged(
-            CommandErrorCode::Internal,
-            "Failed to open the meeting window",
-            e,
-        )
-    })?;
+    std::thread::Builder::new()
+        .name("meeting-window-open".into())
+        .spawn(move || {
+            if let Err(e) = open_on_main(&handle, &id, &title) {
+                log::error!("Failed to open the meeting window: {}", e.message);
+                emit_error_toast(&handle);
+            }
+        })
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to open the meeting window",
+                e,
+            )
+        })?;
     Ok(())
 }
 
@@ -173,7 +179,10 @@ fn emit_error_toast(app: &AppHandle) {
     );
 }
 
-/// Main-thread side of [`open`]: focus the existing window or build it.
+/// Worker-thread side of [`open`]: focus the existing window or build it.
+/// `WebviewWindow` methods dispatch through the event-loop proxy, so calling
+/// them off the main thread is fine — and on Windows it is required (see
+/// [`open`]).
 fn open_on_main(app: &AppHandle, meeting_id: &str, meeting_title: &str) -> CommandResult<()> {
     let title = window_title(meeting_title);
     if let Some(window) = app.get_webview_window(MEETING) {

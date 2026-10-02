@@ -893,7 +893,10 @@
         "edit": "Edit",
         "view": "Preview",
         "savedAt": "Saved at {{time}}",
-        "editHint": "The summary is editable — changes here never touch your notes."
+        "editHint": "The summary is editable — changes here never touch your notes.",
+        "generate": "Generate summary",
+        "openSettings": "Open settings",
+        "generateHint": "No summary was generated for this meeting. You can generate it now with the configured provider."
       }
     }
   },

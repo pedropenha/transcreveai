@@ -1028,7 +1028,10 @@
         "edit": "Editar",
         "view": "Visualizar",
         "savedAt": "Salvo às {{time}}",
-        "editHint": "O resumo é editável — alterações aqui nunca tocam suas notas."
+        "editHint": "O resumo é editável — alterações aqui nunca tocam suas notas.",
+        "generate": "Gerar resumo",
+        "openSettings": "Abrir configurações",
+        "generateHint": "Esta reunião ficou sem resumo. Você pode gerá-lo agora com o provedor configurado."
       }
     }
   },

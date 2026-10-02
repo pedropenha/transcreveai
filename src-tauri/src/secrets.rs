@@ -541,6 +541,12 @@ pub(crate) fn vault_write_retry_record(succeeded: bool) {
 /// a working key, and re-attempts the vault write opportunistically
 /// (throttled by the same backoff as the settings-load migration).
 pub fn provider_api_key(app: &AppHandle, provider_id: &str) -> Option<String> {
+    // `cli_agent/*` providers authenticate through the CLI's own session —
+    // they can never hold a vault key, so skip the read entirely instead of
+    // warning on the intentionally-invalid vault id every call.
+    if crate::llm::cli_agent::is_cli_agent(provider_id) {
+        return None;
+    }
     match secret_store().get(provider_id) {
         Ok(Some(key)) if !key.is_empty() => return Some(key),
         Ok(_) => {}

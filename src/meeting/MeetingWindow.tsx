@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import {
   FileText,
@@ -196,6 +196,29 @@ const MeetingWindow: React.FC = () => {
     if (meetingId !== null) void loadMeeting(meetingId);
   }, [meetingId, loadMeeting]);
 
+  // FR-009-21 gate must follow the CURRENT provider settings, not the
+  // meeting row — `meetings.llm_provider_id` is never persisted, so keying
+  // off it would leave every Resumo tab permanently "disabled". The status
+  // command resolves BYOK keys and `cli_agent/*` availability the same way
+  // the post-processor's pre-flight gate does.
+  const [summaryEnabled, setSummaryEnabled] = useState<boolean | null>(null);
+  const refreshSummaryStatus = useCallback(async () => {
+    try {
+      const result = await commands.llmSummaryStatus();
+      if (result.status === "ok") setSummaryEnabled(result.data.enabled);
+    } catch (e) {
+      console.warn("llm_summary_status invoke failed:", e);
+    }
+  }, []);
+  useEffect(() => {
+    void refreshSummaryStatus();
+    // The user can fix the provider in the hub while this window is open —
+    // re-check on focus so the card flips without a reopen.
+    const onFocus = () => void refreshSummaryStatus();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshSummaryStatus]);
+
   // Event listeners — all filtered to the shown meeting (the session events
   // are broadcast to every window).
   useEffect(() => {
@@ -236,7 +259,14 @@ const MeetingWindow: React.FC = () => {
         if (payload.meeting_id !== meetingId) return;
         // `step` is accepted defensively (meetingView::normalizeProgressStep
         // owns the vocabulary seam) — the UI only tracks liveness until T-067
-        // ships its step names.
+        // ships its step names. The terminal "done" step is also the ONLY
+        // signal for summary-only runs (`meeting_regenerate_summary` emits no
+        // `meeting://state`), so re-hydrate to land summary_md/status.
+        if (payload.step === "done") {
+          setProgressActive(false);
+          void loadMeeting(payload.meeting_id);
+          return;
+        }
         setProgressActive(true);
       }),
     );
@@ -386,7 +416,7 @@ const MeetingWindow: React.FC = () => {
     status,
     summaryMd: meeting?.summary_md ?? null,
     summaryStatus: meeting !== null ? readSummaryStatus(meeting) : null,
-    llmConfigured: meeting?.llm_provider_id != null,
+    llmConfigured: summaryEnabled ?? meeting?.llm_provider_id != null,
     progressActive,
   });
 
@@ -723,7 +753,39 @@ const MeetingWindow: React.FC = () => {
                   aria-hidden="true"
                   className="mt-0.5 shrink-0 text-warning"
                 />
-                <p>{t("meeting.window.summary.disabled")}</p>
+                <div className="flex flex-col gap-2">
+                  <p>
+                    {summaryEnabled
+                      ? t("meeting.window.summary.generateHint")
+                      : t("meeting.window.summary.disabled")}
+                  </p>
+                  {summaryEnabled ? (
+                    // A provider is configured now — the row's `disabled` was
+                    // persisted before that; offer to generate on demand.
+                    <button
+                      type="button"
+                      className="self-start rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-accent-soft"
+                      disabled={retryingSummary}
+                      onClick={() => void retrySummary()}
+                    >
+                      {t("meeting.window.summary.generate")}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="self-start rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-accent-soft"
+                      onClick={() => {
+                        void commands.showMainWindowCommand();
+                        void emit("hub://navigate", {
+                          section: "settings",
+                          settingsTab: "general",
+                        });
+                      }}
+                    >
+                      {t("meeting.window.summary.openSettings")}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
