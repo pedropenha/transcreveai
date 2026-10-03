@@ -9,6 +9,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 mod adapters;
+mod live;
 mod parse;
 mod spawn;
 mod validate;
@@ -54,9 +55,55 @@ fn test_adapter(binary: &'static str, parse: ParseOutput) -> CliAgentSpec {
 /// script elsewhere.
 #[cfg(windows)]
 fn script_tool(dir: &Path, name: &str, body: &str) -> PathBuf {
-    let script = dir.join(format!("{name}.cmd"));
-    std::fs::write(&script, body).unwrap();
-    script
+    // Native fixture: production never executes batch files. Compile once,
+    // then copy under the adapter's expected basename. Mode is fixture data,
+    // independent of provider argv.
+    static FIXTURE: std::sync::LazyLock<tempfile::TempDir> = std::sync::LazyLock::new(|| {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("fixture.rs");
+        std::fs::write(&source, r#"
+use std::{io::{Read, Write}, time::Duration};
+fn main() {
+    let exe = std::env::current_exe().unwrap();
+    let dir = exe.parent().unwrap();
+    if std::env::args().any(|a| a == "fixture-heartbeat") {
+        loop { let mut f = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("hb.txt")).unwrap(); writeln!(f, "x").unwrap(); std::thread::sleep(Duration::from_millis(200)); }
+    }
+    let mode = std::fs::read_to_string(exe.with_extension("mode")).unwrap();
+    match mode.as_str() {
+        "echo" => println!("canned response"),
+        "parrot" => { let mut data = String::new(); std::io::stdin().read_to_string(&mut data).unwrap(); print!("{data}"); },
+        "dump" => print!("{}", std::fs::read_to_string(dir.join("big.txt")).unwrap()),
+        "tree" => { let _child = std::process::Command::new(exe).arg("fixture-heartbeat").spawn().unwrap(); std::thread::sleep(Duration::from_secs(60)); },
+        "sleep" => std::thread::sleep(Duration::from_secs(60)),
+        _ => panic!("unknown fixture mode"),
+    }
+}
+"#).unwrap();
+        let status = std::process::Command::new("rustc")
+            .arg(&source)
+            .arg("-o")
+            .arg(root.path().join("fixture.exe"))
+            .status()
+            .unwrap();
+        assert!(status.success());
+        root
+    });
+    let executable = dir.join(format!("{name}.exe"));
+    std::fs::copy(FIXTURE.path().join("fixture.exe"), &executable).unwrap();
+    let mode = if body.contains("start /b") {
+        "tree"
+    } else if body.contains("findstr") {
+        "parrot"
+    } else if body.contains("@type") {
+        "dump"
+    } else if body.contains("@ping") {
+        "sleep"
+    } else {
+        "echo"
+    };
+    std::fs::write(executable.with_extension("mode"), mode).unwrap();
+    executable
 }
 
 #[cfg(unix)]

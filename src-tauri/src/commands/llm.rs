@@ -505,9 +505,12 @@ mod tests {
         let spec = cli_agent::adapter_for("cli_agent/codex").unwrap();
         let dir = tempfile::tempdir().unwrap();
         #[cfg(windows)]
-        let fake = dir.path().join("codex.cmd");
+        let fake = dir.path().join("codex.exe");
         #[cfg(unix)]
         let fake = dir.path().join("codex");
+        #[cfg(windows)]
+        std::fs::copy(std::env::current_exe().unwrap(), &fake).unwrap();
+        #[cfg(unix)]
         std::fs::write(&fake, "echo ok").unwrap();
         #[cfg(unix)]
         {
@@ -560,13 +563,13 @@ mod tests {
         let spec = cli_agent::adapter_for("cli_agent/codex").unwrap();
         let config = CliAgentConfig {
             binary_path: Some("   ".to_string()),
-            extra_args: vec!["  ".to_string(), "--search".to_string()],
+            extra_args: vec!["  ".to_string(), "--color=never".to_string()],
             timeout_secs: Some(99_999),
             ..CliAgentConfig::default()
         };
         let normalized = normalize_cli_agent_config(spec, config).unwrap();
         assert_eq!(normalized.binary_path, None);
-        assert_eq!(normalized.extra_args, vec!["--search".to_string()]);
+        assert_eq!(normalized.extra_args, vec!["--color=never".to_string()]);
         assert_eq!(normalized.timeout_secs, Some(cli_agent::MAX_TIMEOUT_SECS));
 
         // timeout 0 keeps the "unset" semantics → None.

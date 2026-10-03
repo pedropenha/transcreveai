@@ -127,6 +127,13 @@ usando a assinatura que o usuário já tem.
 - **NFR-012-02** Subprocesso CLI é spawnado com **argv direto (sem shell)**,
   ambiente sanitizado, timeout com kill, sem arquivos temporários contendo o
   prompt. Nunca logar argv/conteúdo (política de redação do T-003).
+  No Windows, shims npm conhecidos são resolvidos para o executável nativo
+  da instalação; scripts `.cmd`/`.bat` arbitrários são recusados. Configurações
+  pessoais, hooks, plugins e MCP não são carregados pelos adaptadores
+  estáveis; somente a autenticação existente é reutilizada. Argumentos
+  extras aceitam exclusivamente opções verificadas de geração de texto e
+  não podem alterar essas proteções. Versões sem os flags exigidos falham
+  sem recorrer a um modo menos protegido.
 - **NFR-012-03** Saída do provider limitada (ex.: 32k chars); resposta muito
   longa é truncada com aviso, não estoura o painel.
 - **NFR-012-04** O painel segue a direção visual "Papel & Anil" ([ADR-0003](../../../docs/adr/0003-identidade-visual-papel-e-anil.md)) e

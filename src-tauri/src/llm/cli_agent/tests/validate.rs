@@ -64,13 +64,30 @@ fn extra_args_reject_adapter_specific_flags() {
 
 #[test]
 fn extra_args_accept_benign_flags() {
-    let args = vec![
-        "--search".to_string(),
-        "--verbose".to_string(),
-        "value with spaces".to_string(),
-    ];
-    assert!(validate_extra_args(spec("cli_agent/codex"), &args).is_ok());
-    assert!(validate_extra_args(spec("cli_agent/claude"), &args).is_ok());
+    assert!(validate_extra_args(spec("cli_agent/codex"), &["--color=never".into()]).is_ok());
+    assert!(validate_extra_args(spec("cli_agent/claude"), &["--effort=low".into()]).is_ok());
+}
+
+#[test]
+fn extra_args_reject_unknown_flags_positionals_and_short_flag_clusters() {
+    for id in ["cli_agent/codex", "cli_agent/claude"] {
+        for arg in [
+            "--",
+            "resume",
+            "-xsread-only",
+            "--enable=hooks",
+            "--plugin-dir=x",
+            "--debug-file=x",
+            "--search",
+            "--verbose",
+            "--no-session-persistence=false",
+        ] {
+            assert!(
+                validate_extra_args(spec(id), &[arg.into()]).is_err(),
+                "{id}: {arg}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -86,7 +103,7 @@ fn extra_args_respect_caps_and_reject_control_chars() {
             "{bad:?} must be rejected"
         );
     }
-    let max_ok = vec!["a".repeat(MAX_EXTRA_ARG_CHARS); MAX_EXTRA_ARGS];
+    let max_ok = vec!["--color=never".to_string(); MAX_EXTRA_ARGS];
     assert!(validate_extra_args(spec, &max_ok).is_ok());
 }
 

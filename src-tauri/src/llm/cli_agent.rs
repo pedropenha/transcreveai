@@ -8,19 +8,20 @@
 //! Per-tool adapters (FR-012-01) declare the binary name, the non-interactive
 //! argv, how the prompt is delivered, how stdout is parsed, and a cheap
 //! health probe. Flags were confirmed against the versions on the dev machine
-//! (codex-cli 0.120.0, Claude Code 2.1.273):
+//! (codex-cli 0.159.3, Claude Code 2.1.273):
 //!
 //! * `codex` → `codex exec --sandbox read-only --ephemeral --skip-git-repo-check
-//!   --json -`. Read-only sandbox + ephemeral session: nothing is written to
+//!   --ignore-user-config --ignore-rules --json -`. Read-only sandbox + ephemeral session: nothing is written to
 //!   the repo or to `~/.codex/sessions`. `-` reads the prompt from stdin —
-//!   the prompt never enters argv, which matters on Windows where `.cmd`
-//!   shims are wrapped by `cmd.exe` and argv is limited to ~8 KiB.
+//!   the prompt never enters argv. On Windows npm shims are resolved to the
+//!   package's native executable; batch scripts are never launched.
 //!   `--json` emits JSONL events; the answer is the last `agent_message`.
 //! * `claude` → `claude -p --output-format json --tools "" --strict-mcp-config
-//!   --disable-slash-commands --permission-prompts none --no-session-persistence`.
+//!   --disable-slash-commands --permission-prompts none --no-session-persistence --safe-mode`.
 //!   `--tools ""` disables every built-in tool (no writes, no prompts);
 //!   `--strict-mcp-config` keeps MCP servers (which are *not* covered by
-//!   `--tools`) from being loaded. **Not** `--bare`: on 2.1.273 `--bare`
+//!   `--tools`) from being loaded. `--safe-mode` disables hooks/plugins and
+//!   customizations while preserving login. **Not** `--bare`: on 2.1.273 `--bare`
 //!   refuses OAuth/keychain auth — exactly the subscription session this
 //!   provider exists to reuse (FR-012-03).
 //! * `cursor-agent` / `devin` → **experimental**: neither CLI has a verified
@@ -35,9 +36,9 @@
 //! these CLIs are stateless per invocation (FR-012-15 only re-sends history).
 //!
 //! Safety (NFR-012-02): argv array without a shell, an env whitelist instead
-//! of inheritance, a neutral working directory (the temp dir — never the
+//! of inheritance, a private empty temporary working directory — never the
 //! repo), a timeout that kills the process tree, stdout capped at
-//! [`MAX_STDOUT_CHARS`], stderr redacted + capped into [`LlmError`]. The
+//! [`MAX_STDOUT_CHARS`], stderr capped and never logged as content. The
 //! prompt, argv and response body are never logged — only the provider id,
 //! exit status, latency and output sizes (T-003 policy).
 //!
@@ -51,13 +52,13 @@
 //!   writes/approvals/tools or redirect config (`--sandbox`,
 //!   `--dangerously-*`, `--tools`, `--mcp-config`, `-c`/`--config`,
 //!   `--profile`, `--add-dir`, …) would silently defeat the hardened flags
-//!   the adapters prepend.
+//!   the adapters prepend. A final conservative allowlist also rejects unknown
+//!   flags, positionals, short-flag clusters and option delimiters.
 //! * `binary_path` must be absolute, non-UNC, canonicalizable, and its file
 //!   stem must equal the adapter's binary name — otherwise one IPC call could
 //!   point the provider at an arbitrary executable.
 //! * `model` must match `[A-Za-z0-9._:/@-]{1,100}` — it flows into argv, and
-//!   `.cmd` targets go through `cmd.exe` metachar handling even with Rust's
-//!   BatBadBut escaping.
+//!   arbitrary prompt text cannot enter this settings field.
 //! * `timeout_secs` is clamped to `1..=600`; `extra_args` is capped at
 //!   [`MAX_EXTRA_ARGS`] entries of [`MAX_EXTRA_ARG_CHARS`] chars; NUL and
 //!   newlines in args are rejected.
@@ -260,15 +261,13 @@ impl LlmProvider for CliAgentProvider {
             );
         }
         if out.exit_code != Some(0) {
-            // stderr can carry the CLI's session paths and stray tokens — it
-            // is sanitized, then kept behind debug-mode gating; the surfaced
-            // error stays generic.
-            let detail = sanitize_detail(&String::from_utf8_lossy(&out.stderr));
+            // stderr can echo prompts or session secrets. Log only its size;
+            // surfaced errors stay generic.
             log::debug!(
-                "cli_agent {}: exit {:?} stderr: {}",
+                "cli_agent {}: exit {:?} stderr={}B",
                 self.spec.provider_id,
                 out.exit_code,
-                crate::utils::redact_text(&detail)
+                out.stderr.len()
             );
             return Err(LlmError::Provider(format!(
                 "the '{}' CLI exited with code {:?}",

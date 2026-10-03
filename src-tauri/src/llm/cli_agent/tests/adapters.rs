@@ -10,6 +10,8 @@ fn codex_argv_is_read_only_ephemeral_and_stdin_prompted() {
         .windows(2)
         .any(|w| w[0] == "--sandbox" && w[1] == "read-only"));
     assert!(argv.contains(&"--ephemeral".to_string()));
+    assert!(argv.contains(&"--ignore-user-config".to_string()));
+    assert!(argv.contains(&"--ignore-rules".to_string()));
     assert!(argv.contains(&"--json".to_string()));
     // `-` must be last so extra args cannot move the prompt marker.
     assert_eq!(argv.last().unwrap(), "-");
@@ -35,6 +37,7 @@ fn claude_argv_disables_all_tools_and_session_persistence() {
     let pos = argv.iter().position(|a| a == "--tools").unwrap();
     assert_eq!(argv[pos + 1], "");
     assert!(argv.contains(&"--strict-mcp-config".to_string()));
+    assert!(argv.contains(&"--safe-mode".to_string()));
     assert!(argv.contains(&"--no-session-persistence".to_string()));
     assert!(argv
         .windows(2)
@@ -54,6 +57,8 @@ fn adapter_argvs_are_pinned() {
             "--sandbox",
             "read-only",
             "--ephemeral",
+            "--ignore-user-config",
+            "--ignore-rules",
             "--skip-git-repo-check",
             "--json",
             "-",
@@ -72,6 +77,7 @@ fn adapter_argvs_are_pinned() {
             "--permission-prompts",
             "none",
             "--no-session-persistence",
+            "--safe-mode",
         ]
     );
     assert_eq!(
@@ -92,6 +98,7 @@ fn adapter_argvs_are_pinned() {
             "--permission-prompts",
             "none",
             "--no-session-persistence",
+            "--safe-mode",
             "--model",
             "claude-sonnet-4",
         ]

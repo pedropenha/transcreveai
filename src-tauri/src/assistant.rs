@@ -42,6 +42,8 @@ use crate::settings::PostProcessProvider;
 
 mod context;
 mod panel;
+#[cfg(test)]
+mod provider_selection_tests;
 mod state;
 #[cfg(test)]
 mod tests;

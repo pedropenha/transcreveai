@@ -1,6 +1,74 @@
 use super::*;
 use std::time::Instant;
 
+#[cfg(windows)]
+#[test]
+fn windows_launch_rejects_batch_scripts_before_spawning() {
+    let dir = tempfile::tempdir().unwrap();
+    let batch = dir.path().join("codex.cmd");
+    std::fs::write(&batch, "@echo untrusted").unwrap();
+    assert!(native_launch_binary(&batch, spec("cli_agent/codex")).is_none());
+}
+
+#[cfg(windows)]
+#[test]
+fn npm_codex_launcher_resolves_native_executable_without_reading_batch() {
+    let dir = tempfile::tempdir().unwrap();
+    let batch = dir.path().join("codex.cmd");
+    std::fs::write(&batch, "@echo this must never execute").unwrap();
+    let target = npm_codex_candidates(dir.path()).remove(0);
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::write(&target, "native fixture").unwrap();
+    assert_eq!(
+        native_launch_binary(&batch, spec("cli_agent/codex")),
+        target.canonicalize().ok()
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn native_resolution_rejects_unknown_scripts_and_accepts_native_files() {
+    let dir = tempfile::tempdir().unwrap();
+    for extension in ["bat", "cmd", "ps1", "js", ""] {
+        let path = dir.path().join(format!("claude.{extension}"));
+        std::fs::write(&path, "untrusted").unwrap();
+        assert!(native_launch_binary(&path, spec("cli_agent/claude")).is_none());
+    }
+    for extension in ["exe", "EXE", "com"] {
+        let path = dir.path().join(format!("claude.{extension}"));
+        std::fs::write(&path, "native fixture").unwrap();
+        assert_eq!(
+            native_launch_binary(&path, spec("cli_agent/claude")),
+            path.canonicalize().ok()
+        );
+    }
+    assert!(
+        native_launch_binary(&dir.path().join("missing.exe"), spec("cli_agent/claude")).is_none()
+    );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn runner_refuses_batch_file_even_without_resolution() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("codex.cmd");
+    std::fs::write(&path, "@echo forbidden").unwrap();
+    assert!(run_headless(
+        &path,
+        &[],
+        spec("cli_agent/codex"),
+        None,
+        Duration::from_secs(1)
+    )
+    .await
+    .is_err());
+    let cfg = CliAgentConfig {
+        binary_path: Some(path.to_string_lossy().into()),
+        ..config()
+    };
+    assert!(validate_config(spec("cli_agent/codex"), &cfg).is_err());
+}
+
 // -- detection -----------------------------------------------------------
 
 #[cfg(windows)]

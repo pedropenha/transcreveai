@@ -5,6 +5,8 @@ import { useSettings } from "../../hooks/useSettings";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ProviderSelect } from "./PostProcessingSettingsApi/ProviderSelect";
 import { usePostProcessProviderState } from "./PostProcessingSettingsApi/usePostProcessProviderState";
+import { assistantProviderOption } from "./assistantProviderOptions";
+import { CliAgentConfiguration } from "./PostProcessingSettingsApi/CliAgentConfiguration";
 
 /**
  * F012/T-091: which provider answers the assistant overlay. Reuses the
@@ -24,13 +26,8 @@ export const AssistantProvider: React.FC<{
   const value = getSetting("assistant_provider_id") ?? "auto";
   const options = [
     { value: "auto", label: t("settingsHub.assistant.provider.auto") },
-    // The assistant dropdown keeps *experimental* CLI agents selectable —
-    // choosing one here is the user's explicit opt-in (FR-012-04), the
-    // label still flags it experimental. Missing/disabled rows stay off.
     ...state.providerOptions.map((option) =>
-      option.disabled && state.cliAgents[option.value]?.experimental
-        ? { ...option, disabled: false }
-        : option,
+      assistantProviderOption(option, state.cliAgents[option.value]),
     ),
   ];
 
@@ -41,16 +38,23 @@ export const AssistantProvider: React.FC<{
   };
 
   return (
-    <SettingContainer
-      title={t("settingsHub.assistant.provider.title")}
-      description={t("settingsHub.assistant.provider.description")}
-      descriptionMode={descriptionMode}
-      layout="horizontal"
-      grouped={grouped}
-    >
-      <div className="flex items-center gap-2">
-        <ProviderSelect options={options} value={value} onChange={onChange} />
-      </div>
-    </SettingContainer>
+    <>
+      <SettingContainer
+        title={t("settingsHub.assistant.provider.title")}
+        description={t("settingsHub.assistant.provider.description")}
+        descriptionMode={descriptionMode}
+        layout="horizontal"
+        grouped={grouped}
+      >
+        <div className="flex items-center gap-2">
+          <ProviderSelect options={options} value={value} onChange={onChange} />
+        </div>
+      </SettingContainer>
+      <CliAgentConfiguration
+        options={state.providerOptions}
+        statuses={state.cliAgents}
+        refreshStatuses={state.refreshCliAgents}
+      />
+    </>
   );
 };

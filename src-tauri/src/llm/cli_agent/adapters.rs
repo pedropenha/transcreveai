@@ -16,6 +16,8 @@ pub(crate) fn codex_argv(model: &str, extra_args: &[String]) -> Vec<String> {
         "--sandbox".to_string(),
         "read-only".to_string(),
         "--ephemeral".to_string(),
+        "--ignore-user-config".to_string(),
+        "--ignore-rules".to_string(),
         "--skip-git-repo-check".to_string(),
         "--json".to_string(),
     ];
@@ -27,7 +29,7 @@ pub(crate) fn codex_argv(model: &str, extra_args: &[String]) -> Vec<String> {
     argv.extend(extra_args.iter().cloned());
     // `-` = read the prompt from stdin (codex exec appends piped stdin to a
     // prompt arg, so we pass *only* the marker and keep the whole prompt off
-    // argv — avoids the ~8 KiB cmd.exe argv limit behind the .cmd shim).
+    // argv, keeping user content out of process listings).
     argv.push("-".to_string());
     argv
 }
@@ -44,6 +46,7 @@ pub(crate) fn claude_argv(model: &str, extra_args: &[String]) -> Vec<String> {
         "--permission-prompts".to_string(),
         "none".to_string(),
         "--no-session-persistence".to_string(),
+        "--safe-mode".to_string(),
     ];
     let model = model.trim();
     if !model.is_empty() {
@@ -116,8 +119,8 @@ pub const ADAPTERS: &[CliAgentSpec] = &[
         binary: "claude",
         label: "Claude Code CLI",
         install_hint: "npm install -g @anthropic-ai/claude-code",
-        version_argv: &["--version"],
-        auth_probe_argv: Some(&["auth", "status"]),
+        version_argv: &["--safe-mode", "--version"],
+        auth_probe_argv: Some(&["--safe-mode", "auth", "status"]),
         extra_env: &["CLAUDE_CONFIG_DIR"],
         experimental: false,
         // claude-specific escapes: `--settings`/`--setting-sources` reload

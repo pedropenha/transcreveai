@@ -84,10 +84,7 @@ export const CliAgentFields: React.FC<CliAgentFieldsProps> = React.memo(
         <ToggleSwitch
           checked={config.enabled}
           onChange={(enabled) => onConfigChange({ enabled })}
-          // Experimental adapters have no verified non-mutating mode — the
-          // backend refuses to enable them, so keep the toggle off-limits.
           isUpdating={updating}
-          disabled={status?.experimental}
           label={t("settings.postProcessing.cliAgent.enabled.title")}
           description={t(
             "settings.postProcessing.cliAgent.enabled.description",

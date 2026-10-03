@@ -486,6 +486,11 @@
         "title": "Hotkey"
       },
       "cliAgent": {
+        "configure": {
+          "title": "Configure CLI agent",
+          "description": "Manage installed or missing agents without changing the provider. Experimental agents only run when explicitly selected for the assistant.",
+          "error": "Could not save the CLI agent configuration. Try again."
+        },
         "status": {
           "detected": "Detected",
           "missing": "Absent",

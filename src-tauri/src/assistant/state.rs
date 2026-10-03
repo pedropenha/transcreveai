@@ -116,7 +116,11 @@ pub(crate) fn choose_provider(
     if let Some(spec) = detected_cli {
         return settings.post_process_provider(spec.provider_id);
     }
-    if byok.is_some() {
+    // A configured experimental summary provider is never an assistant opt-in.
+    // Only assistant_provider_id above grants that explicit choice.
+    if byok.is_some_and(|provider| {
+        !cli_agent::adapter_for(&provider.id).is_some_and(|spec| spec.experimental)
+    }) {
         return byok;
     }
     // Last resort for the hint: the first non-experimental CLI adapter's

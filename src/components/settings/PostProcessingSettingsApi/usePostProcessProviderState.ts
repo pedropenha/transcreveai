@@ -124,8 +124,8 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       // FR-012-02 / AC-012-02: absent CLI agents stay listed but disabled,
       // with the install command as the hint.
       const status = cliAgents[provider.id];
-      // Experimental adapters can never run (the backend refuses to enable
-      // them) — listed, but permanently disabled.
+      // Experimental adapters are assistant-only. The summary dropdown keeps
+      // them disabled; the independent configuration chooser exposes their knobs.
       if (status?.experimental) {
         return {
           value: provider.id,

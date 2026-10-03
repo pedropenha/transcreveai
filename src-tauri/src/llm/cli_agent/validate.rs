@@ -96,8 +96,28 @@ pub(crate) fn validate_extra_args(spec: &CliAgentSpec, args: &[String]) -> Resul
             .find(|flag| arg_hits_denied_flag(flag, arg));
         if let Some(flag) = denied {
             return Err(format!(
-                "extra arg '{arg}' is not allowed — it conflicts with the '{flag}' safety flag"
+                "extra arg is not allowed — it conflicts with the '{flag}' safety flag"
             ));
+        }
+        // A denylist cannot anticipate future CLI flags, clap short clusters,
+        // positional subcommands or end-of-options markers. Only permit these
+        // version-verified, single-token tuning options; model has its own field.
+        let allowed = match spec.provider_id {
+            "cli_agent/codex" => matches!(arg.as_str(), "--color=never" | "--color=auto"),
+            "cli_agent/claude" => matches!(
+                arg.as_str(),
+                "--effort=low"
+                    | "--effort=medium"
+                    | "--effort=high"
+                    | "--effort=xhigh"
+                    | "--effort=max"
+            ),
+            _ => false,
+        };
+        if !allowed {
+            return Err(
+                "extra arg is not allowed; use only the provider's supported tuning flags".into(),
+            );
         }
     }
     Ok(())
@@ -183,7 +203,10 @@ pub(crate) fn validate_binary_override(spec: &CliAgentSpec, path: &str) -> Resul
 /// is what keeps them out of silent/batch callers.
 pub(crate) fn validate_config(spec: &CliAgentSpec, config: &CliAgentConfig) -> Result<(), String> {
     if let Some(path) = config.binary_path.as_deref() {
-        validate_binary_override(spec, path)?;
+        let binary = validate_binary_override(spec, path)?;
+        if super::spawn::native_launch_binary(&binary, spec).is_none() {
+            return Err("binary path does not resolve to a supported native CLI executable".into());
+        }
     }
     validate_extra_args(spec, &config.extra_args)?;
     Ok(())

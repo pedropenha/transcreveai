@@ -1,4 +1,6 @@
 import { test } from "bun:test";
+import "../src/components/settings/assistantProviderOptions.test.ts";
+import "../src/components/settings/PostProcessingSettingsApi/cliAgentFields.test.tsx";
 
 const standaloneTests = [
   "../src/lib/utils/keyboard.test.ts",

@@ -5,7 +5,9 @@ use super::validate::validate_binary_override;
 use super::{CliAgentSpec, HeadlessOutput, MAX_STDOUT_BYTES};
 use crate::llm::types::LlmError;
 use crate::settings::CliAgentConfig;
-use std::ffi::{OsStr, OsString};
+#[cfg(test)]
+use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -25,8 +27,8 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 // Binary detection (FR-012-02)
 // ---------------------------------------------------------------------------
 
-/// Extensions CreateProcess can run without a shell (`.cmd`/`.bat` go through
-/// `cmd.exe` internally via std's batch handling). Extensionless shell
+/// Discovery extensions. `.cmd`/`.bat` are resolved only to known native npm
+/// Codex packages and never passed to CreateProcess. Extensionless shell
 /// scripts and `.ps1` files are deliberately skipped — the first cannot be
 /// spawned by CreateProcess, the second needs powershell.
 #[cfg(windows)]
@@ -82,6 +84,7 @@ pub(crate) fn is_executable_file(path: &Path) -> bool {
 }
 
 /// First spawnable match for `binary` across `path_var`'s dirs.
+#[cfg(test)]
 pub(crate) fn find_on_path(binary: &str, path_var: &OsStr, pathext: &[String]) -> Option<PathBuf> {
     std::env::split_paths(path_var)
         .flat_map(|dir| {
@@ -120,11 +123,76 @@ pub(crate) fn resolve_binary(spec: &CliAgentSpec, config: &CliAgentConfig) -> Op
         .map(str::trim)
         .filter(|p| !p.is_empty())
     {
-        return validate_binary_override(spec, override_path).ok();
+        return validate_binary_override(spec, override_path)
+            .ok()
+            .and_then(|path| native_launch_binary(&path, spec));
     }
-    std::env::var_os("PATH")
-        .and_then(|path| find_on_path(spec.binary, &path, &pathext()))
-        .map(|p| p.canonicalize().unwrap_or(p))
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .flat_map(|dir| {
+            candidate_names(spec.binary, &pathext())
+                .into_iter()
+                .map(move |name| dir.join(name))
+        })
+        .filter(|path| is_executable_file(path))
+        .find_map(|path| native_launch_binary(&path, spec))
+}
+
+/// npm's batch shim is discovery metadata only. Never interpret its contents
+/// or launch it through cmd.exe: Codex publishes a native executable in these
+/// fixed package locations. Other batch installs must provide a native path.
+#[cfg(windows)]
+pub(crate) fn npm_codex_candidates(root: &Path) -> Vec<PathBuf> {
+    let (package, triple) = if cfg!(target_arch = "aarch64") {
+        ("codex-win32-arm64", "aarch64-pc-windows-msvc")
+    } else {
+        ("codex-win32-x64", "x86_64-pc-windows-msvc")
+    };
+    let codex = root.join("node_modules").join("@openai").join("codex");
+    vec![
+        codex
+            .join("node_modules")
+            .join("@openai")
+            .join(package)
+            .join("vendor")
+            .join(triple)
+            .join("bin")
+            .join("codex.exe"),
+        root.join("node_modules")
+            .join("@openai")
+            .join(package)
+            .join("vendor")
+            .join(triple)
+            .join("bin")
+            .join("codex.exe"),
+        codex
+            .join("vendor")
+            .join(triple)
+            .join("codex")
+            .join("codex.exe"),
+    ]
+}
+
+pub(crate) fn native_launch_binary(path: &Path, spec: &CliAgentSpec) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+        if matches!(ext.as_str(), "cmd" | "bat") {
+            if spec.binary != "codex" {
+                return None;
+            }
+            return npm_codex_candidates(path.parent()?)
+                .into_iter()
+                .find(|p| is_executable_file(p))
+                .and_then(|p| p.canonicalize().ok());
+        }
+        if !matches!(ext.as_str(), "exe" | "com") {
+            return None;
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = spec;
+    path.canonicalize().ok().filter(|p| is_executable_file(p))
 }
 
 // ---------------------------------------------------------------------------
@@ -320,9 +388,8 @@ fn system_tool(name: &str) -> PathBuf {
     root.join("System32").join(name)
 }
 
-/// Kill the spawned process **tree**. `.cmd`/`.bat` shims go through
-/// `cmd.exe`, so the real CLI is a grandchild (`codex.cmd` → `cmd.exe` →
-/// `node.exe`); a bare `kill()` would orphan it mid-call and leave it holding
+/// Kill the spawned process **tree**. Native CLIs may spawn helpers;
+/// a bare `kill()` would orphan those mid-call and leave them holding
 /// the captured pipes. `taskkill /T` walks the tree. On unix the child is
 /// spawned in its own process group (`process_group(0)`), so `kill(-pgid)`
 /// takes the grandchildren with it.
@@ -331,6 +398,7 @@ async fn kill_process_tree(child: &mut tokio::process::Child) {
     if let Some(pid) = child.id() {
         let _ = tokio::process::Command::new(system_tool("taskkill.exe"))
             .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(0x0800_0000)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -354,8 +422,10 @@ async fn kill_process_tree(child: &mut tokio::process::Child) {
 fn kill_process_tree_sync(child: &mut tokio::process::Child) {
     #[cfg(windows)]
     if let Some(pid) = child.id() {
+        use std::os::windows::process::CommandExt;
         let _ = std::process::Command::new(system_tool("taskkill.exe"))
             .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(0x0800_0000)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -378,13 +448,25 @@ fn kill_process_tree_sync(child: &mut tokio::process::Child) {
 /// grandchildren mid-call (AC-012-05). Stays armed through the success path
 /// as well: a shim that exits but leaves a grandchild holding our pipes is
 /// torn down with it.
-struct ChildTreeGuard {
+pub(super) struct ChildTreeGuard {
     child: tokio::process::Child,
     armed: bool,
 }
 
+/// Aborting the parent future must also release owned prompt buffers and pipes;
+/// dropping a JoinHandle alone detaches its task.
+struct PipeTaskGuard(Vec<tokio::task::AbortHandle>);
+
+impl Drop for PipeTaskGuard {
+    fn drop(&mut self) {
+        for task in &self.0 {
+            task.abort();
+        }
+    }
+}
+
 impl ChildTreeGuard {
-    fn new(child: tokio::process::Child) -> Self {
+    pub(super) fn new(child: tokio::process::Child) -> Self {
         Self { child, armed: true }
     }
 }
@@ -412,9 +494,8 @@ impl Drop for ChildTreeGuard {
 
 /// Spawn `binary argv…` with a sanitized environment, an optional stdin
 /// payload, and a hard timeout that kills the child (NFR-012-02). The
-/// working directory is the temp dir — never the repo — so even a
-/// misconfigured sandbox cannot touch the project's files, and codex's
-/// read-only sandbox scopes reads to a throwaway tree.
+/// working directory is a private empty temp directory — never the repo —
+/// so project instructions are not discovered in a shared working root.
 pub(crate) async fn run_headless(
     binary: &Path,
     argv: &[String],
@@ -422,11 +503,24 @@ pub(crate) async fn run_headless(
     stdin_payload: Option<&str>,
     timeout: Duration,
 ) -> Result<HeadlessOutput, LlmError> {
+    #[cfg(windows)]
+    if !binary
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("exe") || ext.eq_ignore_ascii_case("com"))
+    {
+        return Err(LlmError::Provider(
+            "batch and script launchers cannot be executed".into(),
+        ));
+    }
+    // A private empty root avoids inherited files/instructions in the shared
+    // temp directory. Keep it alive until process-tree teardown completes.
+    let working_dir = tempfile::tempdir()
+        .map_err(|_| LlmError::Provider("could not create CLI working directory".into()))?;
     let mut cmd = tokio::process::Command::new(binary);
     cmd.args(argv)
         .env_clear()
         .envs(sanitized_env(spec.extra_env))
-        .current_dir(std::env::temp_dir())
+        .current_dir(working_dir.path())
         .stdin(if stdin_payload.is_some() {
             Stdio::piped()
         } else {
@@ -462,6 +556,7 @@ pub(crate) async fn run_headless(
         );
         LlmError::Provider(format!("could not start the '{}' CLI", spec.binary))
     })?);
+    let mut pipe_tasks = PipeTaskGuard(Vec::new());
 
     // Feed the prompt on stdin from a task so a slow reader cannot block
     // the wait below; a broken pipe just means the child exited early. The
@@ -477,6 +572,9 @@ pub(crate) async fn run_headless(
     } else {
         None
     };
+    if let Some(task) = &stdin_task {
+        pipe_tasks.0.push(task.abort_handle());
+    }
 
     let stdout_task = tokio::spawn({
         let stdout = child.stdout.take();
@@ -496,6 +594,8 @@ pub(crate) async fn run_headless(
             }
         }
     });
+    pipe_tasks.0.push(stdout_task.abort_handle());
+    pipe_tasks.0.push(stderr_task.abort_handle());
 
     let started = Instant::now();
     let status = match tokio::time::timeout(timeout, child.wait()).await {

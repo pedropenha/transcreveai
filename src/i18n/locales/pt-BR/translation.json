@@ -486,6 +486,11 @@
         "title": "Tecla de atalho"
       },
       "cliAgent": {
+        "configure": {
+          "title": "Configurar agente CLI",
+          "description": "Gerencie agentes instalados ou ausentes sem mudar o provedor. Agentes experimentais só executam quando selecionados explicitamente para o assistente.",
+          "error": "Não foi possível salvar a configuração do agente CLI. Tente novamente."
+        },
         "status": {
           "detected": "Detectado",
           "missing": "Ausente",
