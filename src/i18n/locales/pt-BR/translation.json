@@ -1530,7 +1530,12 @@
       "resource_unavailable": "O destino selecionado está indisponível.",
       "vault_unavailable": "O cofre de credenciais do sistema está indisponível.",
       "timeout": "O serviço não respondeu a tempo. Tente novamente.",
-      "rate_limited": "O serviço está limitando solicitações. Tente mais tarde."
+      "rate_limited": "O serviço está limitando solicitações. Tente mais tarde.",
+      "invalid_schema": "O serviço retornou uma resposta inesperada.",
+      "payload_too_large": "A resposta do serviço era grande demais para processar.",
+      "unsupported_capability": "Esta conexão não suporta essa operação.",
+      "cancelled": "A operação foi cancelada.",
+      "busy": "Outra operação está em andamento nesta conexão. Tente novamente."
     },
     "mcp": {
       "title": "Cliente MCP local",

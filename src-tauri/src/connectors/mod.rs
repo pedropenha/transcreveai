@@ -426,7 +426,10 @@ pub async fn test(app: &AppHandle, id: &str) -> ConnectorResult<ConnectionTest> 
                 .map_err(|_| ConnectorError::new(ConnectorErrorCode::Timeout))??;
             None
         }
-        ConnectorKind::AzureDevops => azure::identity(&c, &token).await?,
+        ConnectorKind::AzureDevops => {
+            azure::catalog(&c, &token, None, None).await?;
+            azure::identity(&c, &token).await.ok().flatten()
+        }
     };
     if identity.is_some() {
         c.identity_hint = identity.clone();

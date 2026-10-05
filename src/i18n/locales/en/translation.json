@@ -1530,7 +1530,12 @@
       "resource_unavailable": "The selected destination is unavailable.",
       "vault_unavailable": "The system credential vault is unavailable.",
       "timeout": "The service did not respond in time. Try again.",
-      "rate_limited": "The service is limiting requests. Try again later."
+      "rate_limited": "The service is limiting requests. Try again later.",
+      "invalid_schema": "The service returned an unexpected response.",
+      "payload_too_large": "The service response was too large to process.",
+      "unsupported_capability": "This connection does not support that operation.",
+      "cancelled": "The operation was cancelled.",
+      "busy": "Another operation is in progress for this connection. Try again."
     },
     "mcp": {
       "title": "Local MCP client",
