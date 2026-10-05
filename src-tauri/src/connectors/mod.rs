@@ -1,11 +1,13 @@
 //! Connector facade shared by UI and the explicitly paired local MCP bridge.
 mod azure;
 mod http;
+mod journal;
 mod notion;
 mod oauth;
 pub mod policy;
 pub mod types;
 pub mod vault;
+use sha2::Digest;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, OnceLock},
@@ -450,4 +452,409 @@ pub fn restore(app: &AppHandle) -> ConnectorResult<()> {
         }
     }
     Ok(())
+}
+
+// --- Etapa 2: propostas, aprovação e execução (somente UI confiável) --------
+
+fn db(app: &AppHandle) -> ConnectorResult<rusqlite::Connection> {
+    crate::meeting::session::open_session_db(app)
+        .map_err(|_| ConnectorError::new(ConnectorErrorCode::TemporaryFailure))
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or_default()
+}
+
+fn clean_text(value: &str, max: usize, required: bool) -> ConnectorResult<String> {
+    let trimmed = value.trim();
+    let bad_control = |c: char| c.is_control() && !matches!(c, '\n' | '\r' | '\t');
+    if trimmed.is_empty() && required
+        || trimmed.chars().count() > max
+        || trimmed.chars().any(bad_control)
+    {
+        return Err(ConnectorError::new(ConnectorErrorCode::InvalidSchema));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn meeting_id_checked(id: &str) -> ConnectorResult<String> {
+    let id = id.trim();
+    if id.is_empty()
+        || id.len() > 64
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    {
+        return Err(ConnectorError::new(ConnectorErrorCode::InvalidSchema));
+    }
+    Ok(id.to_string())
+}
+
+/// Validates a reviewed draft against the real catalog and persists it as an
+/// `awaiting_approval` operation. Nothing reaches Azure here (FR-013-11).
+pub async fn prepare_azure_item(
+    app: &AppHandle,
+    connection_id: &str,
+    meeting_id: Option<String>,
+    mut draft: AzureWorkItemDraft,
+) -> ConnectorResult<PreparedAction> {
+    online(app)?;
+    let id = policy::canonical_id(connection_id)?;
+    let lock = lock_for(&id)?;
+    let _guard = lock.lock().await;
+    let c = get(app, &id)?;
+    if c.kind != ConnectorKind::AzureDevops {
+        return Err(ConnectorError::new(
+            ConnectorErrorCode::UnsupportedCapability,
+        ));
+    }
+    let meeting_id = meeting_id.as_deref().map(meeting_id_checked).transpose()?;
+    draft.project_id = policy::require_project(&c, &draft.project_id)?;
+    draft.title = clean_text(&draft.title, 256, true)?;
+    draft.description = clean_text(&draft.description, 8192, false)?;
+    draft.area_path = draft
+        .area_path
+        .as_deref()
+        .map(|v| clean_text(v, 256, false))
+        .transpose()?;
+    draft.iteration_path = draft
+        .iteration_path
+        .as_deref()
+        .map(|v| clean_text(v, 256, false))
+        .transpose()?;
+    let token = token(app, &c).await?;
+    let catalog = azure::catalog(&c, &token, Some(&draft.project_id), None).await?;
+    let mut warnings = Vec::new();
+    let work_type = catalog
+        .work_item_types
+        .iter()
+        .find(|t| t.name.eq_ignore_ascii_case(&draft.work_item_type))
+        .map(|t| t.name.clone())
+        .ok_or_else(|| ConnectorError::new(ConnectorErrorCode::InvalidSchema))?;
+    draft.work_item_type = work_type;
+    if let Some(area) = &draft.area_path {
+        if !catalog
+            .areas
+            .iter()
+            .any(|a| a.path.as_deref() == Some(area))
+        {
+            return Err(ConnectorError::new(ConnectorErrorCode::InvalidSchema));
+        }
+    }
+    if draft.iteration_path.is_some() {
+        warnings.push("iteration_unverified".to_string());
+    }
+    if let Some(parent) = draft.parent_id {
+        azure::read(&c, &token, &parent.to_string(), &draft.project_id).await?;
+    }
+    let operation_id = uuid::Uuid::new_v4().to_string();
+    let canonical = serde_json::to_vec(&(&c.id, c.policy_revision, meeting_id.as_deref(), &draft))
+        .map_err(|_| ConnectorError::new(ConnectorErrorCode::InvalidSchema))?;
+    let fingerprint = format!("{:x}", sha2::Sha256::digest(&canonical));
+    let created = now();
+    let record = OperationRecord {
+        id: operation_id.clone(),
+        connection_id: c.id.clone(),
+        meeting_id,
+        action: "azure_create_work_item".to_string(),
+        status: OperationStatus::AwaitingApproval,
+        remote_id: None,
+        remote_url: None,
+        error_code: None,
+        created_at: created,
+        updated_at: created,
+    };
+    journal::insert(&db(app)?, &record, &draft, &fingerprint)?;
+    Ok(PreparedAction {
+        operation_id,
+        fingerprint,
+        draft,
+        warnings,
+    })
+}
+
+/// Executes an approved operation. The fingerprint must match what the user
+/// reviewed; already-claimed or finished operations return their persisted
+/// state instead of running again (no blind retry, FR-013-12).
+pub async fn execute_action(
+    app: &AppHandle,
+    operation_id: &str,
+    fingerprint: &str,
+) -> ConnectorResult<OperationRecord> {
+    online(app)?;
+    let operation_id = policy::canonical_id(operation_id)?;
+    let conn = db(app)?;
+    let Some((record, expected, draft)) = journal::get(&conn, &operation_id)? else {
+        return Err(ConnectorError::new(ConnectorErrorCode::ResourceUnavailable));
+    };
+    if fingerprint != expected {
+        return Err(ConnectorError::new(ConnectorErrorCode::PolicyDenied));
+    }
+    if record.status != OperationStatus::AwaitingApproval {
+        return Ok(record);
+    }
+    let c = get(app, &record.connection_id)?;
+    let lock = lock_for(&c.id)?;
+    let _guard = lock.lock().await;
+    if !journal::claim(&conn, &record.id, now())? {
+        return journal::get(&conn, &operation_id)?
+            .map(|(r, _, _)| r)
+            .ok_or_else(|| ConnectorError::new(ConnectorErrorCode::ResourceUnavailable));
+    }
+    let outcome = async {
+        policy::require_project(&c, &draft.project_id)?;
+        let token = token(app, &c).await?;
+        azure::create_work_item(&c, &token, &draft).await
+    };
+    let result = tokio::time::timeout(Duration::from_secs(30), outcome).await;
+    let (status, remote_id, remote_url, error_code) = match result {
+        Ok(Ok((id, url))) => (
+            OperationStatus::Succeeded,
+            Some(id.to_string()),
+            Some(url),
+            None,
+        ),
+        Ok(Err(e)) => (
+            match e.code {
+                ConnectorErrorCode::Timeout | ConnectorErrorCode::TemporaryFailure => {
+                    OperationStatus::OutcomeUnknown
+                }
+                _ => OperationStatus::Failed,
+            },
+            None,
+            None,
+            Some(format!("{:?}", e.code)),
+        ),
+        Err(_) => (
+            OperationStatus::OutcomeUnknown,
+            None,
+            None,
+            Some("timeout".into()),
+        ),
+    };
+    journal::finish(
+        &conn,
+        &record.id,
+        status,
+        remote_id.as_deref(),
+        remote_url.as_deref(),
+        error_code.as_deref(),
+        now(),
+    )?;
+    if status == OperationStatus::Succeeded {
+        if let (Some(meeting_id), Some(remote_id), Some(remote_url)) = (
+            record.meeting_id.as_deref(),
+            remote_id.as_deref(),
+            remote_url.as_deref(),
+        ) {
+            journal::insert_link(
+                &conn,
+                meeting_id,
+                &c.id,
+                "azure_devops",
+                remote_id,
+                remote_url,
+                &record.id,
+                now(),
+            )?;
+        }
+    }
+    journal::get(&conn, &operation_id)?
+        .map(|(r, _, _)| r)
+        .ok_or_else(|| ConnectorError::new(ConnectorErrorCode::ResourceUnavailable))
+}
+
+/// Operations linked to a meeting — for persistence across reopen.
+pub fn list_meeting_operations(
+    app: &AppHandle,
+    meeting_id: &str,
+) -> ConnectorResult<Vec<OperationRecord>> {
+    let meeting_id = meeting_id_checked(meeting_id)?;
+    journal::list_by_meeting(&db(app)?, &meeting_id)
+}
+
+/// AI suggestion cards from a meeting summary (FR-013-28). The model never
+/// executes anything: output is parsed, clamped and validated against the
+/// real catalog; invalid cards are dropped, not guessed.
+pub async fn suggest_azure_items(
+    app: &AppHandle,
+    connection_id: &str,
+    meeting_id: &str,
+) -> ConnectorResult<Vec<ItemSuggestion>> {
+    online(app)?;
+    let id = policy::canonical_id(connection_id)?;
+    let meeting_id = meeting_id_checked(meeting_id)?;
+    let lock = lock_for(&id)?;
+    let _guard = lock.lock().await;
+    let c = get(app, &id)?;
+    if c.kind != ConnectorKind::AzureDevops {
+        return Err(ConnectorError::new(
+            ConnectorErrorCode::UnsupportedCapability,
+        ));
+    }
+    let conn = db(app)?;
+    use crate::db::meetings::MeetingRepository;
+    let meeting = crate::db::meetings::SqliteMeetingRepository::new(&conn)
+        .get(&meeting_id)
+        .map_err(|_| ConnectorError::new(ConnectorErrorCode::TemporaryFailure))?
+        .ok_or_else(|| ConnectorError::new(ConnectorErrorCode::ResourceUnavailable))?;
+    let summary = meeting
+        .summary_md
+        .filter(|s| meeting.summary_status == "ready" && !s.trim().is_empty())
+        .ok_or_else(|| ConnectorError::new(ConnectorErrorCode::ResourceUnavailable))?;
+    let token = token(app, &c).await?;
+    let catalog = azure::catalog(&c, &token, None, None).await?;
+    let types: Vec<String> = catalog
+        .work_item_types
+        .iter()
+        .map(|t| t.name.clone())
+        .collect();
+    // project-less catalog returns no types; fetch per allowed project
+    let types = if types.is_empty() {
+        let mut all = Vec::new();
+        for project in &c.scope.azure_project_ids {
+            let scoped = azure::catalog(&c, &token, Some(project), None).await?;
+            all.extend(scoped.work_item_types.iter().map(|t| t.name.clone()));
+        }
+        all
+    } else {
+        types
+    };
+    if types.is_empty() {
+        return Err(ConnectorError::new(ConnectorErrorCode::ResourceUnavailable));
+    }
+    let settings = crate::settings::get_settings(app);
+    let provider = settings
+        .post_process_provider(&settings.post_process_provider_id)
+        .ok_or_else(|| ConnectorError::new(ConnectorErrorCode::UnsupportedCapability))?;
+    let api_key = crate::secrets::provider_api_key(app, &provider.id).unwrap_or_default();
+    if crate::llm::router::requires_api_key(&provider) && api_key.trim().is_empty() {
+        return Err(ConnectorError::new(
+            ConnectorErrorCode::UnsupportedCapability,
+        ));
+    }
+    let model = settings
+        .post_process_models
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+    let llm = crate::llm::router::build_provider(&crate::llm::router::LlmRoute {
+        provider: provider.clone(),
+        model,
+        api_key,
+        escalated: false,
+        cli_agent: crate::llm::cli_agent::is_cli_agent(&provider.id)
+            .then(|| settings.cli_agent_config(&provider.id)),
+    })
+    .map_err(|_| ConnectorError::new(ConnectorErrorCode::UnsupportedCapability))?;
+    let excerpt: String = summary.chars().take(12_000).collect();
+    let prompt = format!(
+        "Return ONLY a JSON array (max 6 items) of work items this meeting \
+         summary suggests for Azure DevOps. Each item: \
+         {{\"title\": string, \"description\": string, \"work_item_type\": string, \
+         \"rationale\": string, \"source_excerpt\": string}}. \
+         work_item_type must be one of: {}. source_excerpt must be a verbatim \
+         quote from the summary. No markdown fences.",
+        types.join(", ")
+    );
+    let response = llm
+        .complete(crate::llm::types::LlmRequest {
+            system: "You extract actionable work items from meeting summaries. \
+                     Output strict JSON only."
+                .to_string(),
+            messages: vec![crate::llm::types::LlmMessage {
+                role: crate::llm::types::LlmRole::User,
+                content: format!("{prompt}\n\nMEETING SUMMARY:\n{excerpt}"),
+            }],
+            max_tokens: 2048,
+            temperature: 0.2,
+            timeout: Duration::from_secs(60),
+            purpose: crate::llm::types::LlmPurpose::Summary,
+        })
+        .await
+        .map_err(|_| ConnectorError::new(ConnectorErrorCode::TemporaryFailure))?;
+    let text = response.text;
+    let start = text.find('[').unwrap_or(0);
+    let end = text.rfind(']').map(|i| i + 1).unwrap_or(text.len());
+    let parsed: Vec<serde_json::Value> = if start < end {
+        serde_json::from_str(&text[start..end]).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let mut suggestions = Vec::new();
+    for value in parsed.into_iter().take(6) {
+        let title = value["title"].as_str().unwrap_or_default().trim();
+        if title.is_empty() {
+            continue;
+        }
+        let suggested = value["work_item_type"].as_str().unwrap_or_default();
+        let work_item_type = types
+            .iter()
+            .find(|t| t.eq_ignore_ascii_case(suggested))
+            .cloned()
+            .or_else(|| {
+                types
+                    .iter()
+                    .find(|t| t.eq_ignore_ascii_case("task"))
+                    .cloned()
+                    .or_else(|| types.first().cloned())
+            })
+            .unwrap_or_default();
+        suggestions.push(ItemSuggestion {
+            title: title.chars().take(200).collect(),
+            description: value["description"]
+                .as_str()
+                .unwrap_or_default()
+                .chars()
+                .take(4_000)
+                .collect(),
+            work_item_type,
+            rationale: value["rationale"]
+                .as_str()
+                .unwrap_or_default()
+                .chars()
+                .take(400)
+                .collect(),
+            source_excerpt: value["source_excerpt"]
+                .as_str()
+                .unwrap_or_default()
+                .chars()
+                .take(400)
+                .collect(),
+        });
+    }
+    Ok(suggestions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_text_trims_and_enforces_bounds() {
+        assert_eq!(clean_text("  hello  ", 256, true).unwrap(), "hello");
+        assert!(clean_text("   ", 256, true).is_err());
+        assert_eq!(clean_text("   ", 256, false).unwrap(), "");
+        assert!(clean_text("abc", 2, true).is_err());
+    }
+
+    #[test]
+    fn clean_text_allows_markdown_but_rejects_other_controls() {
+        let markdown = "## Plano\n- item 1\n\t- sub";
+        assert_eq!(clean_text(markdown, 256, true).unwrap(), markdown);
+        assert!(clean_text("bad\u{0}char", 256, true).is_err());
+        assert!(clean_text("bad\u{7}char", 256, true).is_err());
+    }
+
+    #[test]
+    fn meeting_id_checked_accepts_ids_and_rejects_injection() {
+        assert_eq!(meeting_id_checked("mtg_01-ABC").unwrap(), "mtg_01-ABC");
+        assert!(meeting_id_checked("").is_err());
+        assert!(meeting_id_checked("a; drop table").is_err());
+        assert!(meeting_id_checked("../etc").is_err());
+        assert!(meeting_id_checked(&"x".repeat(65)).is_err());
+    }
 }

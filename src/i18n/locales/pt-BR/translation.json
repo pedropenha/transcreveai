@@ -1487,6 +1487,7 @@
     "name": "Nome",
     "clientId": "ID do aplicativo",
     "tenant": "ID do tenant",
+    "choose": "Escolha…",
     "organization": "Organização",
     "allowedProjects": "IDs de projetos permitidos",
     "allowedPages": "IDs de páginas permitidas",
@@ -1536,6 +1537,35 @@
       "unsupported_capability": "Esta conexão não suporta essa operação.",
       "cancelled": "A operação foi cancelada.",
       "busy": "Outra operação está em andamento nesta conexão. Tente novamente."
+    },
+    "meeting": {
+      "title": "Azure DevOps",
+      "suggest": "Sugerir itens com IA",
+      "create": "Criar item",
+      "needsSummary": "Gere o resumo da reunião primeiro.",
+      "noSuggestions": "Nenhum item foi sugerido a partir deste resumo.",
+      "review": "Revisar e criar",
+      "connection": "Conexão",
+      "project": "Projeto",
+      "noAllowedProjects": "Nenhum projeto permitido — edite a conexão antes",
+      "itemType": "Tipo de item",
+      "itemTitle": "Título",
+      "description": "Descrição",
+      "parent": "Item pai",
+      "noParent": "Sem pai",
+      "area": "Area Path",
+      "iterationUnverified": "A sprint é aplicada como informada — confira no item criado.",
+      "reviewCreate": "Revisar",
+      "confirmCreate": "Confirmar e criar",
+      "openItem": "Abrir item #{id}",
+      "op": {
+        "awaiting_approval": "Aguardando aprovação",
+        "executing": "Criando…",
+        "succeeded": "Criado",
+        "failed": "Falha na criação",
+        "outcome_unknown": "Resultado desconhecido — verifique no Azure antes de tentar de novo",
+        "cancelled": "Cancelado"
+      }
     },
     "mcp": {
       "title": "Cliente MCP local",

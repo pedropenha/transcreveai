@@ -1487,6 +1487,7 @@
     "name": "Name",
     "clientId": "Application ID",
     "tenant": "Tenant ID",
+    "choose": "Choose…",
     "organization": "Organization",
     "allowedProjects": "Allowed project IDs",
     "allowedPages": "Allowed page IDs",
@@ -1536,6 +1537,35 @@
       "unsupported_capability": "This connection does not support that operation.",
       "cancelled": "The operation was cancelled.",
       "busy": "Another operation is in progress for this connection. Try again."
+    },
+    "meeting": {
+      "title": "Azure DevOps",
+      "suggest": "Suggest items with AI",
+      "create": "Create item",
+      "needsSummary": "Generate the meeting summary first.",
+      "noSuggestions": "No work items were suggested from this summary.",
+      "review": "Review and create",
+      "connection": "Connection",
+      "project": "Project",
+      "noAllowedProjects": "No allowed projects — edit the connection first",
+      "itemType": "Work item type",
+      "itemTitle": "Title",
+      "description": "Description",
+      "parent": "Parent item",
+      "noParent": "No parent",
+      "area": "Area Path",
+      "iterationUnverified": "Sprint is applied as entered — verify it on the created item.",
+      "reviewCreate": "Review",
+      "confirmCreate": "Confirm and create",
+      "openItem": "Open item #{id}",
+      "op": {
+        "awaiting_approval": "Awaiting approval",
+        "executing": "Creating…",
+        "succeeded": "Created",
+        "failed": "Creation failed",
+        "outcome_unknown": "Result unknown — check Azure before retrying",
+        "cancelled": "Cancelled"
+      }
     },
     "mcp": {
       "title": "Local MCP client",

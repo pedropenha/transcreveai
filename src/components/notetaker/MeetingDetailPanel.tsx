@@ -19,6 +19,7 @@ import { copyToClipboard } from "../settings/history/clipboard";
 import { AppLogo } from "./AppLogo";
 import { meetingMetaLine } from "./MeetingRow";
 import { SummaryMarkdown } from "./SummaryMarkdown";
+import { MeetingConnectorActions } from "./MeetingConnectorActions";
 import {
   retryActionFor,
   summarySections,
@@ -285,6 +286,8 @@ export const MeetingDetailPanel: React.FC<MeetingDetailPanelProps> = ({
           <SummaryMarkdown markdown={section.body} />
         </section>
       ))}
+
+      <MeetingConnectorActions meetingId={item.id} hasSummary={hasSummary} />
 
       <section className="nt-sec">
         <h3 className="caps">{t("notetaker.detail.transcript")}</h3>

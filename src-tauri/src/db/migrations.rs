@@ -506,4 +506,38 @@ Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todo
     // (including FTS sync) and show "Aplicativo desconhecido". Written only
     // after `is_safe_exe_path`.
     M::up("ALTER TABLE dictations ADD COLUMN app_exe_path TEXT;"),
+    // --- connector_operations + meeting_remote_links (17, F-013 etapa 2) -----
+    // Journal of connector write proposals/executions and the durable
+    // meeting↔remote-resource links created on success. `payload_json` keeps
+    // the reviewed draft for reconciliation; it never carries secrets
+    // (FR-013-12, NFR-013-05). `fingerprint` binds the approved payload so a
+    // post-review edit requires a fresh prepare.
+    M::up(
+        "CREATE TABLE connector_operations (
+            id TEXT PRIMARY KEY,
+            connection_id TEXT NOT NULL,
+            meeting_id TEXT,
+            action TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            status TEXT NOT NULL,
+            remote_id TEXT,
+            remote_url TEXT,
+            error_code TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX connector_operations_meeting ON connector_operations(meeting_id);
+        CREATE TABLE meeting_remote_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            meeting_id TEXT NOT NULL,
+            connection_id TEXT NOT NULL,
+            service TEXT NOT NULL,
+            remote_id TEXT NOT NULL,
+            remote_url TEXT NOT NULL,
+            operation_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX meeting_remote_links_meeting ON meeting_remote_links(meeting_id);",
+    ),
 ];

@@ -2009,6 +2009,38 @@ async connectorQuery(connectionId: string, projectId: string | null) : Promise<R
     else return { status: "error", error: e  as any };
 }
 },
+async connectorPrepareAzureItem(connectionId: string, meetingId: string | null, draft: AzureWorkItemDraft) : Promise<Result<PreparedAction, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_prepare_azure_item", { connectionId, meetingId, draft }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorExecuteAction(operationId: string, fingerprint: string) : Promise<Result<OperationRecord, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_execute_action", { operationId, fingerprint }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorSuggestAzureItems(connectionId: string, meetingId: string) : Promise<Result<ItemSuggestion[], ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_suggest_azure_items", { connectionId, meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorListMeetingOperations(meetingId: string) : Promise<Result<OperationRecord[], ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_list_meeting_operations", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async mcpStatus() : Promise<Result<McpStatus, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("mcp_status") };
@@ -2488,6 +2520,12 @@ export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type AzureCatalog = { projects: CatalogEntry[]; teams: CatalogEntry[]; backlogs: CatalogEntry[]; areas: CatalogEntry[]; iterations: CatalogEntry[]; work_item_types: CatalogEntry[] }
 export type AzureDestinationDefaults = { project_id: string; team_id: string; backlog_id: string | null; area_path: string | null; work_item_type: string | null; sprint_policy: SprintPolicy; iteration_id: string | null; iteration_path: string | null }
+/**
+ * Typed work-item draft reviewed by the user before any remote write
+ * (FR-013-11). The backend composes the JSON Patch; no field is free-form
+ * beyond title/description text.
+ */
+export type AzureWorkItemDraft = { project_id: string; work_item_type: string; title: string; description: string; area_path: string | null; iteration_path: string | null; parent_id: number | null }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type CatalogEntry = { id: string; name: string; path: string | null; start_date: string | null; finish_date: string | null; is_current: boolean }
 /**
@@ -2767,6 +2805,11 @@ export type ImportedModel = { model: ModelInfo; sha256: string }
  * escape hatch — see [`insertion_method_from_legacy`].
  */
 export type InsertionMethod = "auto" | "paste" | "paste_shift_insert" | "type" | "clipboard_only"
+/**
+ * One AI suggestion card. Proposal material only — it can never carry an
+ * approval or become a remote write without going through prepare/execute.
+ */
+export type ItemSuggestion = { title: string; description: string; work_item_type: string; rationale: string; source_excerpt: string }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -3062,6 +3105,12 @@ export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "
  * `ShiftEnter` sends `Shift+Enter` for chat boxes where Enter submits.
  */
 export type NewlineMode = "raw" | "shift_enter"
+/**
+ * Journal row (FR-013-12): metadata + lifecycle only; the reviewed payload
+ * lives in `payload_json` so reconcile is possible, never in logs.
+ */
+export type OperationRecord = { id: string; connection_id: string; meeting_id: string | null; action: string; status: OperationStatus; remote_id: string | null; remote_url: string | null; error_code: string | null; created_at: number; updated_at: number }
+export type OperationStatus = "awaiting_approval" | "executing" | "succeeded" | "failed" | "outcome_unknown" | "cancelled"
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
 /**
@@ -3081,6 +3130,11 @@ export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
+/**
+ * What the review dialog shows; `execute` binds to `fingerprint`, so any
+ * post-review edit requires a new prepare (FR-013-11/26).
+ */
+export type PreparedAction = { operation_id: string; fingerprint: string; draft: AzureWorkItemDraft; warnings: string[] }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type RemoteDocument = { connection_id: string; id: string; url: string; title: string; text: string; revision: number | null; truncated: boolean }
 export type SecureInputStatus = { 

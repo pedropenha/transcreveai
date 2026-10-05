@@ -103,6 +103,63 @@ pub struct RemoteDocument {
     pub revision: Option<u32>,
     pub truncated: bool,
 }
+/// Typed work-item draft reviewed by the user before any remote write
+/// (FR-013-11). The backend composes the JSON Patch; no field is free-form
+/// beyond title/description text.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct AzureWorkItemDraft {
+    pub project_id: String,
+    pub work_item_type: String,
+    pub title: String,
+    pub description: String,
+    pub area_path: Option<String>,
+    pub iteration_path: Option<String>,
+    pub parent_id: Option<u32>,
+}
+/// One AI suggestion card. Proposal material only — it can never carry an
+/// approval or become a remote write without going through prepare/execute.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ItemSuggestion {
+    pub title: String,
+    pub description: String,
+    pub work_item_type: String,
+    pub rationale: String,
+    pub source_excerpt: String,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationStatus {
+    AwaitingApproval,
+    Executing,
+    Succeeded,
+    Failed,
+    OutcomeUnknown,
+    Cancelled,
+}
+/// Journal row (FR-013-12): metadata + lifecycle only; the reviewed payload
+/// lives in `payload_json` so reconcile is possible, never in logs.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct OperationRecord {
+    pub id: String,
+    pub connection_id: String,
+    pub meeting_id: Option<String>,
+    pub action: String,
+    pub status: OperationStatus,
+    pub remote_id: Option<String>,
+    pub remote_url: Option<String>,
+    pub error_code: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+/// What the review dialog shows; `execute` binds to `fingerprint`, so any
+/// post-review edit requires a new prepare (FR-013-11/26).
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct PreparedAction {
+    pub operation_id: String,
+    pub fingerprint: String,
+    pub draft: AzureWorkItemDraft,
+    pub warnings: Vec<String>,
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectorErrorCode {

@@ -707,3 +707,36 @@ button.nt-chip:hover {
   font-size: 12px;
   font-weight: var(--font-weight-semibold);
 }
+
+.nt-ops {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.nt-op {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-sm);
+}
+
+.nt-suggestion,
+.nt-editor {
+  margin-top: 10px;
+}
+
+.nt-suggestion h4 {
+  margin: 0 0 4px;
+}
+
+.nt-excerpt {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}

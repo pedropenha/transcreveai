@@ -130,6 +130,59 @@ pub async fn catalog(
     }
     Ok(c)
 }
+/// Create a work item from a reviewed draft (FR-013-08/12). The project must
+/// be in scope; the parent, when present, must already exist inside the same
+/// project — verified by `read` before the write happens.
+pub async fn create_work_item(
+    config: &ConnectorConfig,
+    token: &str,
+    draft: &AzureWorkItemDraft,
+) -> ConnectorResult<(u64, String)> {
+    let project = policy::require_project(config, &draft.project_id)?;
+    if let Some(parent) = draft.parent_id {
+        read(config, token, &parent.to_string(), &project).await?;
+    }
+    let mut ops = vec![
+        json!({"op": "add", "path": "/fields/System.Title", "value": draft.title}),
+        json!({"op": "add", "path": "/fields/System.Description", "value": draft.description}),
+    ];
+    if let Some(area) = &draft.area_path {
+        ops.push(json!({"op": "add", "path": "/fields/System.AreaPath", "value": area}));
+    }
+    if let Some(iteration) = &draft.iteration_path {
+        ops.push(json!({"op": "add", "path": "/fields/System.IterationPath", "value": iteration}));
+    }
+    if let Some(parent) = draft.parent_id {
+        ops.push(json!({
+            "op": "add",
+            "path": "/relations/-",
+            "value": {
+                "rel": "System.LinkTypes.Hierarchy-Reverse",
+                "url": format!("{}/{project}/_apis/wit/workitems/{parent}", base(config)?),
+            }
+        }));
+    }
+    let mut url = reqwest::Url::parse(&format!("{}/{project}/_apis/wit/workitems/", base(config)?))
+        .map_err(|_| invalid())?;
+    url.path_segments_mut()
+        .map_err(|_| invalid())?
+        .push(&format!("${}", draft.work_item_type));
+    let mut url = url;
+    url.query_pairs_mut().append_pair("api-version", "7.1");
+    let response = http::json(
+        http::client()?
+            .post(url)
+            .bearer_auth(token)
+            .header("Content-Type", "application/json-patch+json")
+            .json(&ops),
+    )
+    .await?;
+    let id = response["id"].as_u64().ok_or_else(invalid)?;
+    Ok((
+        id,
+        format!("{}/{project}/_workitems/edit/{id}", base(config)?),
+    ))
+}
 pub async fn read(
     config: &ConnectorConfig,
     token: &str,

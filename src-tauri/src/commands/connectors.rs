@@ -129,3 +129,47 @@ pub async fn connector_query(
     hub(&window)?;
     connectors::query(&app, &connection_id, project_id.as_deref()).await
 }
+#[tauri::command]
+#[specta::specta]
+pub async fn connector_prepare_azure_item(
+    app: AppHandle,
+    window: WebviewWindow,
+    connection_id: String,
+    meeting_id: Option<String>,
+    draft: AzureWorkItemDraft,
+) -> ConnectorResult<PreparedAction> {
+    hub(&window)?;
+    connectors::prepare_azure_item(&app, &connection_id, meeting_id, draft).await
+}
+#[tauri::command]
+#[specta::specta]
+pub async fn connector_execute_action(
+    app: AppHandle,
+    window: WebviewWindow,
+    operation_id: String,
+    fingerprint: String,
+) -> ConnectorResult<OperationRecord> {
+    hub(&window)?;
+    connectors::execute_action(&app, &operation_id, &fingerprint).await
+}
+#[tauri::command]
+#[specta::specta]
+pub async fn connector_suggest_azure_items(
+    app: AppHandle,
+    window: WebviewWindow,
+    connection_id: String,
+    meeting_id: String,
+) -> ConnectorResult<Vec<ItemSuggestion>> {
+    hub(&window)?;
+    connectors::suggest_azure_items(&app, &connection_id, &meeting_id).await
+}
+#[tauri::command]
+#[specta::specta]
+pub fn connector_list_meeting_operations(
+    app: AppHandle,
+    window: WebviewWindow,
+    meeting_id: String,
+) -> ConnectorResult<Vec<OperationRecord>> {
+    hub(&window)?;
+    connectors::list_meeting_operations(&app, &meeting_id)
+}

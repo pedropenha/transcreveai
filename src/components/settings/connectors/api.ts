@@ -63,6 +63,56 @@ export interface ConnectionTest {
   readable: boolean;
   publication: string;
 }
+export interface AzureWorkItemDraft {
+  project_id: string;
+  work_item_type: string;
+  title: string;
+  description: string;
+  area_path: string | null;
+  iteration_path: string | null;
+  parent_id: number | null;
+}
+export interface ItemSuggestion {
+  title: string;
+  description: string;
+  work_item_type: string;
+  rationale: string;
+  source_excerpt: string;
+}
+export type OperationStatus =
+  | "awaiting_approval"
+  | "executing"
+  | "succeeded"
+  | "failed"
+  | "outcome_unknown"
+  | "cancelled";
+export interface OperationRecord {
+  id: string;
+  connection_id: string;
+  meeting_id: string | null;
+  action: string;
+  status: OperationStatus;
+  remote_id: string | null;
+  remote_url: string | null;
+  error_code: string | null;
+  created_at: number;
+  updated_at: number;
+}
+export interface PreparedAction {
+  operation_id: string;
+  fingerprint: string;
+  draft: AzureWorkItemDraft;
+  warnings: string[];
+}
+export interface RemoteDocument {
+  connection_id: string;
+  id: string;
+  url: string;
+  title: string;
+  text: string;
+  revision: number | null;
+  truncated: boolean;
+}
 export interface ConnectorError {
   code: string;
   message: string;
@@ -93,5 +143,34 @@ export const connectorApi = {
     invoke<ConnectorConfig>("connector_save_defaults", {
       connectionId,
       defaults,
+    }),
+  query: (connectionId: string, projectId?: string) =>
+    invoke<RemoteDocument[]>("connector_query", {
+      connectionId,
+      projectId: projectId ?? null,
+    }),
+  prepareAzureItem: (
+    connectionId: string,
+    meetingId: string | null,
+    draft: AzureWorkItemDraft,
+  ) =>
+    invoke<PreparedAction>("connector_prepare_azure_item", {
+      connectionId,
+      meetingId,
+      draft,
+    }),
+  executeAction: (operationId: string, fingerprint: string) =>
+    invoke<OperationRecord>("connector_execute_action", {
+      operationId,
+      fingerprint,
+    }),
+  suggestAzureItems: (connectionId: string, meetingId: string) =>
+    invoke<ItemSuggestion[]>("connector_suggest_azure_items", {
+      connectionId,
+      meetingId,
+    }),
+  listMeetingOperations: (meetingId: string) =>
+    invoke<OperationRecord[]>("connector_list_meeting_operations", {
+      meetingId,
     }),
 };
