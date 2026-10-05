@@ -109,6 +109,14 @@ enabled_tools = ["connectors_list", "notion_query", "notion_read", "azure_query_
 
 O caminho é placeholder; o exportador gera caminho real verificado, sem tokens OAuth e sem grant secreto. MCP stdio usa stdout exclusivamente para protocolo e stderr redigido. Nenhum download `npx @latest` em produção.
 
+## Consulta de conectores pelo assistente (fase 2)
+
+O assistente do app é somente leitura sobre conectores, por construção: nenhuma capability de escrita é exposta nesse caminho (FR-013-33). A consulta parte de comando explícito do usuário na UI do assistente — anexar conexão + escopo da consulta (ex.: work items do projeto P, sprint atual, página Notion autorizada) — nunca inferido de prosa ambígua.
+
+Implementação por injeção de contexto, estendendo `assistant/context.rs`: o backend executa `connectors::query`/`read` sob a policy de escopo, rotula o bloco como dado remoto não confiável com links de origem, trunca dentro do orçamento de contexto (NFR-013-02) e concatena ao prompt. Funciona igual em Codex CLI e BYOK porque não exige tool calling. Falha de consulta é fail-open para o turno (contexto vazio + aviso na resposta), nunca bloqueia o assistente.
+
+Tool calling iterativo (o modelo decidir buscar sozinho) é incremento posterior opcional via `AgentProvider`, com os limites já propostos (6 calls/turno, 60 s) e a mesma policy; mesmo nesse modo só existem tools de leitura.
+
 ## Compatibilidade Codex e BYOK
 
 - Fase 2: caminhos iguais de contexto/proposta para Codex e OpenAI-compatível/Anthropic existentes; a IA só propõe. Limites e instruções de dados não confiáveis pertencem ao host. Não expandir prompts de resumo para agir em conectores.
@@ -127,7 +135,7 @@ Não elevar F013 ao release v1 nem alterar T-090 concluída por consequência de
 
 **Fase 1**: T-094 (gates/auth/reuso) → T-095/T-096 (conexões/adapters e leitura) → T-101 (UI conectar/diagnóstico) → T-102 (catálogos/defaults); T-099 instala/disponibiliza fachada MCP e comprova leitura. Checkpoint fase 1 da T-100 inclui OAuth persistente, defaults e cliente MCP real; liberar fase 2 somente após esse gate, sem exigir escrita para provar leitura.
 
-**Fase 2**: T-097 (propostas da IA/manual, aprovação e journal) → T-098 (ações no resumo e revisão) e T-103 (vínculos persistentes). T-095/T-096 ganham criação/append/relacionamentos tipados nesta fase. Checkpoint final T-100 demonstra publicação real, escolha de sprint/backlog/pai, providers, reconciliação e estado da reunião.
+**Fase 2**: T-097 (propostas da IA/manual, aprovação e journal) → T-098 (ações no resumo e revisão) e T-103 (vínculos persistentes); T-104 (consulta de leitura pelo assistente) pode correr em paralelo, pois é superfície independente. T-095/T-096 ganham criação/append/relacionamentos tipados nesta fase. Checkpoint final T-100 demonstra publicação real, escolha de sprint/backlog/pai, providers, reconciliação, estado da reunião e consulta somente-leitura pelo assistente.
 
 Verificação ECC: testes RED/GREEN, cobertura >=80% do escopo, revisão segurança/Rust/React, checks pertinentes e aceitação Windows autenticada. Registro de mocks, CLI e UI nativa separadamente; não afirmar ports sem execução própria. Evidências devem distinguir gates das duas fases.
 Sem credenciais fornecidas, aceite autenticado permanece pendente; especificação não precisa de login real. Evidências futuras em `docs/design/t100-connectors-validation.md`, sem tokens, conteúdo confidencial ou prints de tela inteira.

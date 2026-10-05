@@ -30,6 +30,7 @@ Não existe conexão de saída silenciosa, instalação silenciosa de MCP de ter
 - **US-013-04** Quero revisar título, conteúdo e destino antes de publicar uma reunião ou tarefa.
 - **US-013-05** Quero adicionar o MCP do Transcreve.ai a um cliente local sem entregar PATs à IA.
 - **US-013-06** Quero exportar manualmente mesmo sem IA configurada.
+- **US-013-07** Quero pedir ao assistente que consulte backlog, work items ou páginas das minhas conexões e cite a origem — sabendo que ele nunca cria nem altera nada; criação só acontece na revisão da reunião.
 
 ## Requisitos funcionais
 
@@ -61,6 +62,8 @@ Não existe conexão de saída silenciosa, instalação silenciosa de MCP de ter
 - **FR-013-18** BYOK na fase 2 também usa contexto/propostas; funciona mesmo sem suporte nativo a MCP/tool calling na API. Tool calling iterativo futuro exige adaptador de capacidade e host local que traduza tool calls e aplique a mesma política. LLM cloud não alcança stdio/localhost do usuário diretamente.
 - **FR-013-19** Gerar exemplo de configuração MCP sem segredo, com caminho absoluto do bridge. Copiar/exportar é ação do usuário; não alterar `~/.codex/config.toml` automaticamente. Não prometer compatibilidade com qualquer cliente sem teste.
 - **FR-013-20** Provedor LLM recebe apenas contexto escolhido/limitado, nunca tokens dos serviços. Conteúdo remoto é dado não confiável, não instrução; resultados citam origem/link e truncamento. Recusar destinos ou ferramentas sugeridos por conteúdo recuperado fora da política.
+- **FR-013-32** Assistente pode consultar conectores somente por comando explícito do usuário (seleção de conexão/consulta na UI ou comando textual equivalente). O backend executa a leitura allowlisted e injeta o resultado como contexto delimitado e rotulado como dado não confiável, com origem/link. Funciona por injeção de contexto em Codex e BYOK sem exigir tool calling; não inferir consulta a partir de prosa ambígua nem acionar busca automaticamente a cada mensagem.
+- **FR-013-33** O assistente não possui capacidade de escrita: nenhuma operação de criação/alteração de conector é exposta ao modelo, ao contexto ou a ferramentas do assistente. A exigência não é instrução de prompt — a capacidade não existe nesse caminho e a policy do backend nega mutações fora do ciclo de aprovação. Criação/edição ocorre somente por proposta revisada e confirmada na UI da reunião (FR-013-11).
 
 ### UX e privacidade
 
@@ -98,6 +101,8 @@ Requisitos **FR-013-24..31** e critérios **AC-013-21..28** em [notetaker.md](no
 | AC-013-14 | Dado nenhum provider IA, quando exporto manualmente, então reviso/publico normalmente; quando peço proposta IA, então falta de provider é informada sem trocar automaticamente.                                                                                 | FR-09,10,18       | T-097,098     |
 | AC-013-15 | Dado 429, paginação ou payload grande, quando consulto, então retries/bytes/deadline são limitados e truncamento é visível; criação não repete cegamente.                                                                                                       | NFR-02,03         | T-095,096,100 |
 | AC-013-16 | Dada operação do cliente A e ID conhecido por B, quando B consulta status/proposta, então recebe PolicyDenied; revogar grant de A impede novas consultas MCP.                                                                                                   | FR-16             | T-099,100     |
+| AC-013-29 | Dada conexão autorizada, quando peço ao assistente dados do Azure/Notion por comando explícito, então o backend executa leitura dentro do escopo e a resposta cita origem; destino fora do escopo retorna orientação, nunca conteúdo.                          | FR-06,20,32       | T-104,100     |
+| AC-013-30 | Dado prompt pedindo ao assistente criar/alterar item, quando a mensagem é processada, então nenhuma escrita remota ocorre e o assistente orienta a revisão da reunião; não existe tool de escrita exposta ao modelo nem ao contexto.                           | FR-11,33          | T-104,100     |
 
 Critérios OAuth **AC-013-17..20** e jornada de persistência estão em [oauth.md](oauth.md), com implementação T-094..T-100.
 
