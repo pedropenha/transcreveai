@@ -7,6 +7,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use gtk_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
+use tauri::Manager;
 
 use super::geometry::{effective_edge, BarEdge, FLOWBAR_EDGE_MARGIN, OVERLAY_TOP_OFFSET};
 use crate::settings;

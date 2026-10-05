@@ -3,7 +3,9 @@
 //! each adapter's own additions — enforced at the update boundary *and*
 //! re-checked at spawn so a hand-edited store cannot bypass it.
 
-use super::spawn::{is_executable_file, SPAWNABLE_EXTENSIONS};
+use super::spawn::is_executable_file;
+#[cfg(windows)]
+use super::spawn::SPAWNABLE_EXTENSIONS;
 use super::{CliAgentSpec, MAX_EXTRA_ARGS, MAX_EXTRA_ARG_CHARS};
 use crate::settings::CliAgentConfig;
 use std::path::{Path, PathBuf};
