@@ -642,6 +642,64 @@ mod tests {
         assert_eq!(hits, 1);
     }
 
+    /// Migration 16 adds the nullable `dictations.app_exe_path`. A dictation
+    /// that already existed at v15 must survive intact (path NULL), its FTS
+    /// index and created-at index must keep working, and new rows can carry
+    /// the origin app.
+    #[test]
+    fn migration_16_adds_nullable_app_exe_path_without_losing_dictations() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        configure_connection(&conn).expect("configure connection");
+        Migrations::new(migrations::MIGRATIONS[..15].to_vec())
+            .to_latest(&mut conn)
+            .expect("apply migrations 1-15");
+        conn.execute(
+            "INSERT INTO dictations (created_at, raw_text, final_text, status, app_exe, app_name)
+             VALUES (100, 'texto antigo', 'texto antigo', 'inserted', 'Code.exe', 'Visual Studio Code')",
+            [],
+        )
+        .expect("insert dictation at v15");
+
+        run_migrations(&mut conn).expect("migrate to latest");
+
+        let (text, exe, name, path): (String, String, String, Option<String>) = conn
+            .query_row(
+                "SELECT raw_text, app_exe, app_name, app_exe_path FROM dictations",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read migrated dictation");
+        assert_eq!(text, "texto antigo");
+        assert_eq!(exe, "Code.exe");
+        assert_eq!(name, "Visual Studio Code");
+        assert_eq!(path, None, "old rows keep a NULL path");
+
+        conn.execute(
+            "INSERT INTO dictations (created_at, raw_text, final_text, app_exe_path)
+             VALUES (200, 'texto novo', 'texto novo', 'C:/apps/Claude.exe')",
+            [],
+        )
+        .expect("the column is writable and the FTS trigger still fires");
+        for term in ["antigo", "novo"] {
+            let hits: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM dictations_fts WHERE dictations_fts MATCH ?1",
+                    [term],
+                    |row| row.get(0),
+                )
+                .expect("fts query");
+            assert_eq!(hits, 1, "{term}");
+        }
+        let plan: String = conn
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM dictations ORDER BY created_at DESC",
+                [],
+                |row| row.get(3),
+            )
+            .expect("query plan");
+        assert!(plan.contains("idx_dictations_created"), "{plan}");
+    }
+
     #[test]
     fn sqlx_tracking_is_adopted_without_rerunning_old_migrations() {
         let mut conn = Connection::open_in_memory().expect("open in-memory db");

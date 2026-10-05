@@ -245,7 +245,7 @@ fn run_thread(
     if let Some(model_id) = effective_meeting_model_id(&settings) {
         let already = tm.get_current_model().as_deref() == Some(model_id.as_str());
         if !already {
-            if let Some(_guard) = tm.try_start_loading() {
+            if let Some(_guard) = tm.try_start_loading_for(&model_id) {
                 if let Err(e) = tm.load_model(&model_id) {
                     warn!("Meeting live transcription could not load model '{model_id}': {e}");
                 }
@@ -455,7 +455,7 @@ impl Runner {
             );
             return;
         };
-        let Some(_guard) = self.tm.try_start_loading() else {
+        let Some(_guard) = self.tm.try_start_loading_for(&model_id) else {
             // A load is already in flight — `transcribe_once` waits on the
             // condvar, so the next retry sees the loaded engine.
             debug!(

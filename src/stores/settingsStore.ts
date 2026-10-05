@@ -11,6 +11,7 @@ import type {
 } from "@/bindings";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
+import i18n from "@/i18n";
 
 interface SettingsStore {
   settings: Settings | null;
@@ -136,6 +137,10 @@ const settingUpdaters: {
     commands.updateRecordingRetentionPeriod(value as string),
   translate_to_english: (value) =>
     commands.changeTranslateToEnglishSetting(value as boolean),
+  translation_model_id: async (value) => {
+    const result = await commands.changeTranslationModelSetting(value ?? null);
+    if (result.status === "error") throw new Error(result.error.message);
+  },
   selected_language: (value) =>
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>
@@ -348,6 +353,9 @@ export const useSettingsStore = create<SettingsStore>()(
         console.error(`Failed to update setting ${String(key)}:`, error);
         if (settings) {
           set({ settings: { ...settings, [key]: originalValue } });
+        }
+        if (key === "translation_model_id") {
+          toast.error(i18n.t("settings.translatedDictation.saveFailed"));
         }
       } finally {
         setUpdating(updateKey, false);

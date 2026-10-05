@@ -14,7 +14,7 @@ use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExten
 const COLUMNS: &str = "id, created_at, mode, duration_ms, app_exe, app_name, \
      stt_provider_id, llm_provider_id, language, raw_text, final_text, \
      instruction, status, error_code, latency_json, audio_path, word_count, \
-     flagged, post_processed_text, title, post_process_requested";
+     flagged, post_processed_text, title, post_process_requested, app_exe_path";
 
 /// A row of `dictations`.
 ///
@@ -30,6 +30,9 @@ pub struct Dictation {
     pub duration_ms: i64,
     pub app_exe: Option<String>,
     pub app_name: Option<String>,
+    /// Sanitized full path of `app_exe` (migration 16), only used to extract
+    /// the origin-app icon.
+    pub app_exe_path: Option<String>,
     pub stt_provider_id: Option<String>,
     pub llm_provider_id: Option<String>,
     pub language: Option<String>,
@@ -73,6 +76,8 @@ pub struct NewDictation {
     pub duration_ms: i64,
     pub app_exe: Option<String>,
     pub app_name: Option<String>,
+    /// Must already be `is_safe_exe_path`-sanitized.
+    pub app_exe_path: Option<String>,
     pub stt_provider_id: Option<String>,
     pub llm_provider_id: Option<String>,
     pub language: Option<String>,
@@ -98,6 +103,7 @@ impl NewDictation {
             duration_ms: 0,
             app_exe: None,
             app_name: None,
+            app_exe_path: None,
             stt_provider_id: None,
             llm_provider_id: None,
             language: None,
@@ -208,6 +214,7 @@ impl<'a> SqliteDictationRepository<'a> {
             duration_ms: row.get("duration_ms")?,
             app_exe: row.get("app_exe")?,
             app_name: row.get("app_name")?,
+            app_exe_path: row.get("app_exe_path")?,
             stt_provider_id: row.get("stt_provider_id")?,
             llm_provider_id: row.get("llm_provider_id")?,
             language: row.get("language")?,
@@ -246,8 +253,8 @@ impl DictationRepository for SqliteDictationRepository<'_> {
                 stt_provider_id, llm_provider_id, language,
                 raw_text, final_text, instruction, status, error_code,
                 latency_json, audio_path, word_count, flagged,
-                post_processed_text, title, post_process_requested
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+                post_processed_text, title, post_process_requested, app_exe_path
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
             params![
                 created_at,
                 entry.mode,
@@ -269,6 +276,7 @@ impl DictationRepository for SqliteDictationRepository<'_> {
                 entry.post_processed_text,
                 entry.title,
                 entry.post_process_requested,
+                entry.app_exe_path,
             ],
         )?;
 
@@ -821,6 +829,37 @@ mod tests {
             .expect("insert");
         repo.delete(d.id).expect("delete");
         assert!(repo.get(d.id).expect("get").is_none());
+    }
+
+    const CLAUDE_PATH: &str = r"C:\Program Files\Claude\Claude.exe";
+
+    #[test]
+    fn origin_app_round_trips_and_stays_searchable_by_app() {
+        let conn = setup();
+        let repo = repo(&conn);
+        let mut new = NewDictation::new("ola mundo".to_string(), None);
+        new.app_exe = Some("Claude.exe".to_string());
+        new.app_name = Some("Claude".to_string());
+        new.app_exe_path = Some(CLAUDE_PATH.to_string());
+        let stored = repo.insert(&new).expect("insert");
+        let fetched = repo.get(stored.id).expect("get").expect("row");
+        assert_eq!(fetched.app_exe.as_deref(), Some("Claude.exe"));
+        assert_eq!(fetched.app_name.as_deref(), Some("Claude"));
+        assert_eq!(fetched.app_exe_path.as_deref(), Some(CLAUDE_PATH));
+
+        let rows = repo
+            .search(&DictationQuery {
+                app: Some("Claude".to_string()),
+                limit: 10,
+                ..Default::default()
+            })
+            .expect("search by app");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].app_exe_path.as_deref(), Some(CLAUDE_PATH));
+        assert_eq!(
+            repo.distinct_apps().expect("apps"),
+            vec!["Claude", "Claude.exe"]
+        );
     }
 
     #[test]

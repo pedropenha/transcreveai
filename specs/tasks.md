@@ -103,12 +103,12 @@ Evidências e limites: [relatório da etapa 6](../docs/design/stage6-validation.
 ### UI
 
 - [x] **T-040** **Estender** `overlay.rs` + `src/overlay/` para a Flow Bar. Já existem: não-focável, topmost reaplicado, transparente, níveis e botão cancelar. Faltam: click-through na área transparente, hover com 2 botões (Ditar + Notetaker, F009 — o botão de reunião já existe na v1) e tooltip de atalho, estados da F001, posição inferior-centro (padrão). Depende de: T-008. — Refs: FR-001-01..06, NFR-001-01..05, AC-001-01..03, AC-001-07..08
-- [ ] **T-041** [P] Flow Bar: menu de clique direito, arrastar/encaixar, multi-monitor, visibilidade, tela cheia, soneca (15/30/60 min), sons (ligados por padrão, desativáveis). — Refs: FR-001-07..13, AC-001-04..06
+- [ ] **T-041** [P] **(v2 — adiada por decisão do usuário em 2026-10-03)** Flow Bar: menu de clique direito, arrastar/encaixar, multi-monitor, visibilidade, tela cheia, soneca (15/30/60 min), sons (ligados por padrão, desativáveis). — Refs: FR-001-07..13, AC-001-04..06
 - [x] **T-042** [P] **Estender** Hub + Início/Histórico: a lista de histórico existe. Faltam FTS5, filtros, detalhe com diff, estatísticas e o layout da T-008. — Refs: FR-010-01..06, AC-010-03
 - [x] **T-043** [P] Modelos & Provedores — **só modelos locais na v1** (listar, baixar, importar, excluir, selecionar para ditado/reunião). Adicionar/testar provedores em nuvem volta na v1.1+ com a T-014. — Refs: FR-003-01..04, AC-003-01, AC-003-08
-- [ ] **T-044** [P] **Estender** Configurações (Geral com captura de atalho e medidor de mic; Sistema; Privacidade; Avançado — inclui limite de gravação e tamanho da fila de sessões) + Dicionário (vocab + lista editável de muletas da limpeza `light`, T-035), reorganizando as telas herdadas conforme a F010. — Refs: FR-010-07..10, FR-010-12, FR-002-02..03, FR-004-12
-- [ ] **T-045** **Adaptar** onboarding herdado: incluir o campo de prática e a opção de reabrir. Na etapa de transcrição, o usuário **escolhe o modelo local**; `large-v3-turbo` é o default recomendado (a detecção de hardware informa o rótulo, não impõe). Sem opção de nuvem na v1. — Refs: FR-010-16..17, FR-003-05, AC-010-01..02
-- [ ] **T-046** Modo offline, "O que é enviado", retenção, "Apagar todos os dados" (inclui o áudio preservado de sessões falhas, T-022). — Refs: FR-011-06..13, AC-011-02, AC-011-04, AC-011-06
+- [ ] **T-044** [P] **UI implementada; aceitação manual com o usuário.** Configurações (Geral com captura de atalho e medidor de mic; Sistema; Privacidade; Avançado — inclui limite de gravação e tamanho da fila de sessões) + Dicionário (vocab + lista editável de muletas da limpeza `light`, T-035), reorganizando as telas herdadas conforme a F010. — Refs: FR-010-07..10, FR-010-12, FR-002-02..03, FR-004-12
+- [ ] **T-045** **Adaptar** onboarding herdado: manter a escolha de modelo local e a opção de reabrir. Sem campo de prática, por decisão do usuário em 2026-10-03. Na etapa de transcrição, o usuário **escolhe o modelo local**; `large-v3-turbo` é o default recomendado (a detecção de hardware informa o rótulo, não impõe). Sem opção de nuvem na v1. — Refs: FR-010-16..17, FR-003-05, AC-010-01..02
+- [ ] **T-046** **Transparência e exclusão unificada de dados.** Ditado local, bloqueio offline na bandeja e controles de retenção já existem. Restam a explicação "O que é enviado", "Apagar todos os dados" (inclui áudio de sessões falhas, T-022) e aceitação do bloqueio offline. Não inclui tornar assistente/resumos locais; o router atual bloqueia todos os LLMs em modo offline, inclusive localhost. — Refs: FR-011-06..13, AC-011-02, AC-011-04, AC-011-06
 
 ### Release
 
@@ -157,8 +157,25 @@ fora; contexto de reunião é P2.
 
 - [x] **T-090** Providers `cli_agent` no router do `LlmProvider` (T-050): adaptadores Codex (`codex exec`), Claude Code (`claude -p`), Devin (headless) e Cursor (`cursor-agent -p`) por subprocesso com argv direto (sem shell), detecção no `PATH`, timeout/cancel e ambiente sanitizado. Autenticação = sessão do CLI (assinatura), sem keyring. Serve ao resumo de reunião e ao assistente. Passa por `ecc:security-reviewer`. — Refs: FR-012-01..05, NFR-012-02
   - **Implementação e aceitação do escopo concluídas em 2026-10-03**: Codex/Claude estáveis; Cursor/Devin experimentais com opt-in explícito, conforme FR-012-01. Configuração acessível para agentes ausentes, execução Windows nativa sem shell, isolamento de hooks/MCP/configuração, argumentos restritos e cancelamento da árvore. 957 testes Rust e três chamadas/processos reais de aceitação passaram; cobertura CLI e UI acima de 80% nos critérios medidos; revisão independente aprovada. **Commit autorizado pelo usuário em 2026-10-03**, mantendo registrada a falha anterior da catraca global de dívida herdada fora deste escopo; não houve aumento causado pela T-090. Validação manual do app fica com o usuário. Evidências e limites: [T-090](../docs/design/t090-validation.md).
-- [x] **T-091** Overlay do assistente: binding `assistant` (atalho global configurável + terceiro botão na Flow Bar), painel `topmost` com transcrição ao vivo no campo de entrada, envio por `Enter`/botão/segunda pressão do atalho, resposta em Markdown, `thinking` cancelável e multi-turn na sessão. Depende de: T-090. — Refs: FR-012-10..15, FR-012-17..18, NFR-012-01, NFR-012-03
-- [x] **T-092** [P] Painel arrastável/fixável: arrastar pela área de título, posição persistida e restaurada, toggle Fixar, topmost, limites de monitor e fallback para o primário. Depende de: T-091. — Refs: FR-012-16, AC-012-04
+- [x] **T-091** Overlay do assistente: binding `assistant` (atalho global configurável, sem botão na Flow Bar), painel `topmost` com transcrição ao vivo em bolha pendente e compositor de teclado; envio digitado por `Enter`/botão e envio por voz ao parar o ditado, resposta em Markdown, `thinking` cancelável e multi-turn na sessão. Redesign Vidro & Anil aprovado em 2026-10-02; validação complementar abaixo. Depende de: T-090. — Refs: FR-012-10..15, FR-012-17..18, NFR-012-01, NFR-012-03
+- [x] **T-092** [P] Painel arrastável/fixável: arrastar pela área de título, posição persistida e restaurada, toggle Fixar na borda com arrasto liberado e encaixe ao soltar, topmost, limites de monitor e fallback para o primário. Depende de: T-091. — Refs: FR-012-16, AC-012-04
+
+- [ ] **T-093** **Estender — ditado traduzido por comando: implementado, aceitação nativa pendente.** Ação/atalho `transcribe_translate` com tradução local para inglês restrita à sessão, modelo próprio opcional, validação de capacidade/disponibilidade e download explícito em Transcrição → Idiomas. Preferências e ditado comum preservados; sem fallback para nuvem. Destino/cancelamento verificados nos pontos de inserção e clipboard restaurado ao abortar. Reunião ativa, carga concorrente e scripts externos geram orientação localizada no toast não ativante. Versão e acionamento por voz continuam em aberto; independente da T-056. Planejamento: [T-093](../docs/design/t093-orchestration.md). Checks e limites: [validação](../docs/design/t093-validation.md). Checkbox aberto até smoke de tradução, atalho, foco e clipboard no app nativo.
+
+### Validação complementar — Vidro & Anil (2026-10-02)
+
+Relatório: [implementação e validação](../docs/design/assistant-validation.md). Os checks históricos T-091/T-092 não significam que todas as verificações deste redesign terminaram.
+
+- [x] Interface aprovada, campo de texto, traduções e proteções de concorrência implementados.
+- [x] 24 testes focados do assistente, 947 testes Rust, checks frontend, Clippy e cobertura frontend mínima de 80% passaram.
+- [x] Smoke no backend real de digitação, nova conversa, pin e fechar; moldura externa removida.
+- [x] Corrigir e testar ocultação Windows de janela aberta por posicionamento nativo.
+- [ ] Registrar execução integral dos 192 testes sem falhas após a correção; últimos dois prints com falha passaram isoladamente.
+- [ ] Confirmar primeiro clique físico após perda de foco.
+- [ ] Demonstrar cobertura mínima dos novos caminhos nativos Rust.
+- [ ] Concluir revisão final TypeScript e confirmação Rust após a última correção; agentes interrompidos por limite de uso.
+- [ ] Validar envio/resposta real, ditado real e cancelamento durante conversa.
+- [ ] Commit final do redesign, após concluir as verificações pendentes.
 
 ---
 

@@ -168,6 +168,19 @@
   margin-top: 3px;
 }
 
+/* Status notes that need to read as a warning / confirmation at a glance. */
+.st-note[data-tone="warning"] {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: var(--font-weight-medium);
+}
+
+.st-note[data-tone="success"] {
+  color: var(--success);
+}
+
 .st-empty {
   padding: var(--space-8) var(--space-4);
   color: var(--muted);

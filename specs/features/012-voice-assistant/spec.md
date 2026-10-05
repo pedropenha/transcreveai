@@ -1,10 +1,10 @@
-# F012 — Assistente por voz (overlay) + providers de agentes CLI
+# F012 — Assistente por voz e texto (overlay) + providers de agentes CLI
 
 **Status**: Draft · **Release**: v1.1+ (antecipável) · **Depende de**: F001, F002, F003, T-050 (`LlmProvider`), T-016 (keyring)
 
 ## Contexto
 
-O usuário quer conversar com uma IA a qualquer momento, **por voz**, sem abrir
+O usuário quer conversar com uma IA a qualquer momento, **por voz ou texto**, sem abrir
 navegador nem o Hub — direto de um overlay flutuante acionado por um atalho.
 E, em vez de pagar API por token (BYOK), os providers podem ser os
 **agentes CLI já instalados na máquina** — Codex, Claude Code, Devin, Cursor —
@@ -24,12 +24,11 @@ usando a assinatura que o usuário já tem.
 - **Contexto local**: o assistente responde sobre ditados e reuniões
   recentes — um snapshot limitado (títulos, resumos, notas, trechos de
   transcrição) vai junto na chamada do provider.
+- **Entrada por teclado**: campo permanente para preparar um rascunho local e enviar explicitamente por Enter ou botão; Shift+Enter quebra linha. Aprovado em 2026-10-02 na proposta [Vidro & Anil](../../../docs/design/proposta-assistente-vidro.html).
 
 **Fora (não fazer agora):**
 
 - Janela de chat completa no Hub / histórico persistente de conversas.
-- Campo de texto editável no painel — o painel é dictation-first: a
-  transcrição ao vivo é o "rascunho", e o envio é a parada do ditado.
 - Command Mode (F006) continua separado — lá a resposta é inserida como texto;
   aqui a resposta fica no overlay e o usuário decide o que fazer com ela.
 
@@ -92,8 +91,7 @@ usando a assinatura que o usuário já tem.
   mesmo pipeline de STT do ditado, sem limpeza LLM. O texto **nunca é
   inserido em outros apps**; o destino é o painel.
 - **FR-012-13** Envio: **a segunda pressão do atalho `assistant`** encerra o
-  ditado e auto-envia a transcrição ao provider. Não há campo editável — o
-  painel é dictation-first. Se um ditado terminar enquanto uma resposta está
+  ditado e auto-envia a transcrição ao provider; o botão Ditar/Parar e enviar usa a mesma rota. O compositor aceita texto digitado, enviado por Enter/botão, com Shift+Enter para quebra de linha e proteção durante composição IME. Texto vazio, provider indisponível, ditado ou resposta em curso bloqueiam o envio digitado; o rascunho permanece editável. Aceite do comando limpa somente o rascunho enviado, sem apagar edições posteriores; falha preserva texto e mostra erro localizado. Se um ditado terminar enquanto uma resposta está
   em andamento, o prompt é **enfileirado** e enviado quando o turno atual
   comita (nunca descartado, nunca interrompe a resposta em curso).
 - **FR-012-14** Resposta renderizada no painel (Markdown leve: negrito,
@@ -102,11 +100,12 @@ usando a assinatura que o usuário já tem.
   erro localizado com `Tentar de novo`.
 - **FR-012-15** Multi-turn: as mensagens anteriores da sessão do painel entram
   na chamada (truncadas a um limite de tokens configurável). "Nova conversa"
-  limpa o contexto.
+  cancela resposta e ditado antigos, invalida transcrições atrasadas e limpa o contexto e o rascunho anterior. Edições feitas enquanto o comando aguardava aceite são preservadas. Fechar oculta o painel, preserva conversa e rascunho em memória e cancela ditados, inclusive em inicialização; nenhum ditado destinado ao assistente pode cair na rota de colagem em outro app.
 - **FR-012-16** **Arrastar e fixar**: área de título do painel arrasta para
   qualquer ponto da tela; posição persistida e restaurada; toggle **Fixar**
-  trava o painel (fica visível mas imóvel); respeita bordas e multi-monitor
+  encaixa o painel na borda mais próxima da área útil do monitor. O arrasto permanece livre enquanto o usuário segura o título; ao soltar, a janela encaixa na borda mais próxima do monitor de destino. Respeita bordas e multi-monitor
   (se o monitor sumir, volta ao monitor primário).
+  O controle chama-se "Fixar na borda"; não altera topmost nem bloqueia fechar ou digitar. Durante a confirmação, somente ações conflitantes ficam desabilitadas; falhas têm retorno visível, e snapshots atrasados não substituem eventos mais recentes.
 - **FR-012-17** Sem provider LLM configurado/detectado → estado vazio no
   painel: "o assistente precisa de um provider de IA" + botão para abrir
   Configurações. Nenhuma chamada é feita.
@@ -136,8 +135,7 @@ usando a assinatura que o usuário já tem.
   sem recorrer a um modo menos protegido.
 - **NFR-012-03** Saída do provider limitada (ex.: 32k chars); resposta muito
   longa é truncada com aviso, não estoura o painel.
-- **NFR-012-04** O painel segue a direção visual "Papel & Anil" ([ADR-0003](../../../docs/adr/0003-identidade-visual-papel-e-anil.md)) e
-  os mesmos tokens da Flow Bar.
+- **NFR-012-04** O painel segue a direção visual "Papel & Anil" ([ADR-0003](../../../docs/adr/0003-identidade-visual-papel-e-anil.md)), com material próprio "Vidro & Anil" claro/escuro, aprovado em 2026-10-02. Fontes Instrument Sans/Serif locais; controles de 36 px; vidro fosco moderado e opção persistente de reduzir transparência. Efeito nativo no Windows quando disponível, alternativa CSS; contraste AA e redução de movimento. Dimensão de referência 440 × 640 px, limitada à área útil do monitor. Flow Bar e toasts continuam nos tokens escuros `--ov-*`.
 
 ## Critérios de aceitação
 

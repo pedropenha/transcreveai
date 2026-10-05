@@ -66,6 +66,7 @@ Catálogo (`resources/catalog.json`) guarda para cada modelo: id, motor, URL de 
 - **FR-003-18** (v1.1+) Uso e custo estimado: minutos transcritos por provedor por dia/mês; custo = minutos × preço do catálogo (rotulado como **estimativa**).
 - **FR-003-19** P1: diarização para reuniões (provedor com `supports_diarization` ou diarização local sherpa-onnx na trilha `system`).
 - **FR-003-20** P2: streaming (OpenAI Realtime / Deepgram WebSocket) para transcrição ao vivo em reuniões e texto aparecendo enquanto se fala.
+- **FR-003-21** T-093: `translation_model_id` é uma escolha local separada para o ditado traduzido por sessão. Sem escolha explícita, herda o modelo do ditado somente quando compatível. O seletor usa `supports_translation` e o motor local; Turbo é incompatível, Medium/Large compatíveis suportam tradução. Configurar um modelo não baixa nem ativa o modelo de ditado automaticamente. A execução usa opções privadas de tradução e não altera a seleção persistida; antes de inferir, verifica também o modelo efetivamente carregado. O pipeline de saída trata o texto traduzido como inglês.
 
 ## Requisitos não funcionais
 
@@ -83,6 +84,7 @@ Catálogo (`resources/catalog.json`) guarda para cada modelo: id, motor, URL de 
 - **AC-003-06** _Dado_ "Kubernetes" e "Transcreve.ai" no dicionário, _quando_ dito "suba o transcreve ai no kubernetes", _então_ os termos saem com a grafia do dicionário em ≥ 90 % das fixtures.
 - **AC-003-07** (v1.1+) _Dado_ uma gravação de 25 min enviada à OpenAI, _então_ ela é dividida em blocos < 25 MB e o texto final está completo e em ordem.
 - **AC-003-08** _Dado_ o download interrompido em 60 %, _quando_ reabro o app e retomo, _então_ o download continua de onde parou.
+- **AC-003-09** _Dado_ Turbo selecionado para ditado, _quando_ escolho Medium/Large para tradução, _então_ somente `translation_model_id` muda; a tradução exige download explícito e o ditado continua usando sua seleção original. Carga simultânea ou falha de carga nunca permite que um motor incompatível produza uma sessão rotulada como tradução.
 
 ## Casos de borda
 

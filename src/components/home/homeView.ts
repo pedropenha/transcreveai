@@ -115,3 +115,36 @@ export function isStreakExact(
   const distinctDays = new Set(timestampsSeconds.map(dayKey)).size;
   return distinctDays > computeStreak(timestampsSeconds, now);
 }
+
+// --- origin app of a dictation --------------------------------------------
+
+/** The slice of a history entry that identifies where it was dictated. */
+export interface OriginApp {
+  app_name?: string | null;
+  app_exe?: string | null;
+}
+
+const EXE_SUFFIX = /\.exe$/i;
+
+/** Name shown for the origin app, or `null` for pre-origin (legacy) entries. */
+export function originLabel(entry: OriginApp): string | null {
+  return entry.app_name?.trim() || entry.app_exe?.trim() || null;
+}
+
+/** Each row may have a different stored path, including legacy rows without
+ *  one. The backend shares extraction results by path; IPC results belong to
+ *  this entry so a missing legacy icon cannot hide a newer one. */
+export function originIconKey(
+  entry: OriginApp & { id: number },
+): string | null {
+  const exe = entry.app_exe?.trim();
+  return exe ? `${entry.id}:${exe.toLowerCase()}` : null;
+}
+
+/** Labels tried, in order, against the embedded-logo rules: the friendly name
+ *  first, then the exe stem. */
+export function originLogoCandidates(entry: OriginApp): string[] {
+  return [entry.app_name ?? "", (entry.app_exe ?? "").replace(EXE_SUFFIX, "")]
+    .map((label) => label.trim())
+    .filter((label) => label !== "");
+}

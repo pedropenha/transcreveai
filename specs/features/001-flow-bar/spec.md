@@ -13,6 +13,8 @@ Ponto de entrada visual sempre presente, independente do app em uso. Em repouso 
 - **US-001-03** Como usuário, quero ver que o app está me ouvindo (e o nível do meu microfone) e quando está processando.
 - **US-001-04** Como usuário, quero esconder a barra durante apresentações ou jogos e movê-la se ela cobrir um botão.
 
+> **Escopo atualizado em 2026-10-03:** as melhorias da T-041 (menu, arrasto/encaixe, multi-monitor, soneca e comportamento avançado de visibilidade) ficam para **v2**. FR-001-07..13 e AC-001-04..06 permanecem como especificação futura, sem bloquear a v1. Controles de som existentes são preservados.
+
 ## Requisitos funcionais
 
 ### Estados visuais

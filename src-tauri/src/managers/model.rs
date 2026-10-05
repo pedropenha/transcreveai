@@ -3000,6 +3000,14 @@ mod tests {
     }
 
     #[test]
+    fn translation_catalog_excludes_turbo_but_supports_medium_large() {
+        let models = ModelManager::seeded_legacy_models();
+        assert!(!models["turbo"].supports_translation);
+        assert!(models["medium"].supports_translation);
+        assert!(models["large"].supports_translation);
+    }
+
+    #[test]
     fn test_discover_custom_transcribe_models() {
         let temp_dir = TempDir::new().unwrap();
         let models_dir = temp_dir.path().to_path_buf();

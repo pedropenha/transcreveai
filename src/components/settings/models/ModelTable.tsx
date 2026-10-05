@@ -13,6 +13,7 @@ import {
   getTranslatedModelDescription,
   getTranslatedModelName,
 } from "@/lib/utils/modelTranslation";
+import { canTranslateToEnglish } from "../translationModels";
 import { Dots } from "./Dots";
 import { SCORE_DOTS } from "./modelsView";
 
@@ -102,6 +103,9 @@ const ModelRow: React.FC<{ row: ModelRowState } & ModelTableHandlers> = ({
           ) : null}
           {isLegacySource(model) ? (
             <Tag tone="outline">{t("modelSelector.legacy")}</Tag>
+          ) : null}
+          {canTranslateToEnglish(model) ? (
+            <Tag tone="outline">{t("settings.models.translatesTag")}</Tag>
           ) : null}
           {row.suitability === "good_fit" ? (
             <Tag tone="success">{t("settings.models.suitability.goodFit")}</Tag>

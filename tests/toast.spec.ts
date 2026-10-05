@@ -12,6 +12,7 @@
  */
 
 import { test, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import {
   installTauriMock,
   emitTauriEvent,
@@ -58,6 +59,161 @@ function reportedHeights(mock: TauriMock): number[] {
     .filter((height) => Number.isFinite(height) && height > 0);
 }
 
+for (const scale of [1, 1.25, 1.5]) {
+  test.describe(`Toast narrow-window regression @${scale}x`, () => {
+    test.use({
+      viewport: { width: 376, height: 480 },
+      deviceScaleFactor: scale,
+    });
+
+    test("long app names ellipsize while the title and both controls stay whole", async ({
+      page,
+    }) => {
+      await openToast(page);
+      const app =
+        "Reunião Semanal de Planejamento do Produto e Desenvolvimento";
+      await emitTauriEvent(page, "toast://state", {
+        ...DETECTION,
+        detection: { ...DETECTION.detection, app_label: app },
+      });
+      await expect(page.locator(".tsub")).toHaveAttribute("title", app);
+      await expect(page.locator(".tsub-text")).toHaveCSS(
+        "text-overflow",
+        "ellipsis",
+      );
+      const geometry = await page.locator(".tmeeting").evaluate((card) => {
+        const title = card.querySelector<HTMLElement>(".ttitle")!;
+        const subtitle = card.querySelector<HTMLElement>(".tsub-text")!;
+        const row = card.querySelector<HTMLElement>(".trow")!;
+        const buttons = [
+          ...card.querySelectorAll<HTMLElement>(".tsplit button"),
+        ];
+        return {
+          titleClipped: title.scrollWidth > title.clientWidth,
+          subtitleClipped: subtitle.scrollWidth > subtitle.clientWidth,
+          controlsContained: buttons.every(
+            (button) =>
+              button.getBoundingClientRect().right <=
+              row.getBoundingClientRect().right,
+          ),
+        };
+      });
+      expect(geometry).toEqual({
+        titleClipped: false,
+        subtitleClipped: true,
+        controlsContained: true,
+      });
+      await page.keyboard.press("Tab");
+      await expect(
+        page.getByRole("button", { name: /Start Notetaker/i }),
+      ).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(
+        page.getByRole("button", { name: /More actions/i }),
+      ).toBeFocused();
+    });
+
+    test("translation errors wrap completely and report the full card height", async ({
+      page,
+    }) => {
+      const mock = await openToast(page);
+      await emitTauriEvent(page, "toast://state", {
+        collapsed: false,
+        detection: null,
+        notice: {
+          kind: "translated_dictation_error",
+          message: "translation_model_incompatible",
+        },
+      });
+      await expect(page.locator(".tnotice-title")).toBeVisible();
+      await expect(page.locator(".tnotice-body")).toContainText(/English/i);
+      await page.locator(".tcard").evaluate(async (card) => {
+        await Promise.all(
+          card.getAnimations().map((animation) => animation.finished),
+        );
+      });
+      const geometry = await page.locator(".tnotice").evaluate((card) => {
+        const body = card.querySelector<HTMLElement>(".tnotice-body")!;
+        const rect = card.getBoundingClientRect();
+        const bodyRect = body.getBoundingClientRect();
+        return {
+          height: Math.ceil(rect.height) + 32,
+          wrapped: bodyRect.height > 18,
+          contained:
+            bodyRect.right <= rect.right && bodyRect.bottom <= rect.bottom,
+          titleFont: getComputedStyle(card.querySelector(".tnotice-title")!)
+            .fontFamily,
+        };
+      });
+      expect(geometry.wrapped).toBe(true);
+      expect(geometry.contained).toBe(true);
+      expect(geometry.titleFont).toContain("Instrument Sans");
+      await expect
+        .poll(() => reportedHeights(mock).at(-1))
+        .toBe(geometry.height);
+    });
+  });
+}
+
+test("meeting detection and translation error have no axe accessibility violations", async ({
+  page,
+}) => {
+  await openToast(page);
+  for (const state of [
+    DETECTION,
+    {
+      collapsed: false,
+      detection: null,
+      notice: {
+        kind: "translated_dictation_error",
+        message: "translation_model_incompatible",
+      },
+    },
+  ]) {
+    await emitTauriEvent(page, "toast://state", state);
+    await expect(page.locator(".tcard")).toBeVisible();
+    await page.locator(".tcard").evaluate(async (card) => {
+      await Promise.all(
+        card.getAnimations().map((animation) => animation.finished),
+      );
+    });
+    const scan = await new AxeBuilder({ page })
+      .include(".toast-stage")
+      .analyze();
+    expect(scan.violations).toEqual([]);
+  }
+});
+
+test("Portuguese meeting title fits alongside the separate start and menu buttons", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 376, height: 480 });
+  const mock = await installTauriMock(page, {
+    get_app_settings: { app_language: "pt-BR" },
+  });
+  await page.goto(TOAST_URL);
+  await expect
+    .poll(() =>
+      mock.calls.some(
+        (call) =>
+          call.cmd === "plugin:event|listen" &&
+          call.args.event === "toast://state",
+      ),
+    )
+    .toBe(true);
+  await emitTauriEvent(page, "toast://state", DETECTION);
+  await expect(page.locator(".ttitle")).toHaveText("Reunião detectada");
+  expect(
+    await page
+      .locator(".ttitle")
+      .evaluate((title) => title.scrollWidth <= title.clientWidth),
+  ).toBe(true);
+  await expect(
+    page.getByRole("button", { name: "Iniciar Notetaker" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mais ações" })).toBeVisible();
+});
+
 test.describe("Meeting toast — window height tracks the settled card", () => {
   test("the detection card is always expanded and reports its settled height", async ({
     page,
@@ -74,10 +230,10 @@ test.describe("Meeting toast — window height tracks the settled card", () => {
     await expect(
       page.getByRole("button", { name: /More actions/i }),
     ).toBeVisible();
-    // 64 card + 32 stage padding.
+    // 72 card + 32 stage padding.
     await expect
       .poll(() => reportedHeights(mock).at(-1), { timeout: 3000 })
-      .toBe(96);
+      .toBe(104);
 
     // The action row must be physically clickable, not just rendered.
     await page.getByRole("button", { name: /Start Notetaker/i }).click();
@@ -100,16 +256,16 @@ test.describe("Meeting toast — window height tracks the settled card", () => {
     const card = page.locator(".tcard");
     await expect
       .poll(() => reportedHeights(mock).at(-1), { timeout: 3000 })
-      .toBe(96);
+      .toBe(104);
 
     await page.getByRole("button", { name: /More actions/i }).click();
     await expect(page.locator(".tmenu")).toBeVisible();
 
-    // 64 row + 168 menu + 32 padding = 264 once the transition
+    // 72 row + 168 menu + 32 padding = 272 once the layout
     // settles — the menu rows must fit inside, not hang below the window.
     await expect
       .poll(() => reportedHeights(mock).at(-1), { timeout: 3000 })
-      .toBe(264);
+      .toBe(272);
 
     // Hit-test the LAST row: it sits at the bottom edge of the grown card.
     const lastItem = page.getByRole("menuitem", {
@@ -273,7 +429,7 @@ test.describe("Meeting toast — one action per gesture", () => {
     ).toBeVisible();
     await expect
       .poll(() => reportedHeights(mock).at(-1), { timeout: 3000 })
-      .toBe(96);
+      .toBe(104);
     return mock;
   }
 
@@ -475,6 +631,6 @@ test.describe("Meeting toast — height reporting resilience", () => {
     expect(heightCalls).toBe(settled);
     await expect
       .poll(() => reportedHeights(mock).at(-1), { timeout: 3000 })
-      .toBe(96);
+      .toBe(104);
   });
 });

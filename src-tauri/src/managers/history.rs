@@ -13,6 +13,7 @@ use crate::db::dictations::{
     Dictation, DictationProviderUsage, DictationQuery, DictationRepository, DictationStatistics,
     NewDictation, SqliteDictationRepository,
 };
+use crate::dictation_origin::DictationOrigin;
 
 /// IPC shape of a dictation row, kept stable for the frontend.
 /// Field names map onto the `dictations` table:
@@ -52,6 +53,10 @@ pub struct HistoryEntry {
     pub duration_ms: i64,
     pub app_exe: Option<String>,
     pub app_name: Option<String>,
+    /// Full path of the origin app (migration 16) — only used to extract its
+    /// icon; never sent over IPC (`serde(skip)`). Always stored sanitized.
+    #[serde(skip)]
+    pub app_exe_path: Option<String>,
     pub stt_provider_id: Option<String>,
     pub llm_provider_id: Option<String>,
     pub language: Option<String>,
@@ -81,6 +86,7 @@ impl From<Dictation> for HistoryEntry {
             duration_ms: d.duration_ms,
             app_exe: d.app_exe,
             app_name: d.app_name,
+            app_exe_path: d.app_exe_path,
             stt_provider_id: d.stt_provider_id,
             llm_provider_id: d.llm_provider_id,
             language: d.language,
@@ -173,6 +179,8 @@ pub struct SessionEntry {
     pub duration_ms: i64,
     pub language: Option<String>,
     pub stt_provider_id: Option<String>,
+    /// Foreground app captured at session start (F010: "app de origem").
+    pub origin: Option<DictationOrigin>,
 }
 
 pub struct HistoryManager {
@@ -242,6 +250,11 @@ impl HistoryManager {
         new.duration_ms = session.duration_ms;
         new.language = session.language;
         new.stt_provider_id = session.stt_provider_id;
+        if let Some(origin) = session.origin {
+            new.app_exe = Some(origin.exe_name);
+            new.app_name = Some(origin.app_name);
+            new.app_exe_path = origin.exe_path;
+        }
 
         let entry = HistoryEntry::from(repo.insert(&new)?);
 

@@ -262,6 +262,19 @@ fn begin_turn_locked(app: &AppHandle, session: &mut AssistantSession, prompt: &s
 /// sent automatically when the turn commits, so auto-sent dictation
 /// (FR-012-13) is never dropped by a Busy race.
 pub fn send(app: &AppHandle, prompt: &str) -> CommandResult<()> {
+    send_checked(app, prompt, None)
+}
+
+/// Reject a final transcript belonging to a conversation that was reset.
+pub fn send_dictation(app: &AppHandle, prompt: &str, epoch: u64) -> CommandResult<()> {
+    send_checked(app, prompt, Some(epoch))
+}
+
+pub(crate) fn accepts_dictation(session: &AssistantSession, epoch: u64) -> bool {
+    session.open && session.dictation_epoch == epoch
+}
+
+fn send_checked(app: &AppHandle, prompt: &str, epoch: Option<u64>) -> CommandResult<()> {
     let prompt = prompt.trim();
     if prompt.is_empty() {
         return Err(CommandError::new(
@@ -276,6 +289,9 @@ pub fn send(app: &AppHandle, prompt: &str) -> CommandResult<()> {
                 "Assistant is not initialized",
             ));
         };
+        if epoch.is_some_and(|epoch| !accepts_dictation(&session, epoch)) {
+            return Ok(());
+        }
         if session.in_flight.is_some() {
             match session.pending_prompt.as_mut() {
                 Some(pending) => {
@@ -356,25 +372,57 @@ pub fn cancel_in_flight(app: &AppHandle) -> bool {
 
 /// Esc from the panel: while thinking it cancels (panel stays open with the
 /// "cancelled" state); otherwise it closes the panel.
-pub fn dismiss(app: &AppHandle) {
+pub async fn dismiss(app: &AppHandle) -> CommandResult<()> {
     if !cancel_in_flight(app) {
-        close_panel(app);
+        close_panel(app).await?;
     }
+    Ok(())
 }
 
 /// "Nova conversa" — abort any in-flight call and clear history (FR-012-15).
 pub fn new_conversation(app: &AppHandle) {
-    let Some(mut session) = lock_session(app) else {
-        return;
+    let capture = {
+        let Some(mut session) = lock_session(app) else {
+            return;
+        };
+        if session.closing {
+            return;
+        }
+        session.closing = true;
+        let capture = session.dictation_routed && !session.dictation_pending;
+        reset_conversation(&mut session);
+        capture
     };
+    if capture {
+        crate::utils::cancel_current_operation(app);
+    }
+    if let Some(mut session) = lock_session(app) {
+        session.closing = false;
+        emit_state_locked(app, &mut session);
+    }
+}
+
+pub(crate) fn reset_conversation(session: &mut AssistantSession) {
     if let Some(handle) = session.in_flight.take() {
         handle.abort();
     }
+    session.dictation_epoch += 1;
+    session.dictation_pending = false;
+    session.dictation_routed = false;
+    session.dictating = false;
     session.pending_prompt = None;
     session.generation += 1;
     session.messages.clear();
     session.phase = AssistantPhase::Idle;
     session.error_kind = None;
     session.error_detail = None;
-    emit_state_locked(app, &mut session);
+}
+
+/// The assistant button cannot stop another application's dictation.
+pub(crate) fn can_toggle_dictation(dictating: bool, ready: bool, active: Option<&str>) -> bool {
+    if dictating {
+        active == Some("assistant")
+    } else {
+        ready && active.is_none()
+    }
 }

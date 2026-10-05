@@ -12,6 +12,7 @@ use super::types::{
 };
 use crate::managers::model::{EngineType, ModelManager};
 use crate::managers::transcription::TranscriptionManager;
+use crate::settings::AppSettings;
 use log::debug;
 use std::sync::Arc;
 use std::time::Instant;
@@ -34,15 +35,25 @@ pub struct LocalSttProvider {
     manager: TranscriptionManager,
     model_manager: Arc<ModelManager>,
     id: ProviderId,
+    session_settings: Option<AppSettings>,
 }
 
 impl LocalSttProvider {
     pub fn new(manager: TranscriptionManager, model_manager: Arc<ModelManager>) -> Self {
+        Self::for_session(manager, model_manager, None)
+    }
+
+    pub(crate) fn for_session(
+        manager: TranscriptionManager,
+        model_manager: Arc<ModelManager>,
+        session_settings: Option<AppSettings>,
+    ) -> Self {
         let id = Self::provider_id_for(&manager, &model_manager);
         Self {
             manager,
             model_manager,
             id,
+            session_settings,
         }
     }
 
@@ -116,7 +127,13 @@ impl SttProvider for LocalSttProvider {
         // Os motores locais são síncronos: executa inline e o future resolve
         // no primeiro poll — é o que permite `transcribe_blocking` no pipeline
         // de ditado.
-        self.manager.transcribe_once(&audio.samples, opts)
+        match self.session_settings.as_ref() {
+            Some(settings) => {
+                self.manager
+                    .transcribe_once_with_settings(&audio.samples, opts, Some(settings))
+            }
+            None => self.manager.transcribe_once(&audio.samples, opts),
+        }
     }
 
     /// Na v1 o "modelo com áudio curto embutido" do contrato vira uma checagem

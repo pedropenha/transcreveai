@@ -324,16 +324,49 @@
   font-size: var(--fs-caption);
 }
 
-.app-tile {
+/* Origin-app icon (24 px): embedded logo, extracted exe icon or monogram. */
+.hist-applogo {
   display: inline-grid;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
+  flex: none;
   place-items: center;
-  border-radius: 6px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 6%);
+  font-size: 12px;
+  font-weight: var(--font-weight-bold);
+}
+
+.hist-applogo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.hist-applogo[data-kind="monogram"] {
+  background: hsl(var(--mono-hue) 45% 30%);
+  color: #fff;
+}
+
+.hist-applogo[data-kind="unknown"] {
   background: var(--accent-soft);
   color: var(--accent-ink);
-  font-size: 11px;
-  font-weight: var(--font-weight-bold);
+}
+
+.hist-applogo-md {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 15px;
+}
+
+.detail-app {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .chip {

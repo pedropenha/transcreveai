@@ -2,7 +2,8 @@ use crate::actions::process_transcription_output;
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::managers::{
     history::{
-        HistoryFilterOptions, HistoryManager, HistoryQuery, HistoryStatistics, PaginatedHistory,
+        HistoryEntry, HistoryFilterOptions, HistoryManager, HistoryQuery, HistoryStatistics,
+        PaginatedHistory,
     },
     transcription::TranscriptionManager,
 };
@@ -70,6 +71,147 @@ pub async fn get_history_filter_options(
             e,
         )
     })
+}
+
+/// History row / detail: the origin app's icon as a `data:image/png` URI,
+/// extracted from the executable captured at session start and cached per
+/// exe path. `None` (never an error for a missing icon) when the entry
+/// predates the stored path, the app has an embedded front-end logo, or the
+/// extraction failed or exceeded its 2 s budget — the UI then shows a
+/// monogram. The raw path never crosses IPC. Runs off the async workers: the
+/// shell call can block.
+#[tauri::command]
+#[specta::specta]
+pub async fn history_app_icon(
+    history_manager: State<'_, Arc<HistoryManager>>,
+    entry_id: i64,
+) -> CommandResult<Option<String>> {
+    let entry = history_manager
+        .get_entry_by_id(entry_id)
+        .await
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::Internal,
+                "Failed to load history entry",
+                e,
+            )
+        })?
+        .ok_or_else(|| CommandError::new(CommandErrorCode::NotFound, "History entry not found"))?;
+    tokio::task::spawn_blocking(move || origin_icon(&entry, platform_icon))
+        .await
+        .map_err(|e| {
+            CommandError::logged(CommandErrorCode::Internal, "Failed to load the app icon", e)
+        })
+}
+
+/// Icon for the entry's origin app via `extract(label, path)`.
+fn origin_icon(
+    entry: &HistoryEntry,
+    extract: impl Fn(&str, Option<&str>) -> Option<String>,
+) -> Option<String> {
+    let label = entry
+        .app_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .or_else(|| {
+            entry
+                .app_exe
+                .as_deref()
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+        })?;
+    extract(label, entry.app_exe_path.as_deref())
+}
+
+#[cfg(windows)]
+fn platform_icon(label: &str, path: Option<&str>) -> Option<String> {
+    crate::meeting::app_icon::dictation_icon(label, path)
+}
+
+/// Icon extraction is Windows-only for now (macOS lands with v1.0 packaging).
+#[cfg(not(windows))]
+fn platform_icon(_label: &str, _path: Option<&str>) -> Option<String> {
+    None
+}
+
+#[cfg(test)]
+mod origin_icon_tests {
+    use super::*;
+    use crate::db::dictations::Dictation;
+
+    fn entry(app_name: Option<&str>, app_exe: Option<&str>, path: Option<&str>) -> HistoryEntry {
+        HistoryEntry::from(Dictation {
+            id: 1,
+            created_at: 0,
+            mode: "dictation".into(),
+            duration_ms: 0,
+            app_exe: app_exe.map(Into::into),
+            app_name: app_name.map(Into::into),
+            app_exe_path: path.map(Into::into),
+            stt_provider_id: None,
+            llm_provider_id: None,
+            language: None,
+            raw_text: "x".into(),
+            final_text: "x".into(),
+            instruction: None,
+            status: "inserted".into(),
+            error_code: None,
+            latency_json: "{}".into(),
+            audio_path: None,
+            word_count: 1,
+            flagged: false,
+            post_processed_text: None,
+            title: String::new(),
+            post_process_requested: false,
+        })
+    }
+
+    #[test]
+    fn extracts_with_friendly_name_and_stored_path() {
+        let e = entry(Some("Claude"), Some("Claude.exe"), Some(r"C:\a\Claude.exe"));
+        let icon = origin_icon(&e, |label, path| {
+            assert_eq!(label, "Claude");
+            path.map(|p| format!("icon:{p}"))
+        });
+        assert_eq!(icon.as_deref(), Some(r"icon:C:\a\Claude.exe"));
+    }
+
+    #[test]
+    fn falls_back_to_exe_name_as_label() {
+        let e = entry(None, Some("tool.exe"), None);
+        let icon = origin_icon(&e, |label, path| {
+            assert_eq!(label, "tool.exe");
+            assert_eq!(path, None);
+            None
+        });
+        assert_eq!(icon, None);
+    }
+
+    #[test]
+    fn blank_friendly_name_falls_back_to_executable() {
+        let e = entry(Some("  "), Some("tool.exe"), Some(r"C:\a\tool.exe"));
+        assert_eq!(
+            origin_icon(&e, |label, _| Some(label.to_string())),
+            Some("tool.exe".to_string())
+        );
+    }
+
+    #[test]
+    fn legacy_entries_without_app_never_extract() {
+        let e = entry(None, None, None);
+        assert_eq!(origin_icon(&e, |_, _| panic!("must not extract")), None);
+        let blank = entry(Some("  "), None, None);
+        assert_eq!(origin_icon(&blank, |_, _| panic!("must not extract")), None);
+    }
+
+    #[test]
+    fn raw_path_is_never_serialized() {
+        let e = entry(Some("Claude"), Some("Claude.exe"), Some(r"C:\a\Claude.exe"));
+        let json = serde_json::to_value(&e).expect("serialize");
+        assert!(json.get("app_exe_path").is_none());
+        assert_eq!(json["app_name"], "Claude");
+    }
 }
 
 #[tauri::command]

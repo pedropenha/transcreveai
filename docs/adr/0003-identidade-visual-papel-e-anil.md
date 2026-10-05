@@ -34,6 +34,10 @@ Adotamos a identidade **Papel & Anil** (tokens em `src/styles/theme.css`, claro 
 
 ## Consequences
 
+### Extensão aprovada — Assistente Vidro & Anil (2026-10-02)
+
+O usuário aprovou [a proposta do assistente](../design/proposta-assistente-vidro.html): vidro fosco, temas claro/escuro, compositor para teclado e voz e controles maiores. O assistente usa aliases `--as-*` ligados aos tokens semânticos do Hub, preservando a mesma paleta em claro/escuro; a exceção é somente de material translúcido e não de identidade cromática. Flow Bar/toasts mantêm `--ov-*`. Instrument Sans continua nos controles/texto, Serif nas boas-vindas. No Windows, Acrylic nativo foi removido porque pintava um retângulo nos cantos; a superfície CSS conserva translucidez sem blur nativo do desktop; a opção persistente Reduzir transparência oferece superfície sólida. Contraste e usabilidade prevalecem sobre a intensidade do efeito. O vidro não transforma o assistente em janela não ativável: clique explícito precisa permitir digitação, sem alterar a proteção de foco da Flow Bar.
+
 ### Positive
 
 - Contraste WCAG 2.2 AA verificado por teste unitário (`src/styles/theme.test.ts`) nos dois temas e nos overlays.

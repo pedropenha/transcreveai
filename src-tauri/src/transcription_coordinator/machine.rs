@@ -526,6 +526,11 @@ impl CoordinatorState {
         })
     }
 
+    /// Done/Error only display feedback; audio and pipeline are already free.
+    pub(crate) fn accepts_assistant_start(&self) -> bool {
+        !self.stage.is_capturing() && !self.stage.is_busy()
+    }
+
     /// Earliest instant at which a timer must fire — drives `recv_timeout`.
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
         let mut deadline = self.pending_release.as_ref().map(|p| p.deadline);
@@ -610,7 +615,15 @@ impl CoordinatorState {
                 .map(|s| s.id.clone())
                 .or_else(|| self.last_session_id.clone()),
             state: self.stage.name(),
-            mode: "dictation",
+            mode: if self
+                .stage
+                .session()
+                .is_some_and(|s| s.binding_id == "transcribe_translate")
+            {
+                "translation"
+            } else {
+                "dictation"
+            },
             error,
             notice: notice.map(str::to_string),
             pending: self.pending.len(),

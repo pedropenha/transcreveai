@@ -4,7 +4,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import ReactMarkdown from "react-markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
-import { MessageSquarePlus, Pin, PinOff, Sparkles, X } from "lucide-react";
+import { MessageSquarePlus, Pin, PinOff, Sparkles, X, Eye } from "lucide-react";
+import { AssistantComposer } from "./AssistantComposer";
+import { useAssistantInput } from "./useAssistantInput";
 import "./AssistantPanel.css";
 import { commands, events } from "@/bindings";
 import type { AssistantStateEvent } from "@/bindings";
@@ -53,6 +55,17 @@ const AssistantPanel: React.FC = () => {
   const direction = getLanguageDirection(i18n.language);
 
   const [state, setState] = useState<AssistantStateEvent | null>(null);
+  const input = useAssistantInput(state);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const pendingActionRef = useRef<string | null>(null);
+  const [solid, setSolid] = useState(() => {
+    try {
+      return localStorage.getItem("transcreve-ai.assistant-solid") === "true";
+    } catch {
+      return true;
+    }
+  });
   // Live STT preview while a dictation is routed to the panel — rendered as
   // a pending user bubble until the finalized transcript lands as a real
   // message (FR-012-12: the visible transcription the user approved).
@@ -68,6 +81,7 @@ const AssistantPanel: React.FC = () => {
   // free (StrictMode); the hydration path still writes it inline — that
   // assignment is the apply itself, not a render side effect.
   const stateRef = useRef<AssistantStateEvent | null>(null);
+  const stateEventRevision = useRef(0);
   useEffect(() => {
     stateRef.current = state;
   });
@@ -98,6 +112,8 @@ const AssistantPanel: React.FC = () => {
         await add(() =>
           listen<AssistantStateEvent>("assistant://state", (event) => {
             eventDelivered = true;
+            stateEventRevision.current += 1;
+            stateRef.current = event.payload;
             setState(event.payload);
           }),
         );
@@ -176,9 +192,7 @@ const AssistantPanel: React.FC = () => {
   const onStageKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      void invokeChecked("assistant_dismiss", () =>
-        commands.assistantDismiss(),
-      );
+      void runAction("dismiss", () => commands.assistantDismiss());
     }
   };
 
@@ -186,6 +200,34 @@ const AssistantPanel: React.FC = () => {
   // intent, so the backend makes the window key/focused here.
   const onPanelMouseDown = () => {
     void invokeChecked("assistant_focus", () => commands.assistantFocus());
+  };
+
+  const runAction = async (
+    id: string,
+    call: () => ReturnType<typeof commands.assistantClose>,
+  ) => {
+    if (pendingActionRef.current) return false;
+    pendingActionRef.current = id;
+    setPendingAction(id);
+    setActionError(null);
+    try {
+      const ok = await invokeChecked(`assistant_${id}`, call);
+      if (!ok) setActionError(`assistant.actionError.${id}`);
+      return ok;
+    } finally {
+      pendingActionRef.current = null;
+      setPendingAction(null);
+    }
+  };
+
+  const toggleSolid = () => {
+    const next = !solid;
+    setSolid(next);
+    try {
+      localStorage.setItem("transcreve-ai.assistant-solid", String(next));
+    } catch {
+      /* The in-memory preference still works without storage. */
+    }
   };
 
   // ---- Drag & pin (T-092, FR-012-16) ------------------------------------
@@ -236,12 +278,23 @@ const AssistantPanel: React.FC = () => {
     );
   };
 
-  // FR-012-16 "Fixar": the toggle persists; while pinned every drag is
-  // ignored (canDragPanel gate above + a backend check on the command).
+  // Pinned panels remain draggable; the backend docks them on release.
   const togglePin = () => {
-    void invokeChecked("assistant_set_panel_pinned", () =>
-      commands.assistantSetPanelPinned(!(stateRef.current?.pinned ?? false)),
-    );
+    void runAction("pin", async () => {
+      const result = await commands.assistantSetPanelPinned(
+        !(stateRef.current?.pinned ?? false),
+      );
+      if (result.status === "error") return result;
+      // Command acknowledgement is not a state snapshot; wait for confirmed
+      // state before allowing the next toggle, even if its event was delayed.
+      const revision = stateEventRevision.current;
+      const snapshot = await commands.assistantGetState();
+      if (snapshot.status === "ok" && stateEventRevision.current === revision) {
+        setState(snapshot.data);
+        stateRef.current = snapshot.data;
+      } else if (snapshot.status === "error") return snapshot;
+      return result;
+    });
   };
 
   const close = useCallback(() => {
@@ -253,22 +306,34 @@ const AssistantPanel: React.FC = () => {
         try {
           void getCurrentWindow()
             .hide()
-            .catch((e) => console.warn("assistant panel hide failed:", e));
+            .catch((e) => {
+              console.warn("assistant panel hide failed:", e);
+              setActionError("assistant.actionError.close");
+            });
         } catch (e) {
           console.warn("assistant panel hide failed:", e);
+          setActionError("assistant.actionError.close");
         }
       })
       .catch((e) => console.warn("assistant close fallback failed:", e));
   }, []);
   const cancel = () =>
-    void invokeChecked("assistant_cancel", () => commands.assistantCancel());
-  const retry = () =>
-    void invokeChecked("assistant_retry", () => commands.assistantRetry());
+    void runAction("cancel", () => commands.assistantCancel());
+  const retry = () => void runAction("retry", () => commands.assistantRetry());
   const newConversation = () => {
-    void invokeChecked("assistant_new_conversation", () =>
+    if (input.sending) return;
+    const revision = input.getRevision();
+    void runAction("newConversation", () =>
       commands.assistantNewConversation(),
-    );
+    ).then((ok) => {
+      if (ok) {
+        setLive("");
+        input.reset(revision);
+      }
+    });
   };
+  const dictate = () =>
+    void runAction("dictate", () => commands.assistantToggleDictation());
   const openSettings = () => {
     void invokeChecked("show_main_window", () =>
       commands.showMainWindowCommand(),
@@ -307,6 +372,11 @@ const AssistantPanel: React.FC = () => {
     return {
       onPointerDown: (e: React.PointerEvent) => {
         if (e.button !== 0) return; // only the primary button activates
+        if (
+          e.currentTarget instanceof HTMLButtonElement &&
+          e.currentTarget.disabled
+        )
+          return;
         e.preventDefault();
         e.stopPropagation();
         consumedStripGestureRef.current[id] = performance.now();
@@ -342,8 +412,8 @@ const AssistantPanel: React.FC = () => {
     messages.length === 0 && phase === "idle" && !dictating && state !== null;
 
   return (
-    <div
-      className="as-stage"
+    <main
+      className={`as-stage${solid ? " as-stage--solid" : ""}`}
       dir={direction}
       onMouseDown={onPanelMouseDown}
       onKeyDown={onStageKeyDown}
@@ -366,31 +436,20 @@ const AssistantPanel: React.FC = () => {
           onPointerUp={endTitleDrag}
           onPointerCancel={endTitleDrag}
         >
-          <Sparkles size={13} className="as-title-icon" aria-hidden="true" />
+          <span className="as-mark">
+            <Sparkles size={18} className="as-title-icon" aria-hidden="true" />
+          </span>
           <span className="as-title-text">{t("assistant.title")}</span>
-          {state?.providerLabel && (
-            <button
-              type="button"
-              className={`as-provider${experimental ? " as-provider--experimental" : ""}`}
-              title={state.providerId ?? undefined}
-              aria-label={t("assistant.changeProvider")}
-              {...stripButton("provider", openSettings)}
-            >
-              {state.providerLabel}
-              {experimental && (
-                <em className="as-exp"> {t("assistant.experimental")}</em>
-              )}
-            </button>
-          )}
           <span className="as-title-spacer" />
           <button
             type="button"
             className="as-pin"
             aria-label={t("assistant.newConversation")}
             title={t("assistant.newConversation")}
+            disabled={pendingAction !== null || input.sending || state === null}
             {...stripButton("new", newConversation)}
           >
-            <MessageSquarePlus size={12} aria-hidden="true" />
+            <MessageSquarePlus size={18} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -401,12 +460,13 @@ const AssistantPanel: React.FC = () => {
             aria-label={t("assistant.pin")}
             aria-pressed={pinned}
             title={t(pinToggleKey(pinned))}
+            disabled={pendingAction !== null || state === null}
             {...stripButton("pin", togglePin)}
           >
             {pinned ? (
-              <PinOff size={12} aria-hidden="true" />
+              <PinOff size={18} aria-hidden="true" />
             ) : (
-              <Pin size={12} aria-hidden="true" />
+              <Pin size={18} aria-hidden="true" />
             )}
           </button>
           <button
@@ -415,9 +475,42 @@ const AssistantPanel: React.FC = () => {
             aria-label={t("assistant.close")}
             {...stripButton("close", close)}
           >
-            <X size={12} aria-hidden="true" />
+            <X size={18} aria-hidden="true" />
           </button>
         </header>
+
+        <div className="as-meta">
+          <button
+            type="button"
+            className={`as-provider${experimental ? " as-provider--experimental" : ""}`}
+            title={state?.providerId ?? undefined}
+            aria-label={t("assistant.changeProvider")}
+            onClick={openSettings}
+          >
+            {state?.providerLabel
+              ? t("assistant.provider", { label: state.providerLabel })
+              : t("assistant.noProviderLabel")}
+            {experimental && (
+              <em className="as-exp"> {t("assistant.experimental")}</em>
+            )}
+          </button>
+          <button
+            type="button"
+            className="as-material"
+            aria-label={t("assistant.reduceTransparency")}
+            title={t("assistant.reduceTransparency")}
+            aria-pressed={solid}
+            onClick={toggleSolid}
+          >
+            <Eye size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        {(actionError || input.errorKey) && (
+          <div className="as-action-error" role="alert">
+            {t(actionError ?? input.errorKey ?? "assistant.actionError.send")}
+          </div>
+        )}
 
         {state && !state.providerReady && (
           <div className="as-banner" role="status">
@@ -438,8 +531,26 @@ const AssistantPanel: React.FC = () => {
         <div className="as-scroll" ref={scrollRef}>
           {showEmpty && (
             <div className="as-empty">
+              <span className="as-empty-mark">
+                <Sparkles size={27} aria-hidden="true" />
+              </span>
+              <h1>{t("assistant.emptyTitle")}</h1>
               <p>{t("assistant.empty")}</p>
               <p className="as-privacy">{t("assistant.privacyHint")}</p>
+              <div className="as-suggestions">
+                {["review", "organize"].map((kind) => (
+                  <button
+                    type="button"
+                    key={kind}
+                    onClick={() => {
+                      input.change(t(`assistant.suggestion.${kind}`));
+                      input.inputRef.current?.focus();
+                    }}
+                  >
+                    {t(`assistant.suggestion.${kind}`)}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {messages.map((m, i) => (
@@ -537,11 +648,21 @@ const AssistantPanel: React.FC = () => {
           )}
         </div>
 
-        <footer className="as-foot">
-          <span className="as-hint">{t("assistant.dictateHint")}</span>
-        </footer>
+        <AssistantComposer
+          draft={input.draft}
+          inputRef={input.inputRef}
+          onChange={input.change}
+          onSend={() => void input.send()}
+          onDictate={dictate}
+          dictating={dictating}
+          canSend={input.canSend && pendingAction === null}
+          canDictate={
+            pendingAction === null &&
+            Boolean(state && (dictating || state.providerReady))
+          }
+        />
       </div>
-    </div>
+    </main>
   );
 };
 

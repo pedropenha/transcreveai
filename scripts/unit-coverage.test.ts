@@ -16,6 +16,7 @@ const standaloneTests = [
   "../src/components/settings/hub/settingsNav.test.ts",
   "../src/components/settings/models/modelsView.test.ts",
   "../src/components/settings/dictionary/dictionaryView.test.ts",
+  "../src/components/settings/translationModels.test.ts",
 ];
 
 for (const standaloneTest of standaloneTests) {

@@ -9,7 +9,7 @@
 use super::{CommandError, CommandErrorCode, CommandResult};
 use crate::assistant::{self, AssistantStateEvent};
 use crate::settings;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 /// Full snapshot for the panel (webview hydration on mount).
 #[tauri::command]
@@ -45,17 +45,15 @@ pub fn assistant_cancel(app: AppHandle) -> CommandResult<()> {
 /// Esc from the panel: cancel while thinking, close otherwise.
 #[tauri::command]
 #[specta::specta]
-pub fn assistant_dismiss(app: AppHandle) -> CommandResult<()> {
-    assistant::dismiss(&app);
-    Ok(())
+pub async fn assistant_dismiss(app: AppHandle) -> CommandResult<()> {
+    assistant::dismiss(&app).await
 }
 
 /// × button — hides the panel; the session is kept in memory.
 #[tauri::command]
 #[specta::specta]
-pub fn assistant_close(app: AppHandle) -> CommandResult<()> {
-    assistant::close_panel(&app);
-    Ok(())
+pub async fn assistant_close(app: AppHandle) -> CommandResult<()> {
+    assistant::close_panel(&app).await
 }
 
 /// "Nova conversa" (FR-012-15) — aborts any in-flight call and clears the
@@ -71,9 +69,8 @@ pub fn assistant_new_conversation(app: AppHandle) -> CommandResult<()> {
 /// (FR-012-11: the panel only ever focuses on explicit intent).
 #[tauri::command]
 #[specta::specta]
-pub fn assistant_focus(app: AppHandle) -> CommandResult<()> {
-    assistant::focus_panel(&app);
-    Ok(())
+pub async fn assistant_focus(app: AppHandle) -> CommandResult<()> {
+    assistant::focus_panel_checked(&app).await
 }
 
 /// FR-012-16: live title-strip drag — repositions the panel clamped onto
@@ -92,7 +89,7 @@ pub fn assistant_move_panel(app: AppHandle, grab_x: f64, grab_y: f64) -> Command
 
 /// FR-012-16 / AC-012-04: drag end — applies the final position once and
 /// persists it (with monitor context) so the panel reopens where it was
-/// left. A pinned panel ignores the drop.
+/// left. Docked panels snap to the nearest monitor edge on release.
 #[tauri::command]
 #[specta::specta]
 pub fn assistant_save_panel_position(
@@ -112,6 +109,9 @@ pub fn assistant_set_panel_pinned(app: AppHandle, pinned: bool) -> CommandResult
     let mut settings = settings::get_settings(&app);
     settings.assistant_panel_pinned = pinned;
     settings::write_settings(&app, settings);
+    if pinned {
+        assistant::dock_panel(&app);
+    }
     // The panel may be open — refresh the title strip's pin affordance.
     assistant::emit_state(&app);
     Ok(())
@@ -143,5 +143,33 @@ pub fn set_assistant_provider(app: AppHandle, provider_id: Option<String>) -> Co
     settings::write_settings(&app, settings);
     // The panel may be open — refresh its provider chip/empty state.
     assistant::emit_state(&app);
+    Ok(())
+}
+
+/// Microphone button uses the assistant binding, never application-paste routing.
+#[tauri::command]
+#[specta::specta]
+pub fn assistant_toggle_dictation(app: AppHandle) -> CommandResult<()> {
+    let coordinator = app
+        .try_state::<crate::TranscriptionCoordinator>()
+        .ok_or_else(|| {
+            CommandError::new(
+                CommandErrorCode::Internal,
+                "Transcription is not initialized",
+            )
+        })?;
+    let state = assistant::state_event(&app);
+    let active = coordinator.assistant_active_session();
+    if !assistant::can_toggle_dictation(
+        state.dictating,
+        state.provider_ready,
+        active.as_ref().map(|session| session.binding_id.as_str()),
+    ) {
+        return Err(CommandError::new(
+            CommandErrorCode::Busy,
+            "Assistant dictation cannot start during another capture or without a ready provider",
+        ));
+    }
+    crate::signal_handle::send_transcription_input(&app, "assistant", "AssistantPanel");
     Ok(())
 }

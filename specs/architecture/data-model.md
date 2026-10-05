@@ -55,8 +55,9 @@ CREATE TABLE dictations (
   created_at    INTEGER NOT NULL,
   mode          TEXT NOT NULL CHECK (mode IN ('dictation','command','note')),
   duration_ms   INTEGER NOT NULL,               -- duração do áudio
-  app_exe       TEXT,                           -- ex.: slack.exe
-  app_name      TEXT,
+  app_exe       TEXT,                           -- app em foco no INÍCIO da sessão, ex.: Claude.exe (F010 FR-010-29)
+  app_name      TEXT,                           -- rótulo amigável, ex.: Claude, Chrome, Visual Studio Code
+  app_exe_path  TEXT,                           -- caminho do .exe de origem, só para extrair o ícone (migração 16); sanitizado por `is_safe_exe_path`; nunca sai por IPC
   stt_provider_id TEXT REFERENCES providers(id) ON DELETE SET NULL,
   llm_provider_id TEXT REFERENCES providers(id) ON DELETE SET NULL,
   language      TEXT,
@@ -203,6 +204,8 @@ Triggers mantêm as tabelas FTS sincronizadas. Migrações versionadas, aplicada
 O acesso a dados segue o **Repository Pattern com traits** de `rules/rust/patterns.md` (implementação SQLite + implementação em memória para testes) e somente **queries parametrizadas** (`rules/rust/security.md`). O esquema acima é o alvo; nomes de colunas podem se ajustar ao que o fork já tiver.
 
 ## 3. `settings.json` (exemplo)
+
+T-093 acrescenta ao `AppSettings` persistido a chave opcional `translation_model_id: string | null` (padrão `null`, compatível com stores anteriores). A chave seleciona um modelo local só para `transcribe_translate`; `null` herda o modelo do ditado se compatível. Não modifica `selected_model`, `dictation_provider_id`, `meeting_provider_id`, `fallback_provider_id` nem `translate_to_english`. As opções de execução da tradução são um snapshot em memória, descartado ao encerrar/cancelar a sessão.
 
 ```json
 {

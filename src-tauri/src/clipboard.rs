@@ -61,6 +61,7 @@ fn paste_via_clipboard(
     paste_method: &PasteMethod,
     paste_delay_ms: u64,
     paste_delay_after_ms: u64,
+    can_deliver: Option<&dyn Fn() -> Result<(), String>>,
 ) -> Result<(), String> {
     let clipboard = app_handle.clipboard();
     let saved_text = clipboard.read_text().ok().filter(|t| !t.is_empty());
@@ -73,6 +74,8 @@ fn paste_via_clipboard(
         None
     };
 
+    // Check before writing and again after the configured paste delay.
+    check_delivery(can_deliver)?;
     // Write text to clipboard first
     write_text_to_clipboard(app_handle, text)?;
 
@@ -81,6 +84,19 @@ fn paste_via_clipboard(
     // Capture key injection errors so the original clipboard is restored before
     // propagating them to the caller.
     let paste_result = (|| -> Result<(), String> {
+        check_delivery(can_deliver)?;
+        if let Some(guard) = can_deliver {
+            return with_enigo(app_handle, |enigo| match paste_method {
+                PasteMethod::CtrlV => input::send_paste_ctrl_v_guarded(enigo, 100, guard),
+                PasteMethod::CtrlShiftV => {
+                    input::send_paste_ctrl_shift_v_guarded(enigo, 100, guard)
+                }
+                PasteMethod::ShiftInsert => {
+                    input::send_paste_shift_insert_guarded(enigo, 100, guard)
+                }
+                _ => Err("Invalid paste method for clipboard paste".into()),
+            });
+        }
         // Send paste key combo
         #[cfg(target_os = "linux")]
         let key_combo_sent = try_send_key_combo_linux(paste_method)?;
@@ -738,9 +754,18 @@ fn paste_direct(
 }
 
 pub(crate) fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Result<(), String> {
+    send_return_key_guarded(enigo, key_type, &|| Ok(()))
+}
+
+fn send_return_key_guarded(
+    enigo: &mut Enigo,
+    key_type: AutoSubmitKey,
+    can_deliver: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
     // FR-005-01: a modifier still held from the shortcut would turn the
     // injected Return into a chord (e.g. Ctrl held → Ctrl+Enter).
     crate::input::await_shortcut_modifier_release();
+    can_deliver()?;
     let _guard = crate::input::InjectionGuard::begin();
     match key_type {
         AutoSubmitKey::Enter => {
@@ -788,10 +813,17 @@ pub(crate) fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Res
 /// its own — no paste. Used by the spoken "enviar" command (FR-002-17,
 /// AC-002-10), which submits after the dictation text is inserted.
 pub fn send_auto_submit_key(app_handle: &AppHandle) -> Result<(), String> {
+    send_auto_submit_key_guarded(app_handle, &|| Ok(()))
+}
+
+pub(crate) fn send_auto_submit_key_guarded(
+    app_handle: &AppHandle,
+    can_deliver: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
     let settings = get_settings(app_handle);
     std::thread::sleep(Duration::from_millis(50));
     with_enigo(app_handle, |enigo| {
-        send_return_key(enigo, settings.auto_submit_key)
+        send_return_key_guarded(enigo, settings.auto_submit_key, can_deliver)
     })
 }
 
@@ -813,7 +845,7 @@ pub fn send_auto_submit_key(app_handle: &AppHandle) -> Result<(), String> {
 /// `failed` + `error`) so the pipeline can record them in history
 /// (FR-005-11) — the function itself never fails.
 pub fn paste(text: String, app_handle: AppHandle) -> InsertionReport {
-    paste_dispatch(text, app_handle, None)
+    paste_dispatch(text, app_handle, None, None)
 }
 
 /// Session variant of [`paste`]: consumes the window token captured at
@@ -821,13 +853,33 @@ pub fn paste(text: String, app_handle: AppHandle) -> InsertionReport {
 /// "the window that was focused when the user stopped talking", not whatever
 /// a background `paste_last` happens to see.
 pub(crate) fn paste_for_session(text: String, app_handle: AppHandle) -> InsertionReport {
-    paste_dispatch(text, app_handle, insertion::take_session_window())
+    paste_dispatch(text, app_handle, insertion::take_session_window(), None)
+}
+
+fn check_delivery(guard: Option<&dyn Fn() -> Result<(), String>>) -> Result<(), String> {
+    guard.map_or(Ok(()), |check| check())
+}
+
+/// Guarded translation delivery keeps cancellation and the activation target
+/// live through clipboard delays, modifier waits and direct typing.
+pub(crate) fn paste_for_translation(
+    text: String,
+    app_handle: AppHandle,
+    can_deliver: &dyn Fn() -> Result<(), String>,
+) -> InsertionReport {
+    paste_dispatch(
+        text,
+        app_handle,
+        insertion::take_session_window(),
+        Some(can_deliver),
+    )
 }
 
 fn paste_dispatch(
     text: String,
     app_handle: AppHandle,
     session_window: Option<usize>,
+    can_deliver: Option<&dyn Fn() -> Result<(), String>>,
 ) -> InsertionReport {
     let settings = get_settings(&app_handle);
     let clipboard_handling = settings.clipboard_handling;
@@ -860,94 +912,119 @@ fn paste_dispatch(
     );
 
     let started = Instant::now();
-    let result = match plan {
-        InsertionPlan::ClipboardOnly(reason) => {
-            // FR-005-07/08/09: nothing is injected — copy, warn loudly, and
-            // tell the frontend why (AC-005-05's "aviso").
-            let write = write_text_to_clipboard(&app_handle, &text);
-            let warning = ClipboardOnlyWarning {
-                reason,
-                exe_name: target.exe_name.clone(),
-            };
-            if let Err(e) = app_handle.emit(insertion::CLIPBOARD_ONLY_WARNING_EVENT, &warning) {
-                log::warn!("Failed to emit clipboard-only warning: {e}");
-            }
-            match reason {
-                insertion::ClipboardOnlyReason::Requested => {
-                    info!("insertion_method=clipboard_only: text copied, not inserted")
+    let result = if let Err(error) = check_delivery(can_deliver) {
+        Err(error)
+    } else {
+        match plan {
+            InsertionPlan::ClipboardOnly(reason) => {
+                // FR-005-07/08/09: nothing is injected — copy, warn loudly, and
+                // tell the frontend why (AC-005-05's "aviso").
+                let write = write_text_to_clipboard(&app_handle, &text);
+                let warning = ClipboardOnlyWarning {
+                    reason,
+                    exe_name: target.exe_name.clone(),
+                };
+                if let Err(e) = app_handle.emit(insertion::CLIPBOARD_ONLY_WARNING_EVENT, &warning) {
+                    log::warn!("Failed to emit clipboard-only warning: {e}");
                 }
-                _ => log::warn!(
-                    "Insertion degraded to clipboard_only ({reason:?}, exe {:?}): text copied",
-                    target.exe_name
-                ),
+                match reason {
+                    insertion::ClipboardOnlyReason::Requested => {
+                        info!("insertion_method=clipboard_only: text copied, not inserted")
+                    }
+                    _ => log::warn!(
+                        "Insertion degraded to clipboard_only ({reason:?}, exe {:?}): text copied",
+                        target.exe_name
+                    ),
+                }
+                write
             }
-            write
-        }
 
-        InsertionPlan::Paste(chord) => {
-            // Debug-gated receipt-sequenced paste (#502): restore the clipboard
-            // after the target actually reads the transcript, not on a timer.
-            // On success it fully handles the paste (including auto-submit and
-            // clipboard handling) asynchronously; on failure fall through to
-            // the legacy path untouched.
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            if settings.reliable_paste {
-                let reliable_result = with_enigo(&app_handle, |enigo| {
-                    crate::paste_tx::try_reliable_paste(
+            InsertionPlan::Paste(chord) => {
+                // Debug-gated receipt-sequenced paste (#502): restore the clipboard
+                // after the target actually reads the transcript, not on a timer.
+                // On success it fully handles the paste (including auto-submit and
+                // clipboard handling) asynchronously; on failure fall through to
+                // the legacy path untouched.
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                if settings.reliable_paste && can_deliver.is_none() {
+                    let reliable_result = with_enigo(&app_handle, |enigo| {
+                        crate::paste_tx::try_reliable_paste(
+                            &text,
+                            &app_handle,
+                            &chord,
+                            enigo,
+                            settings.auto_submit,
+                            settings.auto_submit_key,
+                            settings.clipboard_handling,
+                        )
+                    });
+                    match reliable_result {
+                        Ok(()) => {
+                            return InsertionReport {
+                                status: InsertionStatus::Inserted,
+                                plan,
+                                requested,
+                                clipboard_only_reason: None,
+                                elapsed: started.elapsed(),
+                                error: None,
+                            };
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Reliable paste unavailable ({e}); falling back to legacy paste"
+                            )
+                        }
+                    }
+                }
+                paste_via_clipboard(
+                    &text,
+                    &app_handle,
+                    &chord,
+                    paste_delay_ms,
+                    paste_delay_after_ms,
+                    can_deliver,
+                )
+            }
+
+            InsertionPlan::Type {
+                newline_mode,
+                char_delay_ms,
+            } => {
+                if let Some(guard) = can_deliver {
+                    with_enigo(&app_handle, |enigo| {
+                        insertion::type_text_direct_guarded(
+                            enigo,
+                            &text,
+                            newline_mode,
+                            char_delay_ms,
+                            guard,
+                            true,
+                        )
+                    })
+                } else {
+                    paste_direct(
                         &text,
                         &app_handle,
-                        &chord,
-                        enigo,
-                        settings.auto_submit,
-                        settings.auto_submit_key,
-                        settings.clipboard_handling,
+                        newline_mode,
+                        char_delay_ms,
+                        #[cfg(target_os = "linux")]
+                        settings.typing_tool,
                     )
-                });
-                match reliable_result {
-                    Ok(()) => {
-                        return InsertionReport {
-                            status: InsertionStatus::Inserted,
-                            plan,
-                            requested,
-                            clipboard_only_reason: None,
-                            elapsed: started.elapsed(),
-                            error: None,
-                        };
-                    }
-                    Err(e) => {
-                        log::warn!("Reliable paste unavailable ({e}); falling back to legacy paste")
-                    }
                 }
             }
-            paste_via_clipboard(
-                &text,
-                &app_handle,
-                &chord,
-                paste_delay_ms,
-                paste_delay_after_ms,
-            )
-        }
 
-        InsertionPlan::Type {
-            newline_mode,
-            char_delay_ms,
-        } => paste_direct(
-            &text,
-            &app_handle,
-            newline_mode,
-            char_delay_ms,
-            #[cfg(target_os = "linux")]
-            settings.typing_tool,
-        ),
-
-        InsertionPlan::ExternalScript => {
-            match settings
-                .external_script_path
-                .as_ref()
-                .filter(|p| !p.is_empty())
-            {
-                Some(script_path) => paste_via_external_script(&text, script_path),
-                None => Err("External script path is not configured".to_string()),
+            InsertionPlan::ExternalScript if can_deliver.is_some() => {
+                Err("translation_insertion_unsupported".to_string())
+            }
+            InsertionPlan::ExternalScript => {
+                match settings
+                    .external_script_path
+                    .as_ref()
+                    .filter(|p| !p.is_empty())
+                {
+                    Some(script_path) => paste_via_external_script(&text, script_path),
+                    None => Err("External script path is not configured".to_string()),
+                }
             }
         }
     };
@@ -963,14 +1040,19 @@ fn paste_dispatch(
     if succeeded && settings.auto_submit && plan.sends_auto_submit() {
         std::thread::sleep(Duration::from_millis(50));
         if let Err(submit_error) = with_enigo(&app_handle, |enigo| {
-            send_return_key(enigo, settings.auto_submit_key)
+            send_return_key_guarded(enigo, settings.auto_submit_key, &|| {
+                check_delivery(can_deliver)
+            })
         }) {
             log::warn!("Insertion succeeded, but auto-submit failed: {submit_error}");
         }
     }
 
     // After inserting, optionally copy to clipboard based on settings
-    if succeeded && clipboard_handling == ClipboardHandling::CopyToClipboard {
+    if succeeded
+        && clipboard_handling == ClipboardHandling::CopyToClipboard
+        && check_delivery(can_deliver).is_ok()
+    {
         if let Err(e) = write_text_to_clipboard(&app_handle, &text) {
             log::warn!("Insertion succeeded, but copy-to-clipboard failed: {e}");
             error.get_or_insert(e);
@@ -1003,6 +1085,26 @@ fn paste_dispatch(
 mod tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    fn translation_guard_rechecks_cancel_and_restores_before_return() {
+        let cancelled = Cell::new(false);
+        let restored = Cell::new(false);
+        let check = || {
+            if cancelled.get() {
+                Err("cancelled".to_string())
+            } else {
+                Ok(())
+            }
+        };
+        assert_eq!(check_delivery(Some(&check)), Ok(()));
+        // A cancellation arrives during the paste delay, after the initial check.
+        cancelled.set(true);
+        let result = finish_clipboard_paste(check_delivery(Some(&check)), 0, || restored.set(true));
+        assert_eq!(result, Err("cancelled".to_string()));
+        assert!(restored.get());
+        assert_eq!(check_delivery(None), Ok(()));
+    }
 
     #[cfg(target_os = "linux")]
     const YDOTOOL_0_1_8_HELP: &str = r#"

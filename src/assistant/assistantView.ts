@@ -7,13 +7,14 @@
  *
  * The panel is dictation-first (FR-012-12/13): `Ctrl+Shift+A` opens it and
  * starts a routed dictation; pressing again ends the dictation and the
- * backend auto-sends the transcript — there is no editable composer.
+ * backend auto-sends the transcript. The composer also accepts explicit
+ * keyboard input without changing that voice routing.
  */
 
 /** Whether the title strip can start a window drag (FR-012-16): the
- * "Fixar" toggle locks the panel — visible but immovable. */
-export function canDragPanel(pinned: boolean): boolean {
-  return !pinned;
+ * docking toggle never prevents dragging to another edge. */
+export function canDragPanel(_pinned: boolean): boolean {
+  return true;
 }
 
 /** Which i18n key the pin toggle advertises (the action it will take, not

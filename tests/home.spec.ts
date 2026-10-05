@@ -1,5 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { installTauriMock } from "./helpers/tauri-mock";
+import {
+  startCorrectionCoverage,
+  stopCorrectionCoverage,
+} from "./helpers/correction-coverage";
+
+test.beforeEach(async ({ page }) => startCorrectionCoverage(page));
+test.afterEach(async ({ page }, info) => stopCorrectionCoverage(page, info));
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
@@ -203,5 +210,154 @@ test.describe("Início (history, stats, banner)", () => {
     const rendered = await page.locator("article.hist-row").count();
     expect(rendered).toBeGreaterThan(0);
     expect(rendered).toBeLessThan(60);
+  });
+
+  test("shows the origin app icon: embedded logo, extracted icon, monogram, unknown", async ({
+    page,
+  }) => {
+    const png =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const mock = await openHome(
+      page,
+      [
+        entry(1), // Slack: embedded logo, no IPC round trip
+        entry(2, { app_exe: "Claude.exe", app_name: "Claude" }),
+        entry(3, { app_exe: "claude.exe", app_name: "Claude" }),
+        entry(4, { app_exe: null, app_name: null }),
+      ],
+      { history_app_icon: png },
+    );
+
+    const logo = (id: number) =>
+      page.locator(`#history-entry-${id} .hist-applogo`);
+    await expect(logo(1)).toHaveAttribute("data-kind", "img");
+    await expect(logo(2).locator("img")).toHaveAttribute("src", png);
+    // Icons load lazily: a row only asks once it has been on screen.
+    await page.locator("#history-entry-3").scrollIntoViewIfNeeded();
+    await expect(logo(3).locator("img")).toHaveAttribute("src", png);
+    // Decorative: the name is always in the row text.
+    await expect(logo(2).locator("img")).toHaveAttribute("alt", "");
+    await expect(logo(2)).toHaveAttribute("aria-hidden", "true");
+    await expect(logo(4)).toHaveAttribute("data-kind", "unknown");
+    await expect(page.locator("#history-entry-4")).toContainText("Unknown app");
+
+    const calls = mock.calls.filter((c) => c.cmd === "history_app_icon");
+    // Each entry can have a different path. Backend extraction is cached by
+    // path, while IPC lookups stay separate; embedded/unknown apps never ask.
+    expect(calls).toHaveLength(2);
+    expect(calls.map((call) => call.args.entryId).sort()).toEqual([2, 3]);
+  });
+
+  test("falls back to a monogram when the exe icon is unavailable", async ({
+    page,
+  }) => {
+    await openHome(
+      page,
+      [entry(5, { app_exe: "Claude.exe", app_name: "Claude" })],
+      { history_app_icon: null },
+    );
+    const logo = page.locator("#history-entry-5 .hist-applogo");
+    await expect(logo).toHaveAttribute("data-kind", "monogram");
+    await expect(logo).toHaveText("C");
+    await expect(page.locator("#history-entry-5")).toContainText("Claude");
+  });
+
+  test("a legacy missing icon does not hide a newer entry's icon", async ({
+    page,
+  }) => {
+    const png =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const mock = await openHome(
+      page,
+      [
+        entry(1, { app_exe: "tool.exe", app_name: "Tool" }),
+        entry(2, { app_exe: "tool.exe", app_name: "Tool" }),
+      ],
+      {
+        history_app_icon: (args: Record<string, unknown>) =>
+          args.entryId === 1 ? null : png,
+      },
+    );
+    await expect(
+      page.locator("#history-entry-1 .hist-applogo"),
+    ).toHaveAttribute("data-kind", "monogram");
+    await page.locator("#history-entry-2").scrollIntoViewIfNeeded();
+    await expect(
+      page.locator("#history-entry-2 .hist-applogo img"),
+    ).toHaveAttribute("src", png);
+    expect(
+      mock.calls
+        .filter((call) => call.cmd === "history_app_icon")
+        .map((call) => call.args.entryId)
+        .sort(),
+    ).toEqual([1, 2]);
+  });
+
+  test("detail reuses a pending icon lookup and its resolved answer", async ({
+    page,
+  }) => {
+    const png =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    let complete: (icon: string) => void = () => {};
+    const pending = new Promise<string>((resolve) => {
+      complete = resolve;
+    });
+    const mock = await openHome(
+      page,
+      [entry(1, { app_exe: "tool.exe", app_name: "Tool" })],
+      {
+        history_app_icon: () => pending,
+      },
+    );
+    await expect
+      .poll(() => mock.calls.filter((c) => c.cmd === "history_app_icon").length)
+      .toBe(1);
+    await page.getByRole("button", { name: "More details" }).click();
+    const drawer = page.getByRole("complementary", {
+      name: "Selected dictation details",
+    });
+    await expect(drawer).toBeVisible();
+    complete(png);
+    await expect(drawer.locator(".hist-applogo img")).toHaveAttribute(
+      "src",
+      png,
+    );
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "More details" }).click();
+    await expect(drawer.locator(".hist-applogo img")).toHaveAttribute(
+      "src",
+      png,
+    );
+    expect(mock.calls.filter((c) => c.cmd === "history_app_icon")).toHaveLength(
+      1,
+    );
+  });
+
+  test("an icon IPC failure keeps the app name and retries from detail", async ({
+    page,
+  }) => {
+    let attempts = 0;
+    const mock = await openHome(
+      page,
+      [entry(1, { app_exe: "tool.exe", app_name: "Tool" })],
+      {
+        history_app_icon: () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("Temporary extraction failure");
+          return null;
+        },
+      },
+    );
+    await expect.poll(() => attempts).toBe(1);
+    await expect(
+      page.locator("#history-entry-1 .hist-applogo"),
+    ).toHaveAttribute("data-kind", "monogram");
+    await page.getByRole("button", { name: "More details" }).click();
+    await expect
+      .poll(() => mock.calls.filter((c) => c.cmd === "history_app_icon").length)
+      .toBe(2);
+    await expect(
+      page.getByRole("complementary", { name: "Selected dictation details" }),
+    ).toContainText("Tool");
   });
 });

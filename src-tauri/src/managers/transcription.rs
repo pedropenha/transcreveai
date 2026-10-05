@@ -24,6 +24,7 @@ mod language;
 mod postprocess;
 mod prompt;
 mod streaming;
+pub(crate) mod translation;
 
 pub use engine::{
     apply_accelerator_settings, describe_compute_devices, get_available_accelerators,
@@ -33,7 +34,7 @@ pub use streaming::{StreamPhaseEvent, StreamRouter, StreamTextEvent, StreamWorkK
 
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::ModelManager;
-use crate::settings::{get_settings, ModelUnloadTimeout};
+use crate::settings::{get_settings, AppSettings, ModelUnloadTimeout};
 use crate::stt::local::LocalSttProvider;
 use crate::stt::orchestrator::SttOrchestrator;
 use crate::stt::types::{AudioBuffer, SttError, SttOptions};
@@ -82,6 +83,7 @@ pub struct ModelStateEvent {
 pub struct LoadingGuard {
     is_loading: Arc<Mutex<bool>>,
     loading_condvar: Arc<Condvar>,
+    loading_model_id: Arc<Mutex<Option<String>>>,
 }
 
 impl Drop for LoadingGuard {
@@ -95,6 +97,10 @@ impl Drop for LoadingGuard {
                 e.into_inner()
             }
         };
+        *self
+            .loading_model_id
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
         *is_loading = false;
         self.loading_condvar.notify_all();
     }
@@ -111,6 +117,7 @@ pub struct TranscriptionManager {
     watcher_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     is_loading: Arc<Mutex<bool>>,
     loading_condvar: Arc<Condvar>,
+    loading_model_id: Arc<Mutex<Option<String>>>,
     reload_model_on_next_use: Arc<AtomicBool>,
     /// Routes real-time audio frames to the active streaming worker; see
     /// [`StreamRouter`]. Shared with the audio recorder so per-frame feeds skip
@@ -147,6 +154,7 @@ impl TranscriptionManager {
             watcher_handle: Arc::new(Mutex::new(None)),
             is_loading: Arc::new(Mutex::new(false)),
             loading_condvar: Arc::new(Condvar::new()),
+            loading_model_id: Arc::new(Mutex::new(None)),
             reload_model_on_next_use: Arc::new(AtomicBool::new(false)),
             router: Arc::new(StreamRouter::new()),
             stream_active: Arc::new(AtomicBool::new(false)),
@@ -259,15 +267,20 @@ impl TranscriptionManager {
     /// one as starting. Returns a [`LoadingGuard`] whose [`Drop`] impl will
     /// clear the flag and wake waiters. Returns `None` if a load is already in
     /// progress.
-    pub fn try_start_loading(&self) -> Option<LoadingGuard> {
+    pub fn try_start_loading_for(&self, model_id: &str) -> Option<LoadingGuard> {
         let mut is_loading = self.is_loading.lock().unwrap();
         if *is_loading {
             return None;
         }
         *is_loading = true;
+        *self
+            .loading_model_id
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(model_id.to_string());
         Some(LoadingGuard {
             is_loading: self.is_loading.clone(),
             loading_condvar: self.loading_condvar.clone(),
+            loading_model_id: self.loading_model_id.clone(),
         })
     }
 
@@ -331,32 +344,55 @@ impl TranscriptionManager {
 
     /// Kicks off the model loading in a background thread if it's not already loaded
     pub fn initiate_model_load(&self) {
+        self.initiate_model_load_for(&get_settings(&self.app_handle).selected_model);
+    }
+
+    /// Load a session-selected model without modifying the persisted selection.
+    pub(crate) fn initiate_model_load_for(&self, model_id: &str) -> bool {
         let mut is_loading = self.is_loading.lock().unwrap();
         if *is_loading {
-            return;
+            // A cold start may capture while its own model loads, as before.
+            // A different/unknown in-flight selection must fail closed.
+            return loading_model_matches_request(
+                self.loading_model_id
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_deref(),
+                model_id,
+            );
         }
 
         let reload_pending = self.reload_model_on_next_use.load(Ordering::Acquire);
-        if !reload_pending && self.is_model_loaded() {
-            return;
+        if !reload_pending
+            && self.is_model_loaded()
+            && self.get_current_model().as_deref() == Some(model_id)
+        {
+            return true;
         }
 
         *is_loading = true;
+        *self
+            .loading_model_id
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(model_id.to_string());
         let self_clone = self.clone();
+        let model_id = model_id.to_string();
         thread::spawn(move || {
+            let _loading_guard = LoadingGuard {
+                is_loading: self_clone.is_loading.clone(),
+                loading_condvar: self_clone.loading_condvar.clone(),
+                loading_model_id: self_clone.loading_model_id.clone(),
+            };
             if reload_pending {
                 self_clone
                     .reload_model_on_next_use
                     .store(false, Ordering::Release);
             }
-            let settings = get_settings(&self_clone.app_handle);
-            if let Err(e) = self_clone.load_model(&settings.selected_model) {
+            if let Err(e) = self_clone.load_model(&model_id) {
                 error!("Failed to load model: {}", e);
             }
-            let mut is_loading = self_clone.is_loading.lock().unwrap();
-            *is_loading = false;
-            self_clone.loading_condvar.notify_all();
         });
+        true
     }
 
     pub fn get_current_model(&self) -> Option<String> {
@@ -373,9 +409,19 @@ impl TranscriptionManager {
     /// A assinatura `Result<String>` e o fluxo ditado→transcrição→histórico
     /// permanecem idênticos.
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
-        self.touch_activity();
+        self.transcribe_with_settings(audio, None)
+    }
 
-        let settings = get_settings(&self.app_handle);
+    /// A private snapshot carries translation only for this session/provider.
+    pub(crate) fn transcribe_with_settings(
+        &self,
+        audio: Vec<f32>,
+        session_settings: Option<AppSettings>,
+    ) -> Result<String> {
+        self.touch_activity();
+        let settings = session_settings
+            .clone()
+            .unwrap_or_else(|| get_settings(&self.app_handle));
         let buffer = AudioBuffer::dictation(audio);
         let opts = SttOptions {
             // `None` = auto, conforme o contrato.
@@ -386,9 +432,10 @@ impl TranscriptionManager {
             timeout: SttOrchestrator::dictation_timeout(buffer.duration_secs()),
         };
         let orchestrator = SttOrchestrator::new(
-            Arc::new(LocalSttProvider::new(
+            Arc::new(LocalSttProvider::for_session(
                 self.clone(),
                 Arc::clone(&self.model_manager),
+                session_settings,
             )),
             None,
         );
@@ -456,5 +503,26 @@ impl Drop for TranscriptionManager {
                 debug!("Idle watcher thread joined successfully");
             }
         }
+    }
+}
+
+fn loading_model_matches_request(pending: Option<&str>, requested: &str) -> bool {
+    pending == Some(requested)
+}
+
+#[cfg(test)]
+mod translation_load_tests {
+    #[test]
+    fn translation_load_matching_preserves_normal_cold_start() {
+        assert!(super::loading_model_matches_request(Some("turbo"), "turbo"));
+        assert!(!super::loading_model_matches_request(
+            Some("turbo"),
+            "medium"
+        ));
+        assert!(!super::loading_model_matches_request(
+            Some("medium"),
+            "turbo"
+        ));
+        assert!(!super::loading_model_matches_request(None, "medium"));
     }
 }

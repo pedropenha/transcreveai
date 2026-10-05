@@ -579,6 +579,10 @@ pub struct AppSettings {
     pub selected_output_device: Option<String>,
     #[serde(default = "default_translate_to_english")]
     pub translate_to_english: bool,
+    /// Local model used by the explicit translated-dictation action. None uses
+    /// the ordinary dictation selection when compatible; no automatic fallback.
+    #[serde(default)]
+    pub translation_model_id: Option<String>,
     #[serde(default = "default_selected_language")]
     pub selected_language: String,
     #[serde(default = "default_overlay_position")]
@@ -1392,6 +1396,20 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_post_process_shortcut.to_string(),
         },
     );
+    #[cfg(target_os = "macos")]
+    let default_translation_shortcut = "option+cmd+space";
+    #[cfg(not(target_os = "macos"))]
+    let default_translation_shortcut = "ctrl+alt+space";
+    bindings.insert(
+        "transcribe_translate".to_string(),
+        ShortcutBinding {
+            id: "transcribe_translate".to_string(),
+            name: "Translated Dictation".to_string(),
+            description: "Translates this dictation into English using a local model.".to_string(),
+            default_binding: default_translation_shortcut.to_string(),
+            current_binding: default_translation_shortcut.to_string(),
+        },
+    );
     bindings.insert(
         "cancel".to_string(),
         ShortcutBinding {
@@ -1462,6 +1480,7 @@ pub fn get_default_settings() -> AppSettings {
         clamshell_microphone: None,
         selected_output_device: None,
         translate_to_english: false,
+        translation_model_id: None,
         selected_language: "auto".to_string(),
         overlay_position: default_overlay_position(),
         debug_mode: false,

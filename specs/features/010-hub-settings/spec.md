@@ -46,6 +46,7 @@ O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredonda
 - **FR-010-06** Navegação por teclado (↑/↓ entre entradas, Enter abre, Ctrl+C copia) e compatível com leitor de tela.
 
 - **FR-010-28** Dicionário com três grupos navegáveis por teclado: **Vocabulário**, **Substituições** e **Muletas**. Na v1, o vocabulário edita `custom_words` (dicas ao modelo), e muletas permitem adicionar/remover/restaurar a lista e ligar/desligar sua remoção. Busca, contagens e estados vazios acompanham cada lista. A prévia antes/depois usa texto editável, destaca os termos do vocabulário e ilustra a remoção de muletas; é aproximada e não executa STT nem reproduz todas as regras contextuais do pipeline. Substituições ficam como prévia explicitamente indisponível (v1.1+, FR-004-09); filtros de origem aprendida e edição individual de termos da proposta ficam pendentes de suporte no backend (FR-004-10). Gravações pendentes bloqueiam edições concorrentes; falhas preservam o rascunho e oferecem erro localizado. Falhas de leitura não aparecem como lista vazia e permitem tentar novamente.
+- **FR-010-29** App de origem do ditado: ao **iniciar** a sessão (a Flow Bar não rouba o foco, então o app em foco é onde o usuário está falando) o backend lê o processo em foco e o carrega junto com a sessão até o pipeline gravar a linha de histórico — por sessão, nunca em um slot global que a sessão seguinte da fila FIFO (F002 FR-002-16) possa sobrescrever. Toda linha salva dessa sessão (qualquer status) grava `app_exe` (ex.: `Claude.exe`), `app_name` (rótulo amigável via mapa de apps comuns, com fallback para o nome do exe sem `.exe` capitalizado; um navegador continua sendo o navegador — "Chrome") e `app_exe_path` (migração 16, sanitizado por `is_safe_exe_path`, nunca exposto por IPC). O ícone vem de `history_app_icon(entry_id)` — data URI PNG do exe salvo, no mesmo cache de 2 s/64 entradas do Notetaker, `null` para app com logo embutido, caminho ausente/inseguro, falha ou timeout; navegadores mostram o próprio ícone (diferente do Notetaker, FR-009-28, onde o exe de navegador seria enganoso). A UI mostra, em 24 px ao lado do nome (linha e detalhe), o logo embutido, senão o ícone extraído (carregado só quando a linha aparece; a UI guarda a resposta por entrada, e o backend guarda a extração por caminho do exe), senão um monograma; decorativo (`alt=""`). Entradas antigas, sem app registrado, seguem como "Aplicativo desconhecido" (não há como reconstruir).
 
 ### Configurações
 
@@ -55,6 +56,7 @@ O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredonda
 - **FR-010-10** **Avançado**: atrasos de colagem, método de inserção padrão, pré-carregar modelo, descarregar modelo após N min, modo debug de logs, abrir pasta de dados.
 - **FR-010-11** P2 — exportar/importar configurações, dicionário, snippets e perfis (JSON, **sem segredos**).
 - **FR-010-12** Mudanças aplicadas imediatamente (sem "Salvar"), com validação inline.
+- **FR-010-29** T-093: Configurações → Transcrição → Idiomas apresenta o ditado traduzido para inglês por sessão, seletor de modelo compatível, disponibilidade/download explícito e configuração do atalho `transcribe_translate`, também acessível em Uso → Atalhos. A preparação não inicia gravação no Hub: o usuário usa o atalho no aplicativo de destino. Orientações, estados e erros são localizados em pt-BR/en. O toggle global de tradução existente mantém sua semântica anterior.
 
 ### Bandeja
 
@@ -68,7 +70,7 @@ O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredonda
   1. Boas-vindas + idioma da interface e de ditado.
   2. **Microfone**: verifica permissão do Windows ("Permitir que apps da área de trabalho acessem o microfone"); se negada, botão que abre `ms-settings:privacy-microphone`; seleção de dispositivo com medidor.
   3. **Transcrição**: escolha do **modelo local** — `large-v3-turbo` marcado como recomendado, rótulos de adequação por hardware (F003), baixa com progresso e dá para seguir enquanto baixa. (v1.1+: opção _Nuvem_ com chave própria.)
-  4. **Atalho**: mostra o padrão, permite trocar, e um campo de prática: "Segure `Ctrl+Win` e diga: _Olá, estou testando o Transcreve.ai_" — sucesso quando o texto aparece no campo.
+  4. **Atalho**: mostra o padrão e permite trocar. Sem campo de prática obrigatório (decisão do usuário em 2026-10-03); validação de ditado pode ser feita em um aplicativo de texto.
   5. **Flow Bar**: animação mostrando hover e as 2 ações.
   6. **Reuniões**: liga/desliga detecção, explica consentimento.
 - **FR-010-17** Onboarding pode ser pulado e reaberto em Configurações → Ajuda.
@@ -85,7 +87,7 @@ O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredonda
 
 ## Critérios de aceitação
 
-- **AC-010-01** _Dado_ uma instalação nova, _quando_ completo o onboarding escolhendo um modelo local, _então_ o campo de prática recebe o texto ditado e o onboarding marca sucesso.
+- **AC-010-01** _Dado_ uma instalação nova, _quando_ completo o onboarding escolhendo um modelo local, _então_ o onboarding salva a escolha e conclui sem exigir ditado em campo de prática; o modelo deve estar disponível antes de iniciar o ditado.
 - **AC-010-02** _Dado_ o mic bloqueado nas configurações de privacidade do Windows, _então_ o passo 2 explica e o botão abre a página correta.
 - **AC-010-03** _Quando_ clico em "Tentar novamente" numa entrada que falhou, escolhendo outro provedor, _então_ uma nova transcrição é feita e a entrada é atualizada.
 - **AC-010-05** _Quando_ fecho o Hub, _então_ o app continua na bandeja e os atalhos seguem funcionando.

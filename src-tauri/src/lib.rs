@@ -10,6 +10,7 @@ pub mod cli;
 mod clipboard;
 mod commands;
 pub mod db;
+mod dictation_origin;
 mod helpers;
 mod input;
 mod insertion;
@@ -41,7 +42,7 @@ mod utils;
 mod window_labels;
 
 pub use cli::CliArgs;
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, test))]
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, collect_events, Builder};
 pub use utils::env_flag_enabled;
@@ -1041,12 +1042,14 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::audio::get_microphone_channels,
             commands::audio::set_selected_channel,
             commands::transcription::set_model_unload_timeout,
+            commands::transcription::change_translation_model_setting,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,
             commands::history::get_history_entries,
             commands::history::search_history_entries,
             commands::history::get_history_statistics,
             commands::history::get_history_filter_options,
+            commands::history::history_app_icon,
             commands::history::reinsert_history_entry,
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
@@ -1064,6 +1067,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::flowbar::flowbar_start_notetaker,
             commands::flowbar::flowbar_retry_last_failed,
             commands::assistant::assistant_get_state,
+            commands::assistant::assistant_toggle_dictation,
             commands::assistant::assistant_send,
             commands::assistant::assistant_retry,
             commands::assistant::assistant_cancel,

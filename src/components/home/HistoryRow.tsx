@@ -2,6 +2,8 @@ import React from "react";
 import { Copy, Flag, MoreHorizontal, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { HistoryEntry } from "@/bindings";
+import { HistoryAppLogo } from "./HistoryAppLogo";
+import { originLabel } from "./homeView";
 
 interface HistoryRowProps {
   entry: HistoryEntry;
@@ -19,9 +21,6 @@ interface HistoryRowProps {
   ) => void;
 }
 
-const appLabel = (entry: HistoryEntry): string | null =>
-  entry.app_name || entry.app_exe || null;
-
 /** One dictation: time, text, meta and hover/focus actions (FR-010-01/04). */
 export const HistoryRow: React.FC<HistoryRowProps> = ({
   entry,
@@ -37,7 +36,7 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const failed = entry.status === "failed";
-  const app = appLabel(entry) ?? t("settings.history.unknownApp");
+  const app = originLabel(entry) ?? t("settings.history.unknownApp");
   const moment = new Date(entry.timestamp * 1000);
   const time = moment.toLocaleTimeString(i18n.language, {
     hour: "2-digit",
@@ -67,9 +66,7 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
           {entry.final_text || t("settings.history.transcriptionFailed")}
         </p>
         <div className="hist-meta">
-          <span className="app-tile" aria-hidden="true">
-            {app.charAt(0).toUpperCase()}
-          </span>
+          <HistoryAppLogo entry={entry} />
           <span>{app}</span>
           <span aria-hidden="true">·</span>
           <span>{t("home.words", { count: entry.word_count })}</span>

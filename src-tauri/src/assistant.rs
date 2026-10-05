@@ -24,7 +24,7 @@
 //! claimed for it (`dictation_routed`); the next press ends the dictation and
 //! the pipeline auto-sends the final text to the provider
 //! (`actions::TranscribeAction::stop` consumes the claim via
-//! `take_dictation_route`). The regular `transcribe*` bindings always dictate
+//! `take_dictation_route_with_epoch`). The regular `transcribe*` bindings always dictate
 //! to the focused app — they are never claimed by the panel.
 //!
 //! Cancellation (AC-012-05): the in-flight call rides a spawned task whose
@@ -41,6 +41,9 @@ use crate::llm::types::LlmMessage;
 use crate::settings::PostProcessProvider;
 
 mod context;
+mod docking;
+mod native;
+pub use docking::dock_panel;
 mod panel;
 #[cfg(test)]
 mod provider_selection_tests;
@@ -49,13 +52,17 @@ mod state;
 mod tests;
 mod turn;
 
-pub use panel::{close_panel, focus_panel, init, move_panel, note_panel_hidden, open_panel};
-pub(crate) use state::emit_state;
+pub use panel::{close_panel, focus_panel_checked, init, move_panel, note_panel_hidden};
+pub(crate) use state::{
+    cancel_dictation_epoch, dictation_input_current, emit_state, reserve_dictation_input,
+    start_reserved_dictation,
+};
 pub use state::{
-    maybe_claim_dictation, note_dictation_cancelled, state_event, take_dictation_route,
+    maybe_claim_dictation, note_dictation_cancelled, state_event, take_dictation_route_with_epoch,
     DictationRoute,
 };
-pub use turn::{cancel_in_flight, dismiss, new_conversation, retry, send};
+pub(crate) use turn::can_toggle_dictation;
+pub use turn::{cancel_in_flight, dismiss, new_conversation, retry, send, send_dictation};
 
 // ---------------------------------------------------------------------------
 // IPC contract
@@ -163,17 +170,21 @@ pub struct AssistantStateEvent {
     pub error_detail: Option<String>,
     pub messages: Vec<AssistantMessage>,
     /// FR-012-16: the persisted "Fixar" toggle — while true the title strip
-    /// shows the pinned state and drags are ignored.
+    /// shows docking enabled; dragging remains available and snaps on release.
     pub pinned: bool,
 }
 
 #[derive(Default)]
 struct AssistantSession {
     open: bool,
+    closing: bool,
     phase: AssistantPhase,
     /// This dictation session's output belongs to the panel — set at
     /// recording start (panel open), consumed at stop (FR-012-12).
     dictation_routed: bool,
+    /// Invalidates final transcripts when their conversation was reset or hidden.
+    dictation_epoch: u64,
+    dictation_pending: bool,
     dictating: bool,
     error_kind: Option<LlmErrorKind>,
     error_detail: Option<String>,

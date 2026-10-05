@@ -11,6 +11,8 @@ import { useTranslation } from "react-i18next";
 import type { HistoryEntry, ModelInfo } from "@/bindings";
 import { buildWordDiff } from "../settings/history/historyView";
 import { formatDuration } from "./format";
+import { HistoryAppLogo } from "./HistoryAppLogo";
+import { originLabel } from "./homeView";
 
 function parseLatency(value: string): Record<string, string | number> {
   try {
@@ -67,9 +69,10 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = ({
   return (
     <>
       <p className="detail-label">{t("settings.history.detail.selected")}</p>
-      <h2>
-        {entry.app_name || entry.app_exe || t("settings.history.unknownApp")}
-      </h2>
+      <div className="detail-app">
+        <HistoryAppLogo entry={entry} size="md" />
+        <h2>{originLabel(entry) ?? t("settings.history.unknownApp")}</h2>
+      </div>
       <p className="detail-meta">
         {new Date(entry.timestamp * 1000).toLocaleString(i18n.language)} ·{" "}
         {t(`settings.history.status.${entry.status}`)}

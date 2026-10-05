@@ -5,8 +5,12 @@
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
+#[cfg(not(target_os = "macos"))]
+use super::native::hide_native;
+use super::native::run_native_checked;
 use super::state::{emit_state, emit_state_locked};
 use super::{lock_session, AssistantSession};
+use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::settings::{self, AssistantPanelPosition};
 use crate::window_labels::ASSISTANT;
 
@@ -17,8 +21,8 @@ use crate::window_labels::ASSISTANT;
 /// Floating-panel footprint — generous enough for a chat exchange, compact
 /// enough to read as an overlay. Without a persisted position every open
 /// recenters on the cursor's monitor (T-092 restores the dragged one).
-pub(crate) const PANEL_WIDTH: f64 = 420.0;
-pub(crate) const PANEL_HEIGHT: f64 = 560.0;
+pub(crate) const PANEL_WIDTH: f64 = 440.0;
+pub(crate) const PANEL_HEIGHT: f64 = 640.0;
 /// Bottom margin above the taskbar edge of the work area.
 pub(crate) const PANEL_BOTTOM_MARGIN: f64 = 72.0;
 // ---------------------------------------------------------------------------
@@ -29,10 +33,29 @@ pub(crate) const PANEL_BOTTOM_MARGIN: f64 = 72.0;
 /// docked `PANEL_BOTTOM_MARGIN` (logical) above the work-area bottom. Pure
 /// math — `work_area` is physical px, `scale` the monitor's DPI factor
 /// (times the Windows accessibility text scale on that platform).
+/// Physical footprint, capped by the useful monitor area at any DPI/text zoom.
+pub(crate) fn panel_size(area: (i32, i32, i32, i32), scale: f64) -> (i32, i32) {
+    (
+        (PANEL_WIDTH * scale)
+            .round()
+            .max(1.0)
+            .min(area.2.max(1) as f64) as i32,
+        (PANEL_HEIGHT * scale)
+            .round()
+            .max(1.0)
+            .min(area.3.max(1) as f64) as i32,
+    )
+}
+
+/// Panel origin in the monitor's **physical** pixels: centered horizontally,
+/// docked `PANEL_BOTTOM_MARGIN` (logical) above the work-area bottom. Pure
+/// math - `work_area` is physical px, `scale` the monitor's DPI factor
+/// (times the Windows accessibility text scale on that platform).
 pub(crate) fn panel_origin(work_area: (i32, i32, u32, u32), scale: f64) -> (f64, f64) {
     let (ax, ay, aw, ah) = work_area;
-    let x = ax as f64 + (aw as f64 - PANEL_WIDTH * scale) / 2.0;
-    let y = ay as f64 + ah as f64 - (PANEL_HEIGHT + PANEL_BOTTOM_MARGIN) * scale;
+    let (w, h) = panel_size((ax, ay, aw as i32, ah as i32), scale);
+    let x = ax as f64 + (aw as f64 - w as f64) / 2.0;
+    let y = ay as f64 + ah as f64 - h as f64 - PANEL_BOTTOM_MARGIN * scale;
     // Clamp to the work area's own origin — a left/above-primary monitor has
     // negative coordinates, and clamping to global 0 would teleport the
     // panel onto the primary screen.
@@ -43,10 +66,15 @@ pub(crate) fn panel_origin(work_area: (i32, i32, u32, u32), scale: f64) -> (f64,
 /// logical coordinates (macOS, Linux). A persisted drag position (T-092)
 /// wins over the default dock.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn panel_logical_origin(app: &AppHandle) -> Option<(f64, f64)> {
-    if let Some((x, y, content_scale)) = restored_panel_position(app) {
+fn panel_logical_origin(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
+    if let Some((x, y, content_scale, w, h)) = restored_panel_position(app) {
         // Off Windows `content_scale` is just the monitor's scale factor.
-        return Some((x as f64 / content_scale, y as f64 / content_scale));
+        return Some((
+            x as f64 / content_scale,
+            y as f64 / content_scale,
+            w as f64 / content_scale,
+            h as f64 / content_scale,
+        ));
     }
     let monitor = crate::overlay::get_monitor_with_cursor(app)?;
     let wa = monitor.work_area();
@@ -55,7 +83,16 @@ fn panel_logical_origin(app: &AppHandle) -> Option<(f64, f64)> {
         (wa.position.x, wa.position.y, wa.size.width, wa.size.height),
         scale,
     );
-    Some((x / scale, y / scale))
+    let (w, h) = panel_size(
+        (
+            wa.position.x,
+            wa.position.y,
+            wa.size.width as i32,
+            wa.size.height as i32,
+        ),
+        scale,
+    );
+    Some((x / scale, y / scale, w as f64 / scale, h as f64 / scale))
 }
 
 // ---------------------------------------------------------------------------
@@ -161,8 +198,14 @@ pub(crate) fn resolve_panel_position(
     let primary_index = primary_index.min(monitors.len() - 1);
     let size_on = |m: &PanelMonitor| {
         (
-            (panel.0 * m.content_scale).round().max(1.0) as i32,
-            (panel.1 * m.content_scale).round().max(1.0) as i32,
+            (panel.0 * m.content_scale)
+                .round()
+                .max(1.0)
+                .min(m.work_area.2.max(1) as f64) as i32,
+            (panel.1 * m.content_scale)
+                .round()
+                .max(1.0)
+                .min(m.work_area.3.max(1) as f64) as i32,
         )
     };
     let target = monitors
@@ -199,8 +242,9 @@ pub(crate) fn resolve_panel_position(
 /// The persisted position resolved against the current monitors:
 /// `(x, y, content_scale)` in physical px — `None` falls back to the
 /// default dock on the cursor's monitor.
-fn restored_panel_position(app: &AppHandle) -> Option<(i32, i32, f64)> {
-    let saved = settings::get_settings(app).assistant_panel_position?;
+fn restored_panel_position(app: &AppHandle) -> Option<(i32, i32, f64, i32, i32)> {
+    let settings = settings::get_settings(app);
+    let saved = settings.assistant_panel_position?;
     let monitors = app.available_monitors().ok()?;
     if monitors.is_empty() {
         return None;
@@ -222,7 +266,13 @@ fn restored_panel_position(app: &AppHandle) -> Option<(i32, i32, f64)> {
         primary_index,
         (PANEL_WIDTH, PANEL_HEIGHT),
     )?;
-    Some((x, y, areas[index].content_scale))
+    let (w, h) = panel_size(areas[index].work_area, areas[index].content_scale);
+    let (x, y) = if settings.assistant_panel_pinned {
+        super::docking::snap(x, y, w, h, areas[index].work_area)
+    } else {
+        (x, y)
+    };
+    Some((x, y, areas[index].content_scale, w, h))
 }
 
 /// A drag-resolved placement: physical bounds plus the target monitor (for
@@ -277,8 +327,7 @@ fn drag_placement(app: &AppHandle, grab_x: f64, grab_y: f64) -> Option<PanelPlac
         * zoom;
     let x = (cursor.0 as f64 - grab_x * grab_scale).round() as i32;
     let y = (cursor.1 as f64 - grab_y * grab_scale).round() as i32;
-    let w = (PANEL_WIDTH * monitor.content_scale).round().max(1.0) as i32;
-    let h = (PANEL_HEIGHT * monitor.content_scale).round().max(1.0) as i32;
+    let (w, h) = panel_size(monitor.work_area, monitor.content_scale);
     let (x, y) = clamp_origin_to_area(x, y, w, h, monitor.work_area);
     Some(PanelPlacement {
         x,
@@ -302,6 +351,7 @@ fn apply_panel_placement(app: &AppHandle, placement: &PanelPlacement) {
                 placement.w,
                 placement.h,
             );
+            super::native::windows::clip_window(&window);
         }
     }
     #[cfg(target_os = "macos")]
@@ -310,11 +360,17 @@ fn apply_panel_placement(app: &AppHandle, placement: &PanelPlacement) {
             app,
             placement.x as f64 / placement.monitor.content_scale,
             placement.y as f64 / placement.monitor.content_scale,
+            placement.w as f64 / placement.monitor.content_scale,
+            placement.h as f64 / placement.monitor.content_scale,
         );
     }
     #[cfg(target_os = "linux")]
     {
         if let Some(window) = app.get_webview_window(ASSISTANT) {
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                width: placement.w as f64 / placement.monitor.content_scale,
+                height: placement.h as f64 / placement.monitor.content_scale,
+            }));
             let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
                 x: placement.x as f64 / placement.monitor.content_scale,
                 y: placement.y as f64 / placement.monitor.content_scale,
@@ -326,17 +382,22 @@ fn apply_panel_placement(app: &AppHandle, placement: &PanelPlacement) {
 /// `assistant_move_panel` / `assistant_save_panel_position` shared body
 /// (FR-012-16): clamp the drag point onto the monitor under the cursor and
 /// move the window. `persist` — only true on drag end, so the settings
-/// store is written once per drag, not at pointer-move rate. A pinned
-/// panel ignores every drag (visible but immovable).
+/// store is written once per drag. Pinned panels snap to an edge on release.
 pub fn move_panel(app: &AppHandle, grab_x: f64, grab_y: f64, persist: bool) {
     let mut settings = settings::get_settings(app);
-    if settings.assistant_panel_pinned {
-        return;
-    }
-    let Some(placement) = drag_placement(app, grab_x, grab_y) else {
+    let Some(mut placement) = drag_placement(app, grab_x, grab_y) else {
         return;
     };
     if persist {
+        if settings.assistant_panel_pinned {
+            (placement.x, placement.y) = super::docking::snap(
+                placement.x,
+                placement.y,
+                placement.w,
+                placement.h,
+                placement.monitor.work_area,
+            );
+        }
         let (ax, ay, aw, ah) = placement.monitor.work_area;
         settings.assistant_panel_position = Some(AssistantPanelPosition {
             x: placement.x,
@@ -411,6 +472,10 @@ mod macos {
             if let (Some(origin), Some(window)) =
                 (super::panel_logical_origin(app), panel.to_window())
             {
+                let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                    width: origin.2,
+                    height: origin.3,
+                }));
                 let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
                     x: origin.0,
                     y: origin.1,
@@ -422,19 +487,28 @@ mod macos {
 
     /// T-092 drag: reposition the panel (logical points — off Windows the
     /// placement math already resolved monitor + clamp).
-    pub(super) fn move_panel(app: &AppHandle, x: f64, y: f64) {
+    pub(super) fn move_panel(app: &AppHandle, x: f64, y: f64, width: f64, height: f64) {
         if let Ok(panel) = app.get_webview_panel(crate::window_labels::ASSISTANT) {
             if let Some(window) = panel.to_window() {
+                let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }));
                 let _ =
                     window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
             }
         }
     }
 
-    pub(super) fn hide(app: &AppHandle) {
-        if let Ok(panel) = app.get_webview_panel(crate::window_labels::ASSISTANT) {
-            panel.hide();
-        }
+    pub(super) fn hide(app: &AppHandle) -> crate::commands::CommandResult<()> {
+        let panel = app
+            .get_webview_panel(crate::window_labels::ASSISTANT)
+            .map_err(|error| {
+                crate::commands::CommandError::logged(
+                    crate::commands::CommandErrorCode::NotFound,
+                    "Assistant panel is unavailable",
+                    error,
+                )
+            })?;
+        panel.hide();
+        Ok(())
     }
 
     /// The nonactivating style mask means a click alone never makes the panel
@@ -457,14 +531,25 @@ fn create_assistant_window(app: &AppHandle) {
     .title("Assistente")
     .resizable(false)
     .inner_size(PANEL_WIDTH, PANEL_HEIGHT)
-    .shadow(true)
+    // Windows shadows add a non-client white frame to undecorated windows.
+    // CSS and Acrylic share the same rounded region, so keep the HWND frameless.
+    .shadow(!cfg!(target_os = "windows"))
     .maximizable(false)
     .minimizable(false)
     .accept_first_mouse(true)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
-    .transparent(true)
+    .transparent({
+        #[cfg(target_os = "windows")]
+        {
+            super::native::windows_transparency_enabled()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            true
+        }
+    })
     // Focusable — unlike the Flow Bar this panel accepts keyboard input once
     // the user clicks it (no WS_EX_NOACTIVATE on this window).
     .focusable(true)
@@ -478,6 +563,8 @@ fn create_assistant_window(app: &AppHandle) {
     match builder.build() {
         Ok(_window) => {
             log::debug!("Assistant window created (hidden)");
+            #[cfg(target_os = "windows")]
+            super::native::windows::clip_window(&_window);
         }
         Err(e) => {
             log::error!("Failed to create assistant window: {e}");
@@ -493,12 +580,10 @@ fn show_native(app: &AppHandle) {
     let Some(window) = app.get_webview_window(ASSISTANT) else {
         return;
     };
-    if let Some((x, y, content_scale)) = restored_panel_position(app) {
+    if let Some((x, y, _content_scale, width, height)) = restored_panel_position(app) {
         // AC-012-04: a dragged+persisted position wins — already resolved
         // against the live monitors (clamp / named-monitor / primary
         // fallback all happened inside).
-        let width = (PANEL_WIDTH * content_scale).round().max(1.0) as i32;
-        let height = (PANEL_HEIGHT * content_scale).round().max(1.0) as i32;
         if let Err(e) = crate::overlay::set_window_bounds_physical(&window, x, y, width, height) {
             log::warn!("assistant: failed to restore panel position: {e}");
         }
@@ -506,8 +591,15 @@ fn show_native(app: &AppHandle) {
         let wa = monitor.work_area();
         // Same WebView2 text-zoom convention as the Flow Bar (win32.rs).
         let scale = monitor.scale_factor() * crate::overlay::windows_text_scale_factor();
-        let width = (PANEL_WIDTH * scale).round().max(1.0) as i32;
-        let height = (PANEL_HEIGHT * scale).round().max(1.0) as i32;
+        let (width, height) = panel_size(
+            (
+                wa.position.x,
+                wa.position.y,
+                wa.size.width as i32,
+                wa.size.height as i32,
+            ),
+            scale,
+        );
         let (x, y) = panel_origin(
             (wa.position.x, wa.position.y, wa.size.width, wa.size.height),
             scale,
@@ -518,6 +610,7 @@ fn show_native(app: &AppHandle) {
             log::warn!("assistant: failed to place panel: {e}");
         }
     }
+    super::native::windows::clip_window(&window);
     // SWP_SHOWWINDOW | SWP_NOACTIVATE | HWND_TOPMOST — surfaces the hidden
     // window without touching the foreground.
     crate::overlay::force_overlay_topmost(&window);
@@ -528,7 +621,8 @@ fn show_native(app: &AppHandle) {
     let Some(window) = app.get_webview_window(ASSISTANT) else {
         return;
     };
-    if let Some((x, y)) = panel_logical_origin(app) {
+    if let Some((x, y, width, height)) = panel_logical_origin(app) {
+        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }));
         let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
     }
     let _ = window.set_always_on_top(true);
@@ -540,16 +634,9 @@ fn show_native(app: &AppHandle) {
     macos::show(app);
 }
 
-#[cfg(not(target_os = "macos"))]
-fn hide_native(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(ASSISTANT) {
-        let _ = window.hide();
-    }
-}
-
 #[cfg(target_os = "macos")]
-fn hide_native(app: &AppHandle) {
-    macos::hide(app);
+fn hide_native(app: &AppHandle) -> CommandResult<()> {
+    macos::hide(app)
 }
 
 /// Take keyboard focus on explicit user intent only (FR-012-11).
@@ -587,6 +674,9 @@ pub fn open_panel(app: &AppHandle) {
         let Some(mut session) = lock_session(app) else {
             return;
         };
+        if session.closing {
+            return;
+        }
         if session.open {
             true
         } else {
@@ -610,28 +700,68 @@ pub fn open_panel(app: &AppHandle) {
 /// hotkey press. `cancel_current_operation` clears the claim via
 /// `note_dictation_cancelled`; the final text is then dropped at `stop`,
 /// never pasted elsewhere (FR-012-12 `DictationRoute::Drop`).
-fn abort_routed_dictation(app: &AppHandle) {
-    let routed = lock_session(app)
-        .map(|s| s.dictation_routed || s.dictating)
-        .unwrap_or(false);
-    if routed {
-        crate::utils::cancel_current_operation(app);
+pub(crate) fn abort_routed_dictation(app: &AppHandle) {
+    let capture =
+        lock_session(app).map(|s| (s.dictation_routed || s.dictating, s.dictation_pending));
+    if let Some((true, pending)) = capture {
+        if pending {
+            super::state::note_dictation_cancelled(app);
+        } else {
+            crate::utils::cancel_current_operation(app);
+        }
     }
 }
 
 /// Hide the panel; the session (history, draft-independent state) survives —
 /// the conversation is cleared only by `new_conversation` (FR-012-15).
-pub fn close_panel(app: &AppHandle) {
-    {
-        let Some(mut session) = lock_session(app) else {
-            return;
-        };
+pub async fn close_panel(app: &AppHandle) -> CommandResult<()> {
+    let was_open = {
+        let mut session = lock_session(app).ok_or_else(|| {
+            CommandError::new(CommandErrorCode::Internal, "Assistant is not initialized")
+        })?;
+        let was_open = session.open;
+        session.closing = true;
         session.open = false;
+        session.dictation_epoch += 1;
+        was_open
+    };
+    abort_routed_dictation(app);
+    let outcome = run_native_checked(app, hide_native).await;
+    if let Some(mut session) = lock_session(app) {
+        session.closing = false;
+        if outcome.is_err() {
+            session.open = was_open;
+        }
         emit_state_locked(app, &mut session);
     }
-    abort_routed_dictation(app);
-    let handle = app.clone();
-    let _ = app.run_on_main_thread(move || hide_native(&handle));
+    outcome
+}
+
+pub async fn focus_panel_checked(app: &AppHandle) -> CommandResult<()> {
+    run_native_checked(app, |app| {
+        #[cfg(not(target_os = "macos"))]
+        {
+            let window = app.get_webview_window(ASSISTANT).ok_or_else(|| {
+                CommandError::new(
+                    CommandErrorCode::NotFound,
+                    "Assistant window is unavailable",
+                )
+            })?;
+            window.set_focus().map_err(|error| {
+                CommandError::logged(
+                    CommandErrorCode::Internal,
+                    "Failed to focus assistant",
+                    error,
+                )
+            })
+        }
+        #[cfg(target_os = "macos")]
+        {
+            focus_native(app);
+            Ok(())
+        }
+    })
+    .await
 }
 
 /// The OS-level close path (`on_window_event` hides the window itself) —
@@ -644,6 +774,7 @@ pub fn note_panel_hidden(app: &AppHandle) {
         };
         if session.open {
             session.open = false;
+            session.dictation_epoch += 1;
             emit_state_locked(app, &mut session);
         }
     }

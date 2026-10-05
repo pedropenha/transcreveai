@@ -20,6 +20,7 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::ShortcutActivation;
 use log::{debug, error, warn};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -35,7 +36,7 @@ pub use machine::{
 
 /// Commands processed sequentially by the coordinator thread.
 enum Command {
-    Input(InputEvent),
+    Input(InputEvent, Option<(u64, bool)>),
     Cancel {
         recording_was_active: bool,
     },
@@ -50,13 +51,18 @@ enum Command {
 /// panel and starts a capture whose output is routed to it — tap-to-send
 /// comes free from the coordinator's activation modes.
 pub fn is_transcribe_binding(id: &str) -> bool {
-    id == "transcribe" || id == "transcribe_with_post_process" || id == "assistant"
+    id == "transcribe"
+        || id == "transcribe_with_post_process"
+        || id == "transcribe_translate"
+        || id == "assistant"
 }
 
 pub struct TranscriptionCoordinator {
     tx: Sender<Command>,
+    app: AppHandle,
     /// Active session readable by the pipeline (session id + capture start).
     session_snapshot: Arc<Mutex<Option<SessionSnapshot>>>,
+    assistant_can_start: Arc<AtomicBool>,
 }
 
 impl TranscriptionCoordinator {
@@ -64,10 +70,14 @@ impl TranscriptionCoordinator {
         let (tx, rx) = mpsc::channel();
         let session_snapshot: Arc<Mutex<Option<SessionSnapshot>>> = Arc::new(Mutex::new(None));
         let shared = Arc::clone(&session_snapshot);
+        let assistant_can_start = Arc::new(AtomicBool::new(true));
+        let shared_ready = Arc::clone(&assistant_can_start);
 
+        let input_app = app.clone();
         thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut state = CoordinatorState::new();
+                let mut active_epoch = None;
 
                 loop {
                     let cmd = if let Some(deadline) = state.next_deadline() {
@@ -75,9 +85,9 @@ impl TranscriptionCoordinator {
                             Ok(cmd) => cmd,
                             Err(mpsc::RecvTimeoutError::Timeout) => {
                                 if let Some(effect) = state.on_deadline(Instant::now()) {
-                                    run_effect(&app, &mut state, effect);
+                                    run_effect(&app, &mut state, effect, None, &mut active_epoch);
                                 }
-                                flush_events(&app, &shared, &mut state);
+                                flush_events(&app, &shared, &shared_ready, &mut state);
                                 continue;
                             }
                             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -90,9 +100,26 @@ impl TranscriptionCoordinator {
                     };
 
                     match cmd {
-                        Command::Input(input) => {
+                        Command::Input(input, reservation) => {
+                            let epoch = reservation.map(|(epoch, _)| epoch);
+                            let fresh = reservation.is_some_and(|(_, fresh)| fresh);
+                            if fresh && !state.accepts_assistant_start() {
+                                if let Some(epoch) = epoch {
+                                    crate::assistant::cancel_dictation_epoch(&app, epoch);
+                                }
+                                continue;
+                            }
+                            if epoch.is_some_and(|epoch| {
+                                !crate::assistant::dictation_input_current(&app, epoch)
+                            }) {
+                                continue;
+                            }
                             if let Some(effect) = state.on_input(input, Instant::now()) {
-                                run_effect(&app, &mut state, effect);
+                                run_effect(&app, &mut state, effect, epoch, &mut active_epoch);
+                            } else if fresh {
+                                if let Some(epoch) = epoch {
+                                    crate::assistant::cancel_dictation_epoch(&app, epoch);
+                                }
                             }
                         }
                         Command::Cancel {
@@ -103,11 +130,11 @@ impl TranscriptionCoordinator {
                             if let Some(effect) =
                                 state.on_pipeline_finished(outcome, Instant::now())
                             {
-                                run_effect(&app, &mut state, effect);
+                                run_effect(&app, &mut state, effect, None, &mut active_epoch);
                             }
                         }
                     }
-                    flush_events(&app, &shared, &mut state);
+                    flush_events(&app, &shared, &shared_ready, &mut state);
                 }
                 debug!("Transcription coordinator exited");
             }));
@@ -118,7 +145,9 @@ impl TranscriptionCoordinator {
 
         Self {
             tx,
+            app: input_app,
             session_snapshot,
+            assistant_can_start,
         }
     }
 
@@ -170,19 +199,40 @@ impl TranscriptionCoordinator {
         policy: SessionPolicy,
         external: bool,
     ) {
+        let epoch = if binding_id == "assistant" {
+            if self
+                .assistant_active_session()
+                .is_some_and(|session| session.binding_id != "assistant")
+            {
+                return;
+            }
+            let Some(epoch) = crate::assistant::reserve_dictation_input(&self.app, is_pressed)
+            else {
+                return;
+            };
+            Some(epoch)
+        } else {
+            None
+        };
         if self
             .tx
-            .send(Command::Input(InputEvent {
-                binding_id: binding_id.to_string(),
-                hotkey_string: hotkey_string.to_string(),
-                is_pressed,
-                mode,
-                hold_threshold,
-                external,
-                policy,
-            }))
+            .send(Command::Input(
+                InputEvent {
+                    binding_id: binding_id.to_string(),
+                    hotkey_string: hotkey_string.to_string(),
+                    is_pressed,
+                    mode,
+                    hold_threshold,
+                    external,
+                    policy,
+                },
+                epoch,
+            ))
             .is_err()
         {
+            if let Some((epoch, _)) = epoch {
+                crate::assistant::cancel_dictation_epoch(&self.app, epoch);
+            }
             warn!("Transcription coordinator channel closed");
         }
     }
@@ -223,6 +273,14 @@ impl TranscriptionCoordinator {
             .unwrap_or_else(|e| e.into_inner())
             .clone()
     }
+
+    pub(crate) fn assistant_active_session(&self) -> Option<SessionSnapshot> {
+        if self.assistant_can_start.load(Ordering::Acquire) {
+            None
+        } else {
+            self.current_session()
+        }
+    }
 }
 
 /// Emit every journaled `session://state` payload in order and keep the
@@ -230,8 +288,10 @@ impl TranscriptionCoordinator {
 fn flush_events(
     app: &AppHandle,
     shared: &Arc<Mutex<Option<SessionSnapshot>>>,
+    shared_ready: &AtomicBool,
     state: &mut CoordinatorState,
 ) {
+    shared_ready.store(state.accepts_assistant_start(), Ordering::Release);
     if let Ok(mut guard) = shared.lock() {
         *guard = state.current_session_snapshot();
     }
@@ -242,50 +302,70 @@ fn flush_events(
     }
 }
 
-fn run_effect(app: &AppHandle, state: &mut CoordinatorState, effect: Effect) {
+fn run_effect(
+    app: &AppHandle,
+    state: &mut CoordinatorState,
+    effect: Effect,
+    epoch: Option<u64>,
+    active_epoch: &mut Option<u64>,
+) {
     match effect {
         Effect::Start {
             binding_id,
             hotkey_string,
         } => {
-            let started = start(app, &binding_id, &hotkey_string);
+            let started = start(app, &binding_id, &hotkey_string, epoch);
+            if started {
+                *active_epoch = epoch;
+            }
             state.on_start_result(&binding_id, started, Instant::now());
         }
         Effect::Stop {
             binding_id,
             hotkey_string,
         } => {
-            stop(app, &binding_id, &hotkey_string);
+            stop(app, &binding_id, &hotkey_string, *active_epoch);
         }
         Effect::Discard { binding_id } => {
             discard(app, &binding_id);
+            if binding_id == "assistant" {
+                if let Some(epoch) = *active_epoch {
+                    crate::assistant::cancel_dictation_epoch(app, epoch);
+                }
+            }
+            *active_epoch = None;
         }
     }
 }
 
 /// Execute a start effect; returns whether recording actually began, so the
 /// state machine can roll back its optimistic transition on failure.
-fn start(app: &AppHandle, binding_id: &str, hotkey_string: &str) -> bool {
+fn start(app: &AppHandle, binding_id: &str, hotkey_string: &str, epoch: Option<u64>) -> bool {
     let Some(action) = ACTION_MAP.get(binding_id) else {
         warn!("No action in ACTION_MAP for '{binding_id}'");
         return false;
     };
-    action.start(app, binding_id, hotkey_string);
+    action.start_with_epoch(app, binding_id, hotkey_string, epoch);
     let recording = app
         .try_state::<Arc<AudioRecordingManager>>()
         .is_some_and(|a| a.is_recording());
     if !recording {
+        if binding_id == "assistant" {
+            if let Some(epoch) = epoch {
+                crate::assistant::cancel_dictation_epoch(app, epoch);
+            }
+        }
         debug!("Start for '{binding_id}' did not begin recording; staying idle");
     }
     recording
 }
 
-fn stop(app: &AppHandle, binding_id: &str, hotkey_string: &str) {
+fn stop(app: &AppHandle, binding_id: &str, hotkey_string: &str, epoch: Option<u64>) {
     let Some(action) = ACTION_MAP.get(binding_id) else {
         warn!("No action in ACTION_MAP for '{binding_id}'");
         return;
     };
-    action.stop(app, binding_id, hotkey_string);
+    action.stop_with_epoch(app, binding_id, hotkey_string, epoch);
 }
 
 /// Discard an in-progress capture without transcribing (arming cancel, or a
@@ -294,6 +374,9 @@ fn stop(app: &AppHandle, binding_id: &str, hotkey_string: &str) {
 /// also notifies the coordinator — this *is* the coordinator, acting.
 fn discard(app: &AppHandle, binding_id: &str) {
     debug!("Discarding capture for '{binding_id}' without transcribing");
+    if let Some(action) = ACTION_MAP.get(binding_id) {
+        action.clear_session();
+    }
     if let Some(rm) = app.try_state::<Arc<AudioRecordingManager>>() {
         rm.cancel_recording();
     }

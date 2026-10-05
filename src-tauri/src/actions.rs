@@ -25,7 +25,7 @@ use log::{debug, error, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
@@ -36,6 +36,30 @@ const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 struct RecordingErrorEvent {
     error_type: String,
     detail: Option<String>,
+}
+
+/// Warnings stay visible when the Hub is hidden without changing focus.
+fn translation_error_notice(error_type: &str) -> crate::toast::ToastNotice {
+    crate::toast::ToastNotice {
+        kind: "translated_dictation_error".to_string(),
+        message: error_type.to_string(),
+        action: None,
+        meeting_id: None,
+    }
+}
+
+fn emit_translation_error(app: &AppHandle, error_type: &str) {
+    let _ = app.emit(
+        crate::toast::TOAST_SHOW_EVENT,
+        translation_error_notice(error_type),
+    );
+    let _ = app.emit(
+        "recording-error",
+        RecordingErrorEvent {
+            error_type: error_type.to_string(),
+            detail: None,
+        },
+    );
 }
 
 /// Drop guard that finishes the transcription pipeline, including immediate
@@ -75,13 +99,34 @@ impl Drop for FinishGuard {
 
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
+    fn clear_session(&self) {}
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str);
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str);
+    fn stop_with_epoch(
+        &self,
+        app: &AppHandle,
+        binding_id: &str,
+        shortcut_str: &str,
+        _epoch: Option<u64>,
+    ) {
+        self.stop(app, binding_id, shortcut_str);
+    }
+    fn start_with_epoch(
+        &self,
+        app: &AppHandle,
+        binding_id: &str,
+        shortcut_str: &str,
+        _epoch: Option<u64>,
+    ) {
+        self.start(app, binding_id, shortcut_str);
+    }
 }
 
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+    // Only the translated action writes this private, non-persisted snapshot.
+    translation_session: Mutex<Option<(AppSettings, crate::insertion::ForegroundTarget)>>,
 }
 
 /// Field name for structured output JSON schema
@@ -157,6 +202,13 @@ where
 
 fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool {
     style == OverlayStyle::Live && is_streaming
+}
+
+/// Whether this session plans a live (streaming) preview: the selected model
+/// must advertise streaming and the session must not be a translation.
+/// Unknown capability counts as "no streaming".
+fn live_stream_planned(is_translation: bool, model_supports_streaming: Option<bool>) -> bool {
+    !is_translation && model_supports_streaming.unwrap_or(false)
 }
 
 async fn post_process_transcription(
@@ -471,6 +523,15 @@ pub(crate) async fn process_transcription_output(
     transcription: &str,
     post_process: bool,
 ) -> ProcessedTranscription {
+    process_transcription_output_in_language(app, transcription, post_process, None).await
+}
+
+async fn process_transcription_output_in_language(
+    app: &AppHandle,
+    transcription: &str,
+    post_process: bool,
+    output_language: Option<&str>,
+) -> ProcessedTranscription {
     let settings = get_settings(app);
     let mut final_text = transcription.to_string();
     let mut post_processed_text: Option<String> = None;
@@ -479,7 +540,9 @@ pub(crate) async fn process_transcription_output(
     // Resolve the language the transcription actually ran in (the persisted
     // intent coerced against the loaded model's capabilities) so OpenCC keys off
     // the effective language rather than a possibly-stale intent.
-    let effective_language = resolve_effective_language(app, &settings);
+    let effective_language = output_language
+        .map(str::to_string)
+        .unwrap_or_else(|| resolve_effective_language(app, &settings));
     if let Some(converted_text) =
         maybe_convert_chinese_variant(&effective_language, transcription).await
     {
@@ -545,7 +608,23 @@ pub(crate) async fn process_transcription_output(
 }
 
 impl ShortcutAction for TranscribeAction {
-    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn clear_session(&self) {
+        crate::dictation_origin::clear();
+        *self
+            .translation_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+        self.start_with_epoch(app, binding_id, shortcut_str, None);
+    }
+    fn start_with_epoch(
+        &self,
+        app: &AppHandle,
+        binding_id: &str,
+        _shortcut_str: &str,
+        epoch: Option<u64>,
+    ) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
@@ -553,9 +632,52 @@ impl ShortcutAction for TranscribeAction {
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
 
+        self.clear_session();
+        let mut settings = get_settings(app);
+        let is_translation = binding_id == "transcribe_translate";
+        if is_translation {
+            if crate::meeting::session::meeting_recording_active() {
+                emit_translation_error(app, "translation_meeting_active");
+                return;
+            }
+            if settings.paste_method == crate::settings::PasteMethod::ExternalScript {
+                emit_translation_error(app, "translation_insertion_unsupported");
+                return;
+            }
+            settings = crate::managers::transcription::translation::translation_settings(&settings);
+            let mm = app.state::<Arc<ModelManager>>();
+            let info = mm.get_model_info(&settings.selected_model);
+            let validated = crate::managers::transcription::translation::validate_translation_model(
+                info.is_some(),
+                info.as_ref().is_some_and(|m| {
+                    matches!(
+                        m.engine_type,
+                        crate::managers::model::EngineType::TranscribeCpp
+                    )
+                }),
+                info.as_ref().is_some_and(|m| m.supports_translation),
+                mm.get_model_path(&settings.selected_model).is_ok(),
+            );
+            if let Err(error_type) = validated {
+                emit_translation_error(app, error_type);
+                return;
+            }
+            *self
+                .translation_session
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some((
+                settings.clone(),
+                crate::insertion::probe_foreground_target(),
+            ));
+        }
+
         // Load ASR model and VAD model in parallel
         let kickoff_started = Instant::now();
-        tm.initiate_model_load();
+        if !tm.initiate_model_load_for(&settings.selected_model) {
+            self.clear_session();
+            emit_translation_error(app, "translation_model_loading");
+            return;
+        }
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -567,16 +689,20 @@ impl ShortcutAction for TranscribeAction {
         // Don't open the mic if nothing can transcribe the recording; the load
         // kicked off above fails and reports why.
         if !tm.is_model_loaded() {
-            let selected_model = get_settings(app).selected_model;
+            let selected_model = settings.selected_model.clone();
             if let Err(e) = app
                 .state::<Arc<ModelManager>>()
                 .get_model_path(&selected_model)
             {
                 warn!("Not starting recording: no model can transcribe it ({})", e);
+                self.clear_session();
                 return;
             }
         }
 
+        // Capture the destination before opening the microphone. The
+        // coordinator serializes captures; queued pipelines own their origin.
+        crate::dictation_origin::remember_foreground(binding_id);
         let binding_id = binding_id.to_string();
         let tray_started = Instant::now();
         set_tray_state(app, TrayIconState::Recording);
@@ -584,7 +710,6 @@ impl ShortcutAction for TranscribeAction {
 
         // Get the microphone mode to determine audio feedback timing
         let plan_started = Instant::now();
-        let settings = get_settings(app);
         let is_always_on = settings.always_on_microphone;
 
         let selected_model_info = app
@@ -594,10 +719,13 @@ impl ShortcutAction for TranscribeAction {
         // Use the app-facing model capability as the single pre-recording source
         // for live streaming decisions. Unknown support is represented as false
         // until the model registry is updated by discovery or runtime load.
-        let model_supports_streaming = selected_model_info
-            .as_ref()
-            .map(|m| m.supports_streaming)
-            .unwrap_or(false);
+        // Load state is deliberately not an input: `start_stream` waits for an
+        // in-flight load and queues frames meanwhile, so gating on "already
+        // loaded" only made the live card vanish after an idle unload.
+        let model_supports_streaming = live_stream_planned(
+            is_translation,
+            selected_model_info.as_ref().map(|m| m.supports_streaming),
+        );
         let vad_policy = if !settings.vad_enabled {
             VadPolicy::Disabled
         } else if model_supports_streaming {
@@ -632,7 +760,18 @@ impl ShortcutAction for TranscribeAction {
 
         let mut recording_error: Option<String> = None;
         let recording_start_time = Instant::now();
-        match rm.try_start_recording(&binding_id, vad_policy) {
+        let capture = if binding_id == "assistant" {
+            let Some(capture) = crate::assistant::start_reserved_dictation(app, epoch, || {
+                rm.try_start_recording(&binding_id, vad_policy)
+            }) else {
+                tm.cancel_stream();
+                return;
+            };
+            capture
+        } else {
+            rm.try_start_recording(&binding_id, vad_policy)
+        };
+        match capture {
             Ok(readiness) => {
                 debug!(
                     "Recording request accepted in {:?}; waiting for first microphone samples",
@@ -698,6 +837,7 @@ impl ShortcutAction for TranscribeAction {
         } else {
             // Starting failed (for example due to blocked microphone permissions).
             // Revert UI state so we don't stay stuck in the recording overlay.
+            self.clear_session();
             tm.cancel_stream();
             utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
@@ -725,7 +865,16 @@ impl ShortcutAction for TranscribeAction {
         );
     }
 
-    fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+        self.stop_with_epoch(app, binding_id, shortcut_str, None);
+    }
+    fn stop_with_epoch(
+        &self,
+        app: &AppHandle,
+        binding_id: &str,
+        _shortcut_str: &str,
+        epoch: Option<u64>,
+    ) {
         // Prevent a slow microphone from emitting a ready event or start chime
         // after the user has already requested stop.
         app.state::<Arc<AudioRecordingManager>>()
@@ -741,6 +890,7 @@ impl ShortcutAction for TranscribeAction {
         // finished dictating in it — so the insertion can detect a focus
         // change before the text arrives.
         crate::insertion::note_session_window();
+        let origin = crate::dictation_origin::take(binding_id);
 
         let ah = app.clone();
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
@@ -770,11 +920,35 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
+        let translation_session = if binding_id == "transcribe_translate" {
+            self.translation_session
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take()
+        } else {
+            None
+        };
+        let is_translation = binding_id == "transcribe_translate";
+        let translation_settings = translation_session
+            .as_ref()
+            .map(|(settings, _)| settings.clone());
+        let translation_target = translation_session.map(|(_, target)| target);
         // FR-012-12: a dictation claimed by the assistant panel never gets
         // the LLM cleanup pass and never reaches `paste_for_session` — the
         // final text is sent to the provider (`Send`) or dropped entirely
         // when the panel was closed mid-dictation (`Drop`).
-        let dictation_route = crate::assistant::take_dictation_route(app);
+        let (dictation_route, dictation_epoch) = if binding_id == "assistant" {
+            crate::assistant::take_dictation_route_with_epoch(app, &binding_id, epoch)
+        } else {
+            (crate::assistant::DictationRoute::Normal, 0)
+        };
+        let dictation_route = if binding_id == "assistant"
+            && matches!(dictation_route, crate::assistant::DictationRoute::Normal)
+        {
+            crate::assistant::DictationRoute::Drop
+        } else {
+            dictation_route
+        };
         let routed_to_assistant =
             !matches!(dictation_route, crate::assistant::DictationRoute::Normal);
         let post_process = post_process && !routed_to_assistant;
@@ -849,16 +1023,23 @@ impl ShortcutAction for TranscribeAction {
                     // running, finalize it and use its text (all audio was already
                     // fed to the stream); otherwise batch-transcribe the samples.
                     let transcription_time = Instant::now();
-                    let transcription_result = match tm.finalize_stream() {
-                        // A finalized stream with usable text wins. An empty result
-                        // (no active stream, produced nothing, or a finalize error
-                        // after the engine was returned) falls back to a full batch
-                        // transcription of the same audio. A finalize timeout is
-                        // surfaced instead — the worker may still hold the engine,
-                        // so a batch fallback would contend with it.
-                        Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe(samples),
-                        Err(err) => Err(err),
+                    let transcription_result = if is_translation {
+                        match translation_settings.clone() {
+                            Some(settings) => tm.transcribe_with_settings(samples, Some(settings)),
+                            None => Err(anyhow::anyhow!("translation_model_required")),
+                        }
+                    } else {
+                        match tm.finalize_stream() {
+                            // A finalized stream with usable text wins. An empty result
+                            // (no active stream, produced nothing, or a finalize error
+                            // after the engine was returned) falls back to a full batch
+                            // transcription of the same audio. A finalize timeout is
+                            // surfaced instead — the worker may still hold the engine,
+                            // so a batch fallback would contend with it.
+                            Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+                            Ok(_) => tm.transcribe(samples),
+                            Err(err) => Err(err),
+                        }
                     };
 
                     // Await WAV save and verify
@@ -893,7 +1074,11 @@ impl ShortcutAction for TranscribeAction {
                         return;
                     }
 
-                    let settings = get_settings(&ah);
+                    let mut settings = get_settings(&ah);
+                    if is_translation {
+                        settings.selected_language = "en".to_string();
+                        settings.dictation_provider_id = None;
+                    }
                     let session_duration_ms = session
                         .as_ref()
                         .map(|s| s.capture_started_at.elapsed().as_millis() as i64)
@@ -929,7 +1114,12 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
                             let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                                process_transcription_output_in_language(
+                                    &ah,
+                                    &transcription,
+                                    post_process,
+                                    is_translation.then_some("en"),
+                                ),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -957,6 +1147,7 @@ impl ShortcutAction for TranscribeAction {
                             let history_entry_id = if wav_saved {
                                 match hm.save_session_entry(SessionEntry {
                                     file_name: Some(file_name.clone()),
+                                    origin: origin.clone(),
                                     raw_text: transcription.clone(),
                                     post_processed_text: processed.post_processed_text.clone(),
                                     post_process_prompt: processed.post_process_prompt.clone(),
@@ -1027,7 +1218,11 @@ impl ShortcutAction for TranscribeAction {
                                 // press = dictate end = send); nothing is
                                 // pasted into another app.
                                 let final_text = processed.final_text;
-                                if let Err(err) = crate::assistant::send(&ah, &final_text) {
+                                if let Err(err) = crate::assistant::send_dictation(
+                                    &ah,
+                                    &final_text,
+                                    dictation_epoch,
+                                ) {
                                     warn!("assistant auto-send failed: {err}");
                                 }
                                 if let Some(id) = history_entry_id {
@@ -1080,8 +1275,16 @@ impl ShortcutAction for TranscribeAction {
                                 // when that setting is off.
                                 let need_spoken_submit = processed.press_enter
                                     && !(settings.auto_submit && method_inserts);
+                                // Keep the pipeline lease until native insertion completes;
+                                // the queue must not start another capture before delivery.
+                                finish.report(PipelineOutcome::Failed(
+                                    "insertion_dispatch_failed".to_string(),
+                                ));
                                 ah.run_on_main_thread(move || {
+                                    let mut finish = finish;
+                                    finish.report(PipelineOutcome::Done);
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
+                                        finish.report(PipelineOutcome::Cancelled);
                                         debug!("Transcription operation cancelled before paste");
                                         if let Some(id) = history_entry_id {
                                             if let Err(e) = hm_for_paste.update_session_status(
@@ -1099,16 +1302,47 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
-                                    let report = utils::paste_for_session(
-                                        final_text.clone(),
-                                        ah_clone.clone(),
-                                    );
+                                    // Translation keeps the target from activation. A focus
+                                    // change fails before any clipboard write or injected key.
+                                    if translation_target.as_ref().is_some_and(|target| {
+                                        !crate::managers::transcription::translation::translation_delivery_allowed(
+                                            rm_for_paste.was_cancelled_since(cancel_generation), target.probed, target.has_window, target.window_id,
+                                            crate::insertion::probe_foreground_target().window_id,
+                                        )
+                                    }) {
+                                        if let Some(id) = history_entry_id {
+                                            let _ = hm_for_paste.update_session_status(id, "failed", Some("translation_target_changed"));
+                                        }
+                                        finish.report(PipelineOutcome::Failed("translation_target_changed".to_string()));
+                                        emit_translation_error(&ah_clone, "translation_target_changed");
+                                        utils::hide_recording_overlay(&ah_clone);
+                                        set_tray_state(&ah_clone, TrayIconState::Idle);
+                                        return;
+                                    }
+                                    let can_deliver = || {
+                                        if rm_for_paste.was_cancelled_since(cancel_generation) {
+                                            return Err("cancelled".to_string());
+                                        }
+                                        if translation_target.as_ref().is_some_and(|target| !crate::managers::transcription::translation::translation_delivery_allowed(false, target.probed, target.has_window, target.window_id, crate::insertion::probe_foreground_target().window_id)) {
+                                            return Err("translation_target_changed".to_string());
+                                        }
+                                        Ok(())
+                                    };
+                                    let report = if is_translation {
+                                        crate::clipboard::paste_for_translation(final_text.clone(), ah_clone.clone(), &can_deliver)
+                                    } else {
+                                        utils::paste_for_session(final_text.clone(), ah_clone.clone())
+                                    };
                                     let inserted = report.status == InsertionStatus::Inserted;
                                     if report.status == InsertionStatus::Failed {
+                                        finish.report(if rm_for_paste.was_cancelled_since(cancel_generation) { PipelineOutcome::Cancelled } else { PipelineOutcome::Failed(report.error.clone().unwrap_or_else(|| "insertion_failed".to_string())) });
                                         error!(
                                             "Failed to insert transcription: {}",
                                             report.error.as_deref().unwrap_or("unknown error")
                                         );
+                                        if is_translation && !rm_for_paste.was_cancelled_since(cancel_generation) {
+                                            emit_translation_error(&ah_clone, report.error.as_deref().unwrap_or("translation_failed"));
+                                        }
                                         let _ = ah_clone.emit("paste-error", ());
                                     } else {
                                         debug!(
@@ -1117,13 +1351,16 @@ impl ShortcutAction for TranscribeAction {
                                             report.plan.method_name(),
                                             report.requested,
                                         );
-                                        if need_spoken_submit {
+                                        if need_spoken_submit && (!is_translation || can_deliver().is_ok()) {
                                             // FR-002-17: the spoken
                                             // "enviar" submits after the
                                             // insertion (AC-002-10).
-                                            if let Err(e) =
+                                            let submit_result = if is_translation {
+                                                crate::clipboard::send_auto_submit_key_guarded(&ah_clone, &can_deliver)
+                                            } else {
                                                 crate::clipboard::send_auto_submit_key(&ah_clone)
-                                            {
+                                            };
+                                            if let Err(e) = submit_result {
                                                 warn!(
                                                     "Voice 'send' command: auto-submit failed: {e}"
                                                 );
@@ -1139,6 +1376,9 @@ impl ShortcutAction for TranscribeAction {
                                             hm_for_paste.record_insertion_outcome(id, &report)
                                         {
                                             error!("Failed to record insertion outcome: {e}");
+                                        }
+                                        if is_translation && rm_for_paste.was_cancelled_since(cancel_generation) {
+                                            let _ = hm_for_paste.update_session_status(id, "cancelled", None);
                                         }
                                     }
 
@@ -1185,12 +1425,22 @@ impl ShortcutAction for TranscribeAction {
                             // Surface the failure to the UI (toast). The full
                             // message is also in transcreve-ai.log via the line above.
                             let _ = ah.emit("transcription-error", err.to_string());
+                            if is_translation {
+                                let message = err.to_string();
+                                let code = if message.starts_with("translation_") {
+                                    message.as_str()
+                                } else {
+                                    "translation_failed"
+                                };
+                                emit_translation_error(&ah, code);
+                            }
                             // AC-002-09 / FR-002-18: keep the WAV and record
                             // the session as `failed` with its error so
                             // history can offer "Tentar novamente".
                             if wav_saved {
                                 if let Err(save_err) = hm.save_session_entry(SessionEntry {
                                     file_name: Some(file_name.clone()),
+                                    origin: origin.clone(),
                                     raw_text: String::new(),
                                     post_processed_text: None,
                                     post_process_prompt: None,
@@ -1296,18 +1546,37 @@ struct AssistantAction;
 
 impl ShortcutAction for AssistantAction {
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
-        crate::assistant::open_panel(app);
+        self.start_with_epoch(app, binding_id, shortcut_str, None);
+    }
+    fn start_with_epoch(
+        &self,
+        app: &AppHandle,
+        binding_id: &str,
+        shortcut_str: &str,
+        epoch: Option<u64>,
+    ) {
         TranscribeAction {
             post_process: false,
+            translation_session: Mutex::new(None),
         }
-        .start(app, binding_id, shortcut_str);
+        .start_with_epoch(app, binding_id, shortcut_str, epoch);
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+        self.stop_with_epoch(app, binding_id, shortcut_str, None);
+    }
+    fn stop_with_epoch(
+        &self,
+        app: &AppHandle,
+        binding_id: &str,
+        shortcut_str: &str,
+        epoch: Option<u64>,
+    ) {
         TranscribeAction {
             post_process: false,
+            translation_session: Mutex::new(None),
         }
-        .stop(app, binding_id, shortcut_str);
+        .stop_with_epoch(app, binding_id, shortcut_str, epoch);
     }
 }
 
@@ -1354,11 +1623,22 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "transcribe".to_string(),
         Arc::new(TranscribeAction {
             post_process: false,
+            translation_session: Mutex::new(None),
         }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction {
+            post_process: true,
+            translation_session: Mutex::new(None),
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "transcribe_translate".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: false,
+            translation_session: Mutex::new(None),
+        }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),
@@ -1382,8 +1662,8 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block,
+        complete_unless_cancelled, is_blank_transcription, live_stream_planned,
+        should_use_streaming_overlay, strip_think_block,
     };
     use crate::settings::OverlayStyle;
     use std::future;
@@ -1391,6 +1671,36 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn translation_error_notice_is_visible_without_action_or_raw_detail() {
+        let notice = super::translation_error_notice("translation_model_incompatible");
+        assert_eq!(notice.kind, "translated_dictation_error");
+        assert_eq!(notice.message, "translation_model_incompatible");
+        assert!(notice.action.is_none());
+        assert!(notice.meeting_id.is_none());
+    }
+
+    #[test]
+    fn translation_cancel_discards_snapshot_before_next_session() {
+        use super::{ShortcutAction, TranscribeAction};
+        let mut stored = crate::settings::get_default_settings();
+        stored.translation_model_id = Some("medium".into());
+        let action = TranscribeAction {
+            post_process: false,
+            translation_session: std::sync::Mutex::new(Some((
+                crate::managers::transcription::translation::translation_settings(&stored),
+                crate::insertion::ForegroundTarget::unprobed(),
+            ))),
+        };
+        assert!(action.translation_session.lock().unwrap().is_some());
+        action.clear_session();
+        assert!(action.translation_session.lock().unwrap().is_none());
+        assert!(super::ACTION_MAP.contains_key("transcribe_translate"));
+        assert!(crate::transcription_coordinator::is_transcribe_binding(
+            "transcribe_translate"
+        ));
+    }
 
     #[test]
     fn blank_transcription_is_detected() {
@@ -1465,6 +1775,18 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::Live, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
+    }
+
+    #[test]
+    fn live_stream_is_planned_for_streaming_models_regardless_of_load_state() {
+        assert!(live_stream_planned(false, Some(true)));
+    }
+
+    #[test]
+    fn live_stream_is_not_planned_for_translation_or_non_streaming_models() {
+        assert!(!live_stream_planned(true, Some(true)));
+        assert!(!live_stream_planned(false, Some(false)));
+        assert!(!live_stream_planned(false, None));
     }
 
     // AC-002-10 voice "send" command tests moved with the function into

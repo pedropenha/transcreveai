@@ -1,410 +1,484 @@
 @import "../styles/theme.css";
 
-/*
- * F012/T-091 — the assistant overlay panel. Shares the Flow Bar token set
- * (NFR-012-04 “Sinal Calmo”): the near-opaque instrument surface, the same
- * text hierarchy and the shared motion durations. The native window is
- * transparent; the card is the only painted surface.
- */
-
+/* Assistant-only materials. Flow Bar/toast keep their dark --ov-* palette. */
 .as-stage {
+  --as-glass: color-mix(in srgb, var(--panel) 90%, transparent);
+  --as-solid: var(--panel);
+  --as-ink: var(--text);
+  --as-muted: var(--muted);
+  --as-accent: var(--accent);
+  --as-on-accent: var(--on-accent);
+  --as-line: var(--line);
+  --as-control-line: var(--line-strong);
+  --as-field: color-mix(in srgb, var(--sunken) 84%, transparent);
+  --as-bubble: var(--accent-soft);
+  --as-rec: var(--urucum-ink);
+  --as-warning: var(--warning);
+  --as-error: var(--error);
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: stretch;
-  justify-content: stretch;
+  color: var(--as-ink);
   font-family: var(--font-family-sans);
 }
 
 .as-panel {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  margin: 4px;
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--flowbar-surface) 98%, transparent);
-  border: 1px solid var(--flowbar-border);
-  color: var(--flowbar-text);
-  box-shadow: var(--shadow-floating);
+  margin: 0;
+  border-radius: 24px;
+  background: var(--as-glass);
+  backdrop-filter: blur(28px) saturate(125%);
+  border: 0;
+  box-shadow: none;
   overflow: hidden;
   animation: as-pop var(--motion-duration-enter) var(--motion-easing-enter);
 }
-
-@keyframes as-pop {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.99);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.as-stage--solid .as-panel {
+  background: var(--as-solid);
+  backdrop-filter: none;
 }
-
-/* Title strip — T-092's drag handle + Fixar toggle (FR-012-16). */
+.as-stage--solid .as-compose {
+  background: var(--as-solid);
+}
+.as-stage button,
+.as-stage textarea {
+  font: inherit;
+}
+.as-stage button {
+  cursor: pointer;
+}
+.as-stage button:disabled {
+  cursor: default;
+}
+.as-stage button:focus-visible,
+.as-stage textarea:focus-visible,
+.as-stage a:focus-visible {
+  outline: 2px solid var(--as-accent);
+  outline-offset: 2px;
+}
 .as-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--flowbar-border);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--flowbar-text);
+  gap: 8px;
+  padding: 16px 14px 10px;
+  font-size: 14px;
+  font-weight: 600;
   user-select: none;
   cursor: grab;
-  /* Pointer events drive the drag — never let the touch layer eat them. */
   touch-action: none;
 }
-
 .as-title:active {
   cursor: grabbing;
 }
-
-/* Fixar on: the panel is visible but immovable — no grab affordance. */
-.as-title--pinned,
+.as-title--pinned {
+  cursor: grab;
+}
 .as-title--pinned:active {
-  cursor: default;
+  cursor: grabbing;
 }
-
-.as-title-icon {
-  color: var(--flowbar-accent);
-  flex-shrink: 0;
-}
-
-.as-provider {
-  margin-left: 2px;
-  padding: 1px 8px;
-  border-radius: var(--radius-pill);
-  background: var(--flowbar-surface-raised);
-  color: var(--flowbar-text-muted);
-  font-size: var(--font-size-xxs);
-  font-weight: var(--font-weight-regular);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 45%;
-}
-
-.as-title-spacer {
+.as-title-text {
   flex: 1;
 }
-
+.as-title-spacer {
+  display: none;
+}
+.as-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  background: var(--as-bubble);
+  color: var(--as-accent);
+  flex-shrink: 0;
+}
 .as-x,
-.as-pin {
+.as-pin,
+.as-material {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* 20 px was below the shared minimum target — near the rounded corner the
-     hairline clipped real hits into the drag strip instead of the button. */
-  width: var(--control-target-min);
-  height: var(--control-target-min);
-  border: none;
-  border-radius: var(--radius-pill);
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 12px;
   background: transparent;
-  color: var(--flowbar-text-muted);
-  cursor: pointer;
+  color: var(--as-muted);
 }
-
 .as-x:hover,
-.as-pin:hover {
-  background: var(--flowbar-surface-raised);
-  color: var(--flowbar-text);
+.as-pin:hover,
+.as-material:hover {
+  background: var(--as-bubble);
+  color: var(--as-ink);
 }
-
-/* Pinned: the toggle stays lit so the locked state reads at a glance. */
-.as-pin--on {
-  color: var(--flowbar-accent);
-  background: color-mix(in srgb, var(--flowbar-accent) 14%, transparent);
+.as-pin--on,
+.as-material[aria-pressed="true"] {
+  background: var(--as-accent);
+  color: var(--as-on-accent);
 }
-
-/* No-provider banner (FR-012-17). */
-.as-banner {
-  margin: 8px 10px 0;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--flowbar-warning) 40%, transparent);
-  background: color-mix(in srgb, var(--flowbar-warning) 12%, transparent);
-  font-size: var(--font-size-xs);
+.as-pin--on:hover,
+.as-material[aria-pressed="true"]:hover {
+  color: var(--as-on-accent);
+  background: var(--as-accent);
 }
-
-.as-banner-text {
-  margin: 0 0 6px;
-  color: var(--flowbar-text);
-  line-height: var(--line-height-snug);
+.as-pin:disabled {
+  opacity: 0.65;
 }
-
-.as-banner-cta {
-  border: 1px solid var(--flowbar-border);
-  border-radius: var(--radius-pill);
-  background: var(--flowbar-surface-raised);
-  color: var(--flowbar-text);
-  font-size: var(--font-size-xs);
-  padding: 3px 10px;
-  cursor: pointer;
+.as-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 16px 8px 22px;
 }
-
-.as-banner-cta:hover {
-  border-color: var(--flowbar-accent);
+.as-provider {
+  border: 1px solid var(--as-line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: var(--as-field);
+  color: var(--as-muted);
+  font-size: 12px !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-/* Message list. */
+.as-provider--experimental {
+  border-style: dashed;
+  border-color: var(--as-warning);
+}
+.as-exp {
+  font-style: normal;
+  color: var(--as-warning);
+}
 .as-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 10px;
+  padding: 18px 22px;
+  border-top: 1px solid var(--as-line);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 20px;
   min-height: 0;
 }
-
 .as-empty {
   margin: auto;
   text-align: center;
-  color: var(--flowbar-text-muted);
-  font-size: var(--font-size-sm);
-  max-width: 80%;
+  max-width: 100%;
+  padding: 16px 0;
+  color: var(--as-muted);
+  font-size: 14px;
+  line-height: 1.65;
 }
-
-.as-privacy {
-  margin-top: 8px;
-  font-size: var(--font-size-xxs);
-  opacity: 0.8;
+.as-empty-mark {
+  display: grid;
+  place-items: center;
+  margin: 0 auto 20px;
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  border: 1px solid var(--as-line);
+  background: var(--as-field);
+  color: var(--as-accent);
 }
-
+.as-empty h1 {
+  font-family: var(--font-family-serif);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.1;
+  margin: 0 0 12px;
+  color: var(--as-ink);
+}
+.as-empty p {
+  margin: 0;
+}
+.as-empty .as-privacy {
+  margin-top: 10px;
+  font-size: 11px;
+}
+.as-suggestions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+.as-suggestions button {
+  font-size: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--as-line);
+  border-radius: 20px;
+  background: var(--as-field);
+  color: var(--as-ink);
+}
 .as-msg {
-  max-width: 88%;
-  padding: 7px 10px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-relaxed);
+  font-size: 14px;
+  line-height: 1.65;
   overflow-wrap: anywhere;
 }
-
 .as-user {
+  max-width: 90%;
   align-self: flex-end;
-  background: color-mix(in srgb, var(--flowbar-accent) 16%, transparent);
-  border: 1px solid color-mix(in srgb, var(--flowbar-accent) 30%, transparent);
+  padding: 12px 15px;
+  background: var(--as-bubble);
+  border: 1px solid var(--as-line);
+  border-radius: 17px 17px 5px 17px;
 }
-
 .as-assistant {
-  align-self: flex-start;
-  background: var(--flowbar-surface-raised);
-  border: 1px solid var(--flowbar-border);
+  align-self: stretch;
+  background: transparent;
 }
-
 .as-md > :first-child {
   margin-top: 0;
 }
-
 .as-md > :last-child {
   margin-bottom: 0;
 }
-
 .as-md p {
-  margin: 0 0 6px;
+  margin: 0 0 10px;
 }
-
 .as-md pre {
-  margin: 6px 0;
-  padding: 8px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--flowbar-text) 8%, transparent);
-  overflow-x: auto;
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--as-field);
+  overflow: auto;
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
+  font-size: 12px;
 }
-
 .as-md code {
   font-family: var(--font-family-mono);
   font-size: 0.92em;
 }
-
 .as-md ul,
 .as-md ol {
-  margin: 4px 0;
-  padding-inline-start: 18px;
+  margin: 8px 0;
+  padding-inline-start: 20px;
 }
-
 .as-md a {
-  color: var(--flowbar-accent);
+  color: var(--as-accent);
+  text-decoration: underline;
 }
-
 .as-thinking {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--flowbar-text-muted);
-}
-
-.as-spinner {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--flowbar-border);
-  border-top-color: var(--flowbar-accent);
-  animation: as-spin var(--motion-duration-feedback-loop) linear infinite;
-}
-
-@keyframes as-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.as-error {
-  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid color-mix(in srgb, var(--flowbar-error) 40%, transparent);
-  background: color-mix(in srgb, var(--flowbar-error) 10%, transparent);
-  font-size: var(--font-size-xs);
+  color: var(--as-muted);
 }
-
-.as-error-text {
+.as-thinking-text {
   flex: 1;
-  overflow-wrap: anywhere;
 }
-
+.as-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--as-line);
+  border-top-color: var(--as-accent);
+  animation: as-spin var(--motion-duration-feedback-loop) linear infinite;
+}
+.as-banner,
+.as-action-error,
+.as-error {
+  margin: 8px 16px 0;
+  padding: 12px;
+  border: 1px solid var(--as-line);
+  border-radius: 14px;
+  background: var(--as-field);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.as-error {
+  margin: 0;
+  color: var(--as-error);
+}
+.as-action-error {
+  color: var(--as-error);
+}
+.as-banner-text {
+  margin: 0 0 8px;
+}
+.as-banner-cta,
+.as-retry,
+.as-cancel {
+  border: 1px solid var(--as-control-line);
+  border-radius: 10px;
+  background: var(--as-field);
+  color: var(--as-ink);
+  padding: 6px 10px;
+  font-size: 12px !important;
+  min-height: 32px;
+}
 .as-error-detail {
   display: block;
-  margin-top: 2px;
-  color: var(--flowbar-text-muted);
-  font-size: var(--font-size-xxs);
+  font-size: 11px;
+  color: var(--as-muted);
 }
-
-.as-retry {
-  border: 1px solid var(--flowbar-border);
-  border-radius: var(--radius-pill);
-  background: var(--flowbar-surface-raised);
-  color: var(--flowbar-text);
-  font-size: var(--font-size-xs);
-  padding: 2px 10px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.as-retry:hover {
-  border-color: var(--flowbar-accent);
-}
-
 .as-cancelled {
-  align-self: center;
-  border: none;
-  background: transparent;
-  color: var(--flowbar-text-muted);
-  font-size: var(--font-size-xxs);
-  padding: 2px 8px;
+  text-align: center;
+  color: var(--as-muted);
+  font-size: 12px;
 }
-
-/* Dictation-first panel (FR-012-12/13): no composer — the live STT preview
-   renders as a pending user bubble, the finalized text lands as a real
-   message on auto-send. */
-
+.as-cancelled .as-retry {
+  margin-inline-start: 8px;
+}
 .as-live {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--font-size-xxs);
-  color: var(--flowbar-recording);
+  color: var(--as-rec);
+  font-size: 11px;
 }
-
 .as-live-msg {
   display: flex;
   flex-direction: column;
   gap: 4px;
   border-style: dashed;
 }
-
-.as-live-text {
-  color: var(--flowbar-text);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-relaxed);
-  overflow-wrap: anywhere;
-}
-
 .as-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--flowbar-recording);
+  background: var(--as-rec);
   animation: as-blink var(--motion-duration-pulse) ease-in-out infinite;
 }
-
-@keyframes as-blink {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-/* A prompt dictated while the provider was answering — sent automatically
-   when the turn commits. */
 .as-queued {
-  opacity: 0.75;
   border-style: dashed;
 }
-
 .as-queued-tag {
   display: block;
-  margin-top: 4px;
-  font-size: var(--font-size-xxs);
-  color: var(--flowbar-text-muted);
+  font-size: 11px;
+  color: var(--as-muted);
 }
-
-.as-thinking-text {
-  flex: 1;
-}
-
-.as-cancel {
-  border: 1px solid var(--flowbar-border);
-  border-radius: var(--radius-pill);
-  background: var(--flowbar-surface-raised);
-  color: var(--flowbar-text);
-  font-size: var(--font-size-xxs);
-  padding: 2px 10px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.as-cancel:hover {
-  border-color: var(--flowbar-accent);
-}
-
-.as-provider--experimental {
-  border: 1px dashed color-mix(in srgb, var(--flowbar-warning) 55%, transparent);
-}
-
-.as-exp {
-  font-style: normal;
-  color: var(--flowbar-warning);
-}
-
-/* Footer — the voice-first hint row (replaces the composer). */
 .as-foot {
-  border-top: 1px solid var(--flowbar-border);
-  padding: 6px 10px;
+  padding: 12px 14px;
 }
-
+.as-compose {
+  padding: 12px;
+  border: 1px solid var(--as-control-line);
+  border-radius: 18px;
+  background: var(--as-field);
+}
+.as-compose textarea {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  min-height: 53px;
+  max-height: 140px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--as-ink);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.as-compose textarea::placeholder {
+  color: var(--as-muted);
+  opacity: 1;
+}
+.as-compose-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 5px;
+}
+.as-voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  min-height: 34px;
+  font-size: 12px !important;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--as-muted);
+}
+.as-voice:hover {
+  background: var(--as-bubble);
+}
+.as-voice--active {
+  color: var(--as-rec);
+}
+.as-send {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--as-accent);
+  color: var(--as-on-accent);
+}
+.as-send:disabled {
+  opacity: 0.6;
+}
 .as-hint {
   display: block;
+  margin-top: 9px;
   text-align: center;
-  font-size: var(--font-size-xxs);
-  color: var(--flowbar-text-muted);
-  opacity: 0.75;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--as-muted);
 }
-
-/* Screen-reader-only live region (same trick as the toast). */
 .as-sr {
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
-  clip: rect(0 0 0 0);
   clip-path: inset(50%);
   white-space: nowrap;
+}
+@keyframes as-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes as-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes as-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .as-panel,
+  .as-spinner,
+  .as-dot {
+    animation: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .as-panel {
+    background: var(--as-solid);
+    backdrop-filter: none;
+  }
+}
+@media (max-height: 500px) {
+  .as-scroll {
+    padding: 12px 18px;
+    gap: 12px;
+  }
+  .as-empty-mark,
+  .as-empty .as-privacy,
+  .as-suggestions {
+    display: none;
+  }
+  .as-empty {
+    padding: 6px 0;
+  }
+  .as-empty h1 {
+    font-size: 26px;
+  }
 }

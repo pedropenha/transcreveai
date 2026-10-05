@@ -385,6 +385,18 @@ pub(crate) fn type_text_direct(
     newline_mode: NewlineMode,
     char_delay_ms: u64,
 ) -> Result<(), String> {
+    type_text_direct_guarded(enigo, text, newline_mode, char_delay_ms, &|| Ok(()), false)
+}
+
+/// Session guard is checked after modifier waits and before every typed unit.
+pub(crate) fn type_text_direct_guarded(
+    enigo: &mut Enigo,
+    text: &str,
+    newline_mode: NewlineMode,
+    char_delay_ms: u64,
+    can_deliver: &dyn Fn() -> Result<(), String>,
+    per_character: bool,
+) -> Result<(), String> {
     // FR-005-01 also guards direct typing: a held Ctrl would turn typed
     // characters into shortcuts (e.g. "x" becoming Ctrl+X). The wait must
     // precede the guard — it depends on seeing the user's own key releases.
@@ -396,10 +408,12 @@ pub(crate) fn type_text_direct(
         }
     };
     for segment in type_segments(text, newline_mode) {
+        can_deliver()?;
         match segment {
             TypeSegment::Text(run) => {
-                if char_delay_ms > 0 {
+                if char_delay_ms > 0 || per_character {
                     for c in run.chars() {
+                        can_deliver()?;
                         enigo
                             .text(&c.to_string())
                             .map_err(|e| format!("Failed to type character: {e}"))?;

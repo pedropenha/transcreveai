@@ -8,7 +8,15 @@ import React, {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
+import {
+  Check,
+  Languages,
+  Pause,
+  Play,
+  Square,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
 import type {
@@ -80,6 +88,7 @@ const RecordingOverlay: React.FC = () => {
 
   // --- Session lifecycle (coordinator `session://state`) ---
   const [phase, setPhase] = useState<SessionPhase>("idle");
+  const [translationSession, setTranslationSession] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -238,6 +247,7 @@ const RecordingOverlay: React.FC = () => {
         (event) => {
           const payload = event.payload;
           setPhase(payload.state);
+          setTranslationSession(payload.mode === "translation");
           setNotice(payload.notice ?? null);
           setSessionError(
             payload.state === "error" ? (payload.error ?? null) : null,
@@ -624,7 +634,11 @@ const RecordingOverlay: React.FC = () => {
   const announce = (() => {
     switch (view) {
       case "recording":
-        return t("overlay.listening");
+        return t(
+          translationSession
+            ? "overlay.translationListening"
+            : "overlay.listening",
+        );
       case "meeting-recording":
         return meetingStatus === "paused"
           ? t("overlay.meetingPaused")
@@ -635,6 +649,7 @@ const RecordingOverlay: React.FC = () => {
         }
         if (retrying) return t("overlay.retrying");
         if (phase === "inserting") return t("overlay.inserting");
+        if (translationSession) return t("overlay.translating");
         return phase === "processing"
           ? t("overlay.processing")
           : t("overlay.transcribing");
@@ -765,6 +780,13 @@ const RecordingOverlay: React.FC = () => {
                 <X size={10} aria-hidden="true" />
               </button>
               {waveform}
+              {translationSession && (
+                <Languages
+                  size={12}
+                  className="f-translation-marker"
+                  aria-label={t("overlay.translationMode")}
+                />
+              )}
               <button
                 type="button"
                 className="sx fside fstop"

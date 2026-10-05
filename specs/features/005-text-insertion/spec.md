@@ -35,7 +35,7 @@ O texto final precisa aparecer onde o cursor está, em qualquer app (nativo, Ele
 - **FR-005-08** Sem janela válida em foco (área de trabalho, tela bloqueada, UAC) → `clipboard_only` + aviso.
 - **FR-005-09** Janela em foco diferente da do início da sessão: inserir na janela **atual** (comportamento natural de "onde o cursor está"). Opção "Se a janela mudou, apenas copiar" (padrão desligada).
 - **FR-005-10** Inserções de sessões concorrentes são serializadas (FIFO) — nunca duas colagens simultâneas.
-- **FR-005-11** Resultado da inserção registrado no histórico (`inserted`, `copied`, `failed`) com método usado e tempo.
+- **FR-005-11** Resultado da inserção registrado no histórico (`inserted`, `copied`, `failed`) com método usado e tempo. A linha também carrega o **app de origem** (o app em foco no início da sessão, não o da inserção — FR-005-09 pode inserir em outra janela): `app_exe`, `app_name`, `app_exe_path` (F010 FR-010-29).
 - **FR-005-12** P2: verificar via UI Automation se o elemento focado é editável e confirmar que o texto entrou; senão, cair para `clipboard_only`.
 
 ## Requisitos não funcionais

@@ -155,6 +155,91 @@ fn sanitize_exe_path_keeps_only_safe_bounded_paths() {
     assert_eq!(sanitize_exe_path(Some(long)), None, "over-long path");
 }
 
+#[test]
+fn dictation_icon_allows_browsers_but_not_embedded_apps() {
+    // Browser label is the browser itself: its own exe icon is right.
+    assert_eq!(
+        dictation_extract_target("Chrome", Some("C:\\g\\chrome.exe")),
+        Some("C:\\g\\chrome.exe")
+    );
+    // Embedded front-end logos win over extraction.
+    for label in ["Zoom", "Teams", "Slack", "Discord"] {
+        assert_eq!(
+            dictation_extract_target(label, Some("C:\\x.exe")),
+            None,
+            "{label}"
+        );
+    }
+    // Claude is not embedded -> extracted.
+    assert_eq!(
+        dictation_extract_target("Claude", Some("C:\\a\\Claude.exe")),
+        Some("C:\\a\\Claude.exe")
+    );
+}
+
+#[test]
+fn dictation_icon_needs_a_safe_path() {
+    assert_eq!(dictation_extract_target("Claude", None), None);
+    assert_eq!(
+        dictation_extract_target("Claude", Some("\\\\server\\share\\Claude.exe")),
+        None
+    );
+    assert_eq!(
+        dictation_extract_target("Claude", Some("C:\\a\\..\\Claude.exe")),
+        None
+    );
+}
+
+#[test]
+fn dictation_icon_for_uses_the_shared_cache_once_per_path() {
+    let cache = IconCache::new(Counting(AtomicUsize::new(0), true), 8);
+    assert!(dictation_icon_for(&cache, "Chrome", Some("C:\\g\\chrome.exe")).is_some());
+    assert!(dictation_icon_for(&cache, "Chrome", Some("C:\\g\\chrome.exe")).is_some());
+    assert!(dictation_icon_for(&cache, "Zoom", Some("C:\\g\\zoom.exe")).is_none());
+    assert_eq!(cache.extractor.0.load(Ordering::SeqCst), 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn dictation_icon_extracts_real_notepad_icon() {
+    // The shell can miss its 2 s budget while the whole suite hammers it in
+    // parallel; a fresh cache per attempt keeps a cached miss from sticking.
+    let uri = (0..3)
+        .find_map(|_| {
+            let cache = IconCache::new(WindowsIconExtractor, 4);
+            dictation_icon_for(
+                &cache,
+                "Bloco de Notas",
+                Some("C:\\Windows\\System32\\notepad.exe"),
+            )
+        })
+        .expect("notepad icon");
+    assert!(uri.starts_with("data:image/png;base64,"));
+}
+
+/// Real-machine probe: set `TRANSCREVE_PROBE_EXE` to any exe path (e.g. a
+/// packaged app under the restricted `WindowsApps` ACL) to see whether its
+/// icon extracts. Reports instead of asserting — the outcome depends on the
+/// machine, and the UI falls back to a monogram either way.
+#[cfg(windows)]
+#[test]
+fn reports_icon_extraction_for_probe_exe() {
+    let Ok(path) = std::env::var("TRANSCREVE_PROBE_EXE") else {
+        return;
+    };
+    let target = dictation_extract_target("probe", Some(&path));
+    println!(
+        "PROBE-ICON: path={path} safe={} extracted={}",
+        target.is_some(),
+        extraction_succeeds(&path)
+    );
+}
+
+#[cfg(windows)]
+fn extraction_succeeds(path: &str) -> bool {
+    matches!(WindowsIconExtractor.extract(path), Extraction::Found(_))
+}
+
 #[cfg(windows)]
 #[test]
 fn extracts_real_icon_from_notepad() {

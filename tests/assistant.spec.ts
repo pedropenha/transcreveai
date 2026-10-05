@@ -13,6 +13,12 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import {
+  startAssistantCoverage,
+  stopAssistantCoverage,
+} from "./helpers/assistant-coverage";
+test.beforeEach(async ({ page }) => startAssistantCoverage(page));
+test.afterEach(async ({ page }, info) => stopAssistantCoverage(page, info));
+import {
   installTauriMock,
   emitTauriEvent,
   type TauriMock,
@@ -71,7 +77,7 @@ test.describe("Assistant strip buttons — one action per gesture", () => {
     await page.getByRole("button", { name: /new conversation/i }).click();
     expect(countCalls(mock, "assistant_new_conversation")).toBe(1);
 
-    await page.getByRole("button", { name: /^pin$/i }).click();
+    await page.getByRole("button", { name: /^dock to edge$/i }).click();
     expect(
       mock.calls.some(
         (call) =>
@@ -211,10 +217,9 @@ test.describe("Assistant strip buttons — one action per gesture", () => {
     await nextFrame(page);
     await nextFrame(page);
     await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByRole("button", { name: /^pin$/i })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(
+      page.getByRole("button", { name: /^dock to edge$/i }),
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("STALE")).not.toBeVisible();
   });
 
@@ -260,17 +265,17 @@ test.describe("Assistant strip buttons — one action per gesture", () => {
     expect(warnings.some((w) => w.includes("assistant_close"))).toBe(true);
   });
 
-  test("pinned panel ignores title-strip drags and updates aria-pressed", async ({
+  test("pinned panel remains draggable and saves its released position", async ({
     page,
   }) => {
     const mock = await openPanel(page);
 
-    const pin = page.getByRole("button", { name: /^pin$/i });
+    const pin = page.getByRole("button", { name: /^dock to edge$/i });
     await pin.click();
     expect(countCalls(mock, "assistant_set_panel_pinned")).toBe(1);
 
     // Positive control first: an unpinned drag DOES move the window — the
-    // pinned assertion below then proves the gate, not a broken drag.
+    // pinned assertion below proves dragging remains available, not a broken drag.
     const strip = page.locator(".as-title");
     const box = await strip.boundingBox();
     expect(box).not.toBeNull();
@@ -290,7 +295,7 @@ test.describe("Assistant strip buttons — one action per gesture", () => {
     });
     await expect(pin).toHaveAttribute("aria-pressed", "true");
 
-    // A drag gesture on the pinned strip must not move the window — give
+    // A drag gesture on the docked strip still moves the window — give
     // a would-be late move a beat to land before the negative assert.
     await page.mouse.move(box!.x + 20, y);
     await page.mouse.down();
@@ -298,6 +303,8 @@ test.describe("Assistant strip buttons — one action per gesture", () => {
     await nextFrame(page);
     await page.mouse.up();
     await nextFrame(page);
-    expect(countCalls(mock, "assistant_move_panel")).toBe(movesBefore);
+    expect(countCalls(mock, "assistant_move_panel")).toBeGreaterThan(
+      movesBefore,
+    );
   });
 });

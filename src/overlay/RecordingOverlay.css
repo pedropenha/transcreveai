@@ -575,8 +575,18 @@
 
 /* Recording pill — 128x36: ✕ | waveform | ■ (F001 FR-001-05/06). */
 .f-rec {
+  position: relative;
   width: var(--flowbar-size-recording-width);
   height: var(--flowbar-size-recording-height);
+}
+.f-translation-marker {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 .f-meeting {
   width: 184px;

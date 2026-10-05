@@ -201,6 +201,10 @@
           "assistant": {
             "name": "Tecla do Assistente",
             "description": "Abre o assistente flutuante já ditando. Pressione de novo para parar de ditar e enviar."
+          },
+          "transcribe_translate": {
+            "name": "Atalho de ditado traduzido",
+            "description": "Traduzir somente esta gravação para inglês usando um modelo local compatível."
           }
         },
         "errors": {
@@ -235,6 +239,7 @@
       "deleteConfirm": "Tem certeza de que deseja excluir {{modelName}}? Você precisará baixá-lo novamente para usá-lo.",
       "deleteActiveConfirm": "{{modelName}} é o seu modelo ativo. Excluí-lo interromperá as transcrições até que você selecione um novo modelo. Tem certeza?",
       "deleteTitle": "Excluir Modelo",
+      "translatesTag": "Traduz para inglês",
       "filters": {
         "allLanguages": "Todos os Idiomas",
         "streaming": "Filtrar modelos compatíveis com transcrição ao vivo",
@@ -847,6 +852,40 @@
         "local_parakeet": "Parakeet",
         "local_onnx": "Modelos ONNX"
       }
+    },
+    "translatedDictation": {
+      "title": "Traduzir este ditado",
+      "description": "Use o atalho no aplicativo de destino para traduzir somente essa gravação para inglês, inteiramente neste dispositivo. O ditado comum e suas preferências continuam iguais.",
+      "model": "Modelo para tradução",
+      "currentModel": "Usar o modelo atual de ditado",
+      "currentModelCannotTranslate": "Modelo atual ({{model}}) — não traduz",
+      "optionDownloaded": "{{name}} — baixado",
+      "optionNotDownloaded": "{{name}} — não baixado",
+      "listHint": "Só aparecem aqui os modelos que sabem traduzir para inglês; os outros falhariam ao usar o atalho. Na página Modelos eles têm o selo \"Traduz para inglês\".",
+      "unavailableModel": "Modelo selecionado anteriormente indisponível",
+      "download": "Baixar modelo",
+      "cancelDownload": "Cancelar download",
+      "errorTitle": "Não foi possível iniciar a gravação",
+      "states": {
+        "unselected": "Escolha um modelo local compatível para preparar a tradução.",
+        "incompatible": "Escolha um modelo local compatível. O modelo atual não traduz para inglês.",
+        "downloading": "Baixando ou preparando {{model}}. Aguarde antes de usar o atalho.",
+        "downloadRequired": "Baixe o modelo selecionado ({{model}}) antes de usar o atalho.",
+        "ready": "Pronto: {{model}}. Use o atalho de tradução no aplicativo de destino."
+      },
+      "errors": {
+        "translation_model_required": "Escolha um modelo local compatível em Configurações → Transcrição → Idiomas.",
+        "translation_model_unavailable": "Baixe o modelo selecionado para tradução antes de usar o atalho.",
+        "translation_model_incompatible": "Este modelo não traduz para inglês. Escolha um modelo local compatível em Configurações → Transcrição → Idiomas.",
+        "translation_model_changed": "O modelo de tradução mudou durante a preparação da gravação. Use o atalho novamente.",
+        "translation_target_changed": "O destino mudou durante a preparação da tradução. Volte ao aplicativo de destino e use o atalho novamente.",
+        "translation_model_loading": "Um modelo local ainda está carregando. Aguarde a conclusão e use o atalho novamente.",
+        "translation_meeting_active": "Pare a gravação da reunião antes de iniciar um ditado traduzido.",
+        "translation_failed": "Não foi possível concluir a tradução. Tente gravar novamente.",
+        "translation_insertion_unsupported": "O ditado traduzido não permite scripts externos de inserção. Escolha outro método de inserção em Configurações → App → Avançado."
+      },
+      "saveFailed": "Não foi possível salvar o modelo de tradução. Tente novamente.",
+      "downloadFailed": "Não foi possível baixar ou cancelar o modelo. Tente novamente em Modelos."
     }
   },
   "footer": {
@@ -937,22 +976,48 @@
     "meetingFailed": "Falha ao processar a reunião",
     "openMeeting": "Abrir janela da reunião",
     "openMeetingAt": "Abrir janela da reunião, tempo decorrido {{time}}",
-    "openMeetingTranscript": "Abrir transcrição da reunião"
+    "openMeetingTranscript": "Abrir transcrição da reunião",
+    "translationListening": "Ouvindo para tradução em inglês",
+    "translating": "Traduzindo para inglês",
+    "translationMode": "Tradução para inglês"
   },
   "assistant": {
     "title": "Assistente",
     "provider": "Provedor: {{label}}",
     "cancel": "Cancelar",
     "close": "Fechar",
-    "pin": "Fixar",
-    "unpin": "Desafixar",
+    "pin": "Fixar na borda",
+    "unpin": "Soltar da borda",
     "retry": "Tentar novamente",
     "newConversation": "Nova conversa",
     "thinking": "Pensando…",
     "cancelled": "Cancelado",
     "listening": "Ouvindo…",
-    "empty": "Pressione o atalho do assistente e fale.",
-    "privacyHint": "O áudio é transcrito neste dispositivo — nada é enviado até você enviar.",
+    "empty": "Traga uma ideia, revise um texto ou pergunte sobre seus ditados e reuniões recentes.",
+    "privacyHint": "O que você digita fica aqui até enviar. Parar o ditado envia sua fala ao provedor selecionado.",
+    "emptyTitle": "O que vamos pensar juntos?",
+    "inputLabel": "Sua mensagem",
+    "inputPlaceholder": "Pergunte, escreva ou dite…",
+    "send": "Enviar mensagem",
+    "dictate": "Ditar",
+    "stopDictation": "Parar e enviar",
+    "reduceTransparency": "Reduzir transparência",
+    "composerHint": "Enter envia · Shift + Enter quebra linha · Esc cancela ou fecha",
+    "noProviderLabel": "Escolha um provedor de IA",
+    "suggestion": {
+      "review": "Revisar um texto",
+      "organize": "Organizar uma ideia"
+    },
+    "actionError": {
+      "send": "Não foi possível enviar. Seu rascunho foi preservado.",
+      "newConversation": "Não foi possível iniciar uma nova conversa. Tente novamente.",
+      "pin": "Não foi possível alterar a posição fixada. Tente novamente.",
+      "dictate": "Não foi possível iniciar ou parar o ditado. Tente novamente.",
+      "dismiss": "Não foi possível dispensar o assistente. Tente novamente.",
+      "close": "Não foi possível fechar o assistente. Tente novamente.",
+      "cancel": "Não foi possível parar a resposta. Tente novamente.",
+      "retry": "Não foi possível tentar a resposta novamente. Tente novamente."
+    },
     "errorTitle": "O assistente não conseguiu responder.",
     "error": {
       "provider": "O assistente não conseguiu responder.",

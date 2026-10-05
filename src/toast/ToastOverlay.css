@@ -8,9 +8,11 @@
    is anchored to the window's bottom edge, so expand/collapse grows upward
    while the toast's anchor above the Flow Bar never moves.
    Keep card heights in sync with toastWindowHeight() in toastView.ts:
-   stage padding 16 + card (56 notice / 104 notice+action / 64 detection /
-   232 detection with menu). The detection card is a fixed dark surface
-   (--toast-*) in both themes.
+   stage padding 16 + card (56 notice / 104 notice+action / 72 detection /
+   240 detection with menu). The detection card is a fixed dark surface
+   (--toast-*) in both themes. Layout runs on a 4 px grid; the card is
+   width-responsive (container query) because the native window is 376 px
+   wide today (344 px card) and may grow.
    ============================================================ */
 
 :root {
@@ -26,6 +28,9 @@
   --toast-cta-text: var(--ov-cta-ink);
   --toast-cta-divider: color-mix(in srgb, var(--ov-cta-ink) 14%, transparent);
   --toast-live: var(--ov-success);
+  /* Two-layer shadow sized to fit the 16 px transparent margin around the
+     card (blur + offset - spread <= 16): a bigger one is cut by the window. */
+  --toast-shadow: 0 1px 3px rgb(0 0 0 / 35%), 0 4px 12px -2px rgb(0 0 0 / 45%);
   --t-surface: color-mix(in srgb, var(--flowbar-surface) 98%, transparent);
   --t-accent: var(--flowbar-warning); /* amber signal for detections */
   --t-recording: var(--flowbar-recording); /* coral for "Gravando" */
@@ -111,29 +116,22 @@
 }
 
 .tcard {
-  width: 344px;
-  max-width: calc(100vw - 34px);
+  width: min(440px, 100%);
   height: 56px;
   box-sizing: border-box;
   border-radius: var(--radius-lg);
   border: 1px solid var(--t-border);
   background: var(--t-surface);
-  box-shadow: var(--shadow-floating);
+  box-shadow: var(--toast-shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  container-type: inline-size;
   animation: tcard-pop var(--motion-duration-slow) var(--motion-easing-enter);
   transition: height var(--motion-duration-slow) var(--motion-easing-enter);
 }
 .tcard.expanded {
   height: 104px;
-}
-/* The ▾ menu lives inside the card (leaving it must not drop hover), so the
- * card itself has to grow to contain it — `overflow: hidden` would clip the
- * 168 px menu otherwise. 232 = 64 row + 168 menu; toastWindowHeight()
- * mirrors the same total for the native window. */
-.tcard.tmeeting.menu-open {
-  height: 232px;
 }
 @keyframes tcard-pop {
   from {
@@ -332,50 +330,83 @@
   outline-offset: -2px;
 }
 
-/* Generic toast://show notice — icon + message (+ ✕ on hover). Auto-height
+/* Generic toast://show notice - icon + message (+ X on hover). Auto-height
  * (min 56 px): a wrapped message grows the card, the measured height is
- * reported to the native window. */
+ * reported to the native window. The message column is the only flexible
+ * item (flex 1 1 auto + min-width 0) so long text wraps inside the card
+ * instead of being clipped by its overflow boundary. */
 .tnotice {
   flex-direction: row;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0;
   height: auto;
   min-height: 56px;
+  position: relative; /* anchors the countdown bar */
 }
 /* Expanded notice with an action button (FR-008-14): stacks the message
  * row over the .tactions row, same two-row layout as .tcard.expanded.
  * Height is auto (min 104 px): a long message grows the card and the
- * webview reports the measured height — no clipped text. */
+ * webview reports the measured height - no clipped text. */
 .tnotice.expanded {
   flex-direction: column;
   align-items: stretch;
-  padding: 0;
   height: auto;
   min-height: 104px;
 }
-.tnotice {
-  position: relative; /* anchors the countdown bar */
-}
 .tnotice-main {
   min-height: 56px;
-  flex: none;
-  padding: 10px 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  /* 19 = (56 - 18 line) / 2: a one-line notice is exactly 56 px tall and a
+     wrapped one keeps the same optical padding above and below. */
+  padding: 19px 14px;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
+}
+.tnotice-main .ticon,
+.tnotice-main .ticon-warn {
+  margin-top: 1px; /* centre the 16 px glyph on the first 18 px line */
+}
+.tnotice-main .tclose {
+  margin-block: -3px; /* 24 px target centred on the first text line */
 }
 .tnotice-msg {
   min-width: 0;
-  flex: 1;
-  font-size: 12.5px;
-  line-height: 1.35;
+  flex: 1 1 0;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--flowbar-text);
+  overflow-wrap: anywhere;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 4;
   line-clamp: 4;
   -webkit-box-orient: vertical;
+}
+/* Translated-dictation error: bold title over the explanation. Never
+ * clamped - the user needs the whole instruction. */
+.tnotice-translation {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+}
+.tnotice-title {
+  display: block;
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: -0.006em;
+}
+.tnotice-translation .tnotice-body {
+  display: block;
+  color: var(--t-muted);
+  font-size: 12.5px;
+  line-height: 18px;
 }
 /* Self-dismiss countdown — a hairline that shrinks to zero; hover pauses
  * it (animation-play-state) and animationend dismisses the notice. */
@@ -402,12 +433,18 @@
   }
 }
 
-/* FR-008-09 confirmation: coral dot + "Gravando · <App>". */
+/* FR-008-09 confirmation: coral dot + "Gravando - <App>". */
 .tconfirm {
   flex-direction: row;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
+  gap: 12px;
+  padding: 0 16px;
+}
+.tconfirm .ttitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
 }
 .tdot-rec {
   width: 8px;
@@ -427,40 +464,60 @@
 }
 
 /* ---- Detection card (FR-008-07/08): always expanded, dark ---------------- */
+/* Three zones on a 4 px grid: [app tile 40] 12 [text block, flexible] 12
+ * [actions]. Row = 72 px (16 px above/below the tile); the ring is a
+ * box-shadow, not a border, so card height == row height. Height is auto:
+ * the menu (168 px) lives inside the card and simply adds to it. */
 .tcard.tmeeting {
-  height: 64px;
+  height: auto;
+  border: 0;
   position: relative;
-  border-radius: var(--toast-card-radius);
-  border-color: var(--toast-card-border);
+  border-radius: var(--radius-xl);
   background: var(--toast-card-bg);
   color: var(--toast-card-text);
+  box-shadow:
+    0 0 0 1px var(--toast-card-border),
+    var(--toast-shadow);
+  transition: none;
+  overflow: visible; /* the close badge straddles the corner */
 }
 .tmeeting .trow {
-  height: 64px;
-  padding: 0 12px 0 14px;
-  gap: 10px;
+  height: 72px;
+  padding: 0 16px;
+  gap: 12px;
 }
 .tmeeting .ttexts {
-  flex: 1;
+  flex: 1 1 auto;
   gap: 2px;
 }
 .tmeeting .ttitle {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: -0.008em;
 }
 .tmeeting .tsub {
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 16px;
+  gap: 6px;
   color: var(--toast-card-muted);
+}
+.tsub-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tmeeting .tnow {
   background: var(--toast-live);
 }
 .tapp-icon {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   flex: none;
-  border-radius: 8px;
+  border-radius: 10px;
   object-fit: cover;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%);
 }
 .tapp-icon-fallback {
   display: flex;
@@ -470,18 +527,19 @@
   background: color-mix(in srgb, var(--ov-text) 10%, transparent);
 }
 
-/* Cream split button: "Iniciar Notetaker" | ▾ */
+/* Split action: two adjacent controls, 2 px apart, each with its own hover,
+ * focus ring and name. Primary = cream label button; secondary = menu
+ * trigger (same cream, narrower, outer corners match the primary's). */
 .tsplit {
   height: 36px;
   flex: none;
   display: flex;
   align-items: stretch;
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--toast-cta-bg);
+  gap: 2px;
   color: var(--toast-cta-text);
 }
 .tsplit button {
+  flex: none;
   border: 0;
   padding: 0;
   -webkit-appearance: none;
@@ -491,51 +549,98 @@
   justify-content: center;
   font-family: inherit;
   color: inherit;
-  background: transparent;
+  background: var(--toast-cta-bg);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
   cursor: pointer;
-  transition: background-color var(--motion-duration-interaction)
-    var(--motion-easing-standard);
+  transition:
+    background-color var(--motion-duration-interaction)
+      var(--motion-easing-standard),
+    transform var(--motion-duration-fast) var(--motion-easing-standard);
 }
 .tsplit button:hover,
 .tsplit-chevron[aria-expanded="true"] {
   background: var(--toast-cta-bg-hover);
 }
 .tsplit button:focus-visible {
-  outline: 2px solid var(--toast-cta-text);
-  outline-offset: -3px;
+  outline: 2px solid var(--toast-cta-bg);
+  outline-offset: 2px;
 }
 .tsplit-main {
-  gap: 7px;
-  padding: 0 11px 0 9px;
-  font-size: 12px;
+  gap: 8px;
+  padding: 0 16px 0 12px;
+  border-radius: 10px 4px 4px 10px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 20px;
   white-space: nowrap;
-}
-.tsplit-chevron {
-  width: 30px;
-  border-inline-start: 1px solid var(--toast-cta-divider);
 }
 .tsplit-main:active {
   transform: scale(0.98);
 }
+.tsplit-chevron {
+  width: 36px;
+  border-radius: 4px 10px 10px 4px;
+}
+.tsplit-chevron svg {
+  transition: transform var(--motion-duration-interaction)
+    var(--motion-easing-standard);
+}
+.tsplit-chevron[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+[dir="rtl"] .tsplit-main {
+  border-radius: 4px 10px 10px 4px;
+}
+[dir="rtl"] .tsplit-chevron {
+  border-radius: 10px 4px 4px 10px;
+}
 
-/* Discreet ✕ — top corner, only on hover / keyboard focus. */
+/* Narrow card (the 376 px window gives 344 px): the title must stay whole,
+ * so the primary drops its icon and every zone tightens by one grid step. */
+@container (max-width: 419px) {
+  .tmeeting .trow {
+    padding: 0 12px;
+    gap: 10px;
+  }
+  .tmeeting .tapp-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+  }
+  .tmeeting .tsplit-icon {
+    display: none;
+  }
+  .tmeeting .tsplit-main {
+    padding: 0 12px;
+    font-size: 12px;
+  }
+  .tmeeting .tsplit-chevron {
+    width: 28px;
+  }
+  .tmeeting .ttitle {
+    font-size: 13.5px;
+  }
+}
+
+/* Discreet close - a 20 px badge on the card's top-start corner (outside the
+ * row, so it never overlaps the actions); shown on hover / focus. */
 .tdismiss {
   position: absolute;
-  top: 3px;
-  inset-inline-end: 4px;
-  width: 14px;
-  height: 14px;
+  top: -6px;
+  inset-inline-start: -6px;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--toast-card-border);
   border-radius: 50%;
   -webkit-appearance: none;
   appearance: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--toast-card-muted);
-  background: color-mix(in srgb, var(--ov-text) 10%, transparent);
+  color: var(--toast-card-text);
+  background: var(--ov-raised);
+  box-shadow: var(--toast-shadow);
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--motion-duration-interaction)
@@ -546,18 +651,26 @@
   opacity: 1;
 }
 .tdismiss:hover {
-  color: var(--toast-card-text);
-  background: color-mix(in srgb, var(--ov-text) 20%, transparent);
+  background: color-mix(in srgb, var(--ov-raised) 80%, var(--ov-text));
 }
 .tdismiss:focus-visible {
-  outline: 2px solid var(--toast-card-text);
-  outline-offset: 1px;
+  outline: 2px solid var(--toast-cta-bg);
+  outline-offset: 2px;
 }
 .tmeeting .tmenu {
   border-top-color: var(--toast-card-border);
+  animation: tmenu-in var(--motion-duration-enter) var(--motion-easing-enter);
+}
+@keyframes tmenu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 .tmeeting .tmenu-item {
   color: var(--toast-card-text);
+  font-size: 13px;
+  padding: 0 12px;
 }
 .tmeeting .tmenu-item:hover {
   background: color-mix(in srgb, var(--ov-text) 8%, transparent);

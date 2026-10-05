@@ -9,6 +9,7 @@ import {
   type ModelRecommendations,
 } from "@/bindings";
 import { toast } from "sonner";
+import i18n from "@/i18n";
 import { useSettingsStore } from "./settingsStore";
 import { localModelProviderId, type SttUsage } from "@/lib/providers";
 
@@ -430,7 +431,14 @@ export const useModelStore = create<ModelsStore>()(
               state.error = error;
             }),
           );
-          toast.error(error);
+          const settings = useSettingsStore.getState().settings;
+          const translationModel =
+            settings?.translation_model_id ?? get().currentModel;
+          toast.error(
+            modelId === translationModel
+              ? i18n.t("settings.translatedDictation.downloadFailed")
+              : error,
+          );
         },
       );
 

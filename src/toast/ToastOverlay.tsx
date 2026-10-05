@@ -38,12 +38,25 @@ function isWarningKind(kind: string | undefined): boolean {
   return (
     kind === "warning" ||
     kind === "error" ||
+    kind === "translated_dictation_error" ||
     kind === "meeting_error" ||
     kind === "meeting_warning" ||
     kind === "meeting_limit" ||
     kind === "meeting_auto_stop"
   );
 }
+
+const TRANSLATION_ERROR_CODES = new Set([
+  "translation_model_required",
+  "translation_model_unavailable",
+  "translation_model_incompatible",
+  "translation_model_changed",
+  "translation_target_changed",
+  "translation_model_loading",
+  "translation_meeting_active",
+  "translation_insertion_unsupported",
+  "translation_failed",
+]);
 
 /** Run a specta command: `{ status: "error" }` (backend refusal) and a
  *  thrown error both mean "didn't run" — return false and log either. */
@@ -517,12 +530,18 @@ const ToastOverlay: React.FC = () => {
 
   // ---- Render ---------------------------------------------------------------
 
+  const translatedError = state.notice?.kind === "translated_dictation_error";
+  const noticeMessage = translatedError
+    ? t(
+        `settings.translatedDictation.errors.${TRANSLATION_ERROR_CODES.has(state.notice?.message ?? "") ? state.notice?.message : "translation_failed"}`,
+      )
+    : state.notice?.message;
+
   const renderNotice = () => {
     const expanded = view === "notice-expanded";
-    const noticeAction = noticeActionFor(
-      state.notice?.action,
-      state.notice?.meeting_id,
-    );
+    const noticeAction = translatedError
+      ? null
+      : noticeActionFor(state.notice?.action, state.notice?.meeting_id);
     // The countdown restarts per notice payload (keyed on kind+message);
     // hover pauses it, the bar's own animationend dismisses. Check-in
     // notices keep their 2-min answer window — no bar, no auto-dismiss.
@@ -547,7 +566,16 @@ const ToastOverlay: React.FC = () => {
           ) : (
             <BellRing size={16} className="ticon" aria-hidden="true" />
           )}
-          <span className="tnotice-msg">{state.notice?.message}</span>
+          <div
+            className={`tnotice-msg ${translatedError ? "tnotice-translation" : ""}`}
+          >
+            {translatedError && (
+              <h2 className="tnotice-title">
+                {t("settings.translatedDictation.errorTitle")}
+              </h2>
+            )}
+            <span className="tnotice-body">{noticeMessage}</span>
+          </div>
           {expanded && (
             <button
               type="button"
@@ -607,7 +635,10 @@ const ToastOverlay: React.FC = () => {
       return (
         <div ref={cardRef} className="tcard tconfirm">
           <span className="tdot-rec" aria-hidden="true" />
-          <span className="ttitle">
+          <span
+            className="ttitle"
+            title={t("toast.recording", { app: confirmingApp })}
+          >
             {t("toast.recording", { app: confirmingApp })}
           </span>
         </div>
@@ -640,7 +671,7 @@ const ToastOverlay: React.FC = () => {
           ? t("toast.recording", { app: confirmingApp })
           : detection
             ? t("toast.meetingDetected")
-            : (state.notice?.message ?? "")}
+            : (noticeMessage ?? "")}
       </span>
       {state.notice !== null && detection === null
         ? renderNotice()

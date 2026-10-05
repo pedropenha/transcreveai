@@ -252,6 +252,6 @@ export function toastWindowHeight(view: ToastView, menuOpen: boolean): number {
     case "notice-expanded":
       return 136; // 104 card + 32 padding (notices have no menu)
     case "expanded":
-      return menuOpen ? 264 : 96; // 64 card (+168 menu) + 32 padding
+      return menuOpen ? 272 : 104; // 72 card (+168 menu) + 32 padding
   }
 }

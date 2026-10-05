@@ -193,6 +193,35 @@ pub(crate) fn icon_for<E: IconExtractor>(
     extract_target(label, exe_name, exe_path).and_then(|path| cache.resolve(path))
 }
 
+/// The exe path whose icon a *dictation* shows (F010 history). Unlike
+/// [`extract_target`], browsers are allowed: the app label of a dictation is
+/// the browser itself ("Chrome"), so its own icon is the right one. Apps with
+/// an embedded front-end logo (by label) still never extract.
+pub(crate) fn dictation_extract_target<'a>(
+    label: &str,
+    exe_path: Option<&'a str>,
+) -> Option<&'a str> {
+    if is_known_app(label) {
+        return None;
+    }
+    exe_path.filter(|path| is_safe_exe_path(path))
+}
+
+/// Icon for a dictation's origin app: priority rule, then the cache.
+pub(crate) fn dictation_icon_for<E: IconExtractor>(
+    cache: &IconCache<E>,
+    label: &str,
+    exe_path: Option<&str>,
+) -> Option<String> {
+    dictation_extract_target(label, exe_path).and_then(|path| cache.resolve(path))
+}
+
+#[cfg(windows)]
+fn shared_cache() -> &'static IconCache<WindowsIconExtractor> {
+    static CACHE: std::sync::OnceLock<IconCache<WindowsIconExtractor>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| IconCache::new(WindowsIconExtractor, CACHE_CAPACITY))
+}
+
 /// Process-wide icon for a detection (Windows only).
 #[cfg(windows)]
 pub(crate) fn detection_icon(
@@ -200,7 +229,12 @@ pub(crate) fn detection_icon(
     exe_name: &str,
     exe_path: Option<&str>,
 ) -> Option<String> {
-    static CACHE: std::sync::OnceLock<IconCache<WindowsIconExtractor>> = std::sync::OnceLock::new();
-    let cache = CACHE.get_or_init(|| IconCache::new(WindowsIconExtractor, CACHE_CAPACITY));
-    icon_for(cache, label, exe_name, exe_path)
+    icon_for(shared_cache(), label, exe_name, exe_path)
+}
+
+/// Process-wide icon for a dictation's origin app (Windows only); shares the
+/// bounded cache with [`detection_icon`].
+#[cfg(windows)]
+pub(crate) fn dictation_icon(label: &str, exe_path: Option<&str>) -> Option<String> {
+    dictation_icon_for(shared_cache(), label, exe_path)
 }

@@ -141,3 +141,11 @@ Sem ferramentas/tool use: o LLM só devolve texto. Nada que ele retorne é execu
 | `settings://changed`                 | patch                                                                                                                                                           |
 
 Tipos TypeScript são gerados a partir dos structs Rust (`specta`/`tauri-specta`) para evitar divergência.
+
+### Ditado traduzido por sessão (T-093)
+
+`change_translation_model_setting { modelId: string | null } → Result<(), CommandError>` valida modelo local com capacidade de tradução e salva apenas `translation_model_id`; `null` remove a escolha própria. A configuração permite modelo ainda não baixado, mas a ação `transcribe_translate` exige disponibilidade antes da captura. Não faz download, gravação, troca de preferência global ou fallback para nuvem implicitamente. A sessão emite `session://state.mode = "translation"`; erros de preparação/destino usam `recording-error.error_type` com códigos localizados `translation_model_required`, `translation_model_incompatible`, `translation_model_unavailable`, `translation_model_changed` e `translation_target_changed`.
+
+`translation_model_loading` indica carga de modelo em andamento e `translation_meeting_active` indica reserva do motor por gravação de reunião. Nessas situações a ação é rejeitada antes da captura; o usuário tenta novamente quando a operação termina. A inserção traduzida não chama scripts externos, pois eles não permitem verificar destino/cancelamento nos pontos de injeção.
+
+Os avisos também emitem `toast://show { kind: "translated_dictation_error", message: <error_type> }`: o toast nativo não ativante apresenta orientação mesmo com o Hub oculto. O frontend localiza somente códigos conhecidos, usando `translation_failed` como fallback seguro para códigos desconhecidos. `translation_insertion_unsupported` recusa script externo antes de abrir o microfone. Esses avisos não abrem nem focam o Hub.

@@ -64,7 +64,7 @@ const MeetingCard: React.FC<MeetingCardProps> = ({
           <span className="ttitle">{t("toast.meetingDetected")}</span>
           <span className="tsub" title={app}>
             <i className="tnow" aria-hidden="true" />
-            {t("toast.nowWithApp", { app })}
+            <span className="tsub-text">{t("toast.nowWithApp", { app })}</span>
           </span>
         </div>
         <div className="tsplit">
@@ -73,7 +73,7 @@ const MeetingCard: React.FC<MeetingCardProps> = ({
             className="tsplit-main"
             {...pressable("meeting-start", () => onRespond("start"))}
           >
-            <SoundBarsIcon width={16} height={16} />
+            <SoundBarsIcon className="tsplit-icon" width={16} height={16} />
             {t("toast.startNotetaker")}
           </button>
           <button
@@ -86,7 +86,7 @@ const MeetingCard: React.FC<MeetingCardProps> = ({
             aria-controls="toast-meeting-menu"
             {...pressable("meeting-menu", onToggleMenu)}
           >
-            <ChevronDown size={14} aria-hidden="true" />
+            <ChevronDown size={16} aria-hidden="true" />
           </button>
         </div>
         <button
@@ -95,7 +95,7 @@ const MeetingCard: React.FC<MeetingCardProps> = ({
           aria-label={t("toast.dismiss")}
           {...pressable("meeting-close", () => onRespond("dismiss"))}
         >
-          <X size={9} aria-hidden="true" />
+          <X size={10} aria-hidden="true" />
         </button>
       </div>
       {menuOpen && (

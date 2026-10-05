@@ -1127,6 +1127,17 @@ async setModelUnloadTimeout(timeout: ModelUnloadTimeout) : Promise<Result<null, 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Select a local translation model without changing ordinary dictation.
+ */
+async changeTranslationModelSetting(modelId: string | null) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_translation_model_setting", { modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getModelLoadStatus() : Promise<Result<ModelLoadStatus, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_model_load_status") };
@@ -1170,6 +1181,23 @@ async getHistoryStatistics() : Promise<Result<HistoryStatistics, CommandError>> 
 async getHistoryFilterOptions() : Promise<Result<HistoryFilterOptions, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_history_filter_options") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * History row / detail: the origin app's icon as a `data:image/png` URI,
+ * extracted from the executable captured at session start and cached per
+ * exe path. `None` (never an error for a missing icon) when the entry
+ * predates the stored path, the app has an embedded front-end logo, or the
+ * extraction failed or exceeded its 2 s budget — the UI then shows a
+ * monogram. The raw path never crosses IPC. Runs off the async workers: the
+ * shell call can block.
+ */
+async historyAppIcon(entryId: number) : Promise<Result<string | null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("history_app_icon", { entryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1338,6 +1366,17 @@ async assistantGetState() : Promise<Result<AssistantStateEvent, CommandError>> {
 }
 },
 /**
+ * Microphone button uses the assistant binding, never application-paste routing.
+ */
+async assistantToggleDictation() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_toggle_dictation") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * FR-012-13: send the (edited) prompt. Explicit user action only — dictation
  * alone never submits.
  */
@@ -1438,7 +1477,7 @@ async assistantMovePanel(grabX: number, grabY: number) : Promise<Result<null, Co
 /**
  * FR-012-16 / AC-012-04: drag end — applies the final position once and
  * persists it (with monitor context) so the panel reopens where it was
- * left. A pinned panel ignores the drop.
+ * left. Docked panels snap to the nearest monitor edge on release.
  */
 async assistantSavePanelPosition(grabX: number, grabY: number) : Promise<Result<null, CommandError>> {
     try {
@@ -1974,7 +2013,12 @@ dismissed_ui?: string[]; selected_model?: string; onboarding_completed?: boolean
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; 
+/**
+ * Local model used by the explicit translated-dictation action. None uses
+ * the ordinary dictation selection when compatible; no automatic fallback.
+ */
+translation_model_id?: string | null; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
 /**
  * Per-`cli_agent/*` provider configuration (FR-012-05: enabled flag,
  * binary path override, extra args, timeout). Missing entries default
@@ -2316,7 +2360,7 @@ queuedPrompt: string | null;
 errorKind: LlmErrorKind | null; errorDetail: string | null; messages: AssistantMessage[]; 
 /**
  * FR-012-16: the persisted "Fixar" toggle — while true the title strip
- * shows the pinned state and drags are ignored.
+ * shows docking enabled; dragging remains available and snaps on release.
  */
 pinned: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }

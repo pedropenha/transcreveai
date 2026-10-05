@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Assistente · Vidro & Anil — proposta</title>
+    <link rel="stylesheet" href="./proposta-assistente-vidro.css" />
+  </head>
+  <body>
+    <svg style="display: none" aria-hidden="true">
+      <defs>
+        <symbol id="icon-spark" viewBox="0 0 24 24">
+          <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" />
+        </symbol>
+        <symbol id="icon-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol id="icon-pin" viewBox="0 0 24 24">
+          <path d="m8 3 8 0-1 6 3 4v2H6v-2l3-4ZM12 15v6" />
+        </symbol>
+        <symbol id="icon-close" viewBox="0 0 24 24">
+          <path d="m6 6 12 12M18 6 6 18" />
+        </symbol>
+        <symbol id="icon-arrow" viewBox="0 0 24 24">
+          <path d="M12 19V5m-6 6 6-6 6 6" />
+        </symbol>
+        <symbol id="icon-mic" viewBox="0 0 24 24">
+          <rect x="9" y="3" width="6" height="12" rx="3" />
+          <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+        </symbol>
+      </defs>
+    </svg>
+    <main class="page">
+      <div class="mast">
+        <span class="brand">TRANSCREVE.AI / DESIGN</span
+        ><span class="draft"
+          >Proposta 01 · Vidro & Anil · não implementada</span
+        >
+      </div>
+      <section class="intro">
+        <div>
+          <h1>Uma conversa.<br />Mais espaço para pensar.</h1>
+          <p>
+            Um assistente leve, com vidro fosco, controles claros e texto
+            confortável. Voz e teclado no mesmo lugar.
+          </p>
+        </div>
+        <div class="controls">
+          <button id="theme" aria-pressed="false">Tema escuro</button
+          ><button id="opacity" aria-pressed="false">
+            Reduzir transparência</button
+          ><label for="state" class="draft">Estado</label
+          ><select id="state">
+            <option value="empty">Boas-vindas</option>
+            <option value="chat">Conversa</option>
+            <option value="thinking">Respondendo</option>
+            <option value="missing">Sem provedor</option>
+            <option value="error">Erro</option>
+          </select>
+        </div>
+      </section>
+      <div class="layout">
+        <section class="scene" aria-label="Cenário ilustrativo da proposta">
+          <div class="panel" role="region" aria-label="Prévia do assistente">
+            <header class="bar">
+              <div class="mark">
+                <svg><use href="#icon-spark" /></svg>
+              </div>
+              <span class="title">Assistente</span
+              ><button
+                class="icon"
+                id="new"
+                aria-label="Nova conversa"
+                title="Nova conversa"
+              >
+                <svg aria-hidden="true"><use href="#icon-plus" /></svg></button
+              ><button
+                class="icon"
+                id="pin"
+                aria-label="Fixar posição"
+                aria-pressed="false"
+                title="Fixar posição"
+              >
+                <svg aria-hidden="true"><use href="#icon-pin" /></svg></button
+              ><button
+                class="icon"
+                id="close"
+                aria-label="Fechar assistente"
+                title="Fechar assistente"
+              >
+                <svg aria-hidden="true"><use href="#icon-close" /></svg>
+              </button>
+            </header>
+            <div class="provider">
+              <span class="status-dot"></span
+              ><span id="provider-label">Via Codex</span><span>·</span
+              ><button id="provider">Alterar provedor</button>
+            </div>
+            <div class="scroll" id="content"></div>
+            <footer class="compose-wrap">
+              <div class="compose">
+                <label for="prompt" class="draft" style="display: none"
+                  >Sua mensagem</label
+                ><textarea
+                  id="prompt"
+                  aria-label="Sua mensagem"
+                  placeholder="Pergunte, escreva ou dite…"
+                  rows="2"
+                ></textarea>
+                <div class="compose-actions">
+                  <button class="voice" id="voice">
+                    <svg aria-hidden="true"><use href="#icon-mic" /></svg
+                    ><span>Ditar</span></button
+                  ><button
+                    class="send"
+                    id="send"
+                    aria-label="Enviar mensagem"
+                    title="Enviar mensagem"
+                    disabled
+                  >
+                    <svg aria-hidden="true"><use href="#icon-arrow" /></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="hint">
+                Enter envia · Shift + Enter quebra linha · Esc fecha
+              </div>
+            </footer>
+          </div>
+          <div class="closed" hidden>
+            <h2>Assistente fechado.</h2>
+            <p>A conversa continua disponível nesta prévia.</p>
+            <button id="reopen">Reabrir assistente</button>
+          </div>
+          <span class="backdrop-label"
+            >Fundo ilustrativo · vidro simulado no navegador</span
+          >
+        </section>
+        <aside class="annotations">
+          <div class="annotation">
+            <span>01 / MATERIAL</span>
+            <h3>Vidro fosco, com substância</h3>
+            <p>
+              Translucidez moderada, contorno fino e sombra macia. O texto
+              continua legível sobre fundos claros ou escuros.
+            </p>
+          </div>
+          <div class="annotation">
+            <span>02 / HIERARQUIA</span>
+            <h3>Controles respiram</h3>
+            <p>
+              Nova conversa, fixar e fechar com alvos de 36 px. O provedor ganha
+              uma linha própria e não disputa o título.
+            </p>
+          </div>
+          <div class="annotation">
+            <span>03 / CONVERSA</span>
+            <h3>Resposta sem caixa pesada</h3>
+            <p>
+              A IA escreve diretamente na superfície. Sua mensagem usa uma bolha
+              discreta em anil. Serifada só nas boas-vindas.
+            </p>
+          </div>
+          <div class="annotation">
+            <span>04 / ENTRADA</span>
+            <h3>Você também pode escrever</h3>
+            <p>
+              Campo sempre visível. Envio explícito, rascunho preservado em
+              erros e ditado complementar ao teclado.
+            </p>
+          </div>
+        </aside>
+      </div>
+      <div
+        class="feedback"
+        id="feedback"
+        role="status"
+        aria-live="polite"
+      ></div>
+      <div class="foot">
+        <span
+          >Interaja com o tema, os estados e os controles.<br />As mensagens são
+          uma simulação local; nenhuma chamada de IA é feita.</span
+        ><a href="./investigacao-assistente-vidro.md"
+          >Investigação e plano de implementação ↗</a
+        >
+      </div>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const feedback = (text) => {
+        $("feedback").textContent = text;
+      };
+      let busy = false;
+      let previous = "empty";
+      const empty = () => {
+        const wrap = document.createElement("div");
+        wrap.className = "empty";
+        wrap.innerHTML =
+          '<div class="halo"><svg aria-hidden="true"><use href="#icon-spark"/></svg></div><h2>O que vamos pensar juntos?</h2><p>Traga uma ideia, revise um texto ou pergunte sobre seus ditados e reuniões recentes.</p><div class="suggestions"><button>Revisar um texto</button><button>Organizar uma ideia</button></div>';
+        wrap.querySelectorAll("button").forEach(
+          (b) =>
+            (b.onclick = () => {
+              $("prompt").value = b.textContent + ": ";
+              update();
+              $("prompt").focus();
+            }),
+        );
+        return wrap;
+      };
+      function appendMessage(role, text) {
+        const m = document.createElement("div");
+        m.className = "message " + role;
+        m.textContent = text;
+        $("content").append(m);
+        return m;
+      }
+      function update() {
+        $("send").disabled =
+          !$("prompt").value.trim() || busy || $("state").value === "missing";
+      }
+      function render(state) {
+        busy = state === "thinking";
+        $("content").replaceChildren();
+        $("provider-label").textContent =
+          state === "missing" ? "Nenhum provedor" : "Via Codex";
+        if (state === "empty") $("content").append(empty());
+        else if (state === "missing") {
+          $("content").innerHTML =
+            '<div class="empty"><h2>Vamos conectar sua IA.</h2><p>Escolha um provedor nas configurações para começar. Você pode preparar sua mensagem aqui.</p><div class="suggestions"><button id="setup">Configurar provedor</button></div></div>';
+          $("setup").onclick = () =>
+            feedback(
+              "Na implementação, abre Configurações → Inteligência → Assistente.",
+            );
+        } else {
+          appendMessage(
+            "user",
+            "Me ajude a organizar as ideias para a próxima reunião.",
+          );
+          if (state === "chat") {
+            $("content").innerHTML +=
+              '<div class="message reply"><div class="reply-label">Assistente · Codex</div><p>Vamos transformar suas ideias em uma pauta simples.</p><ul><li><strong>Objetivo:</strong> o que precisa ser decidido?</li><li><strong>Contexto:</strong> quais pontos precisam ser alinhados?</li><li><strong>Próximo passo:</strong> quem faz o quê e até quando?</li></ul><p>Se você trouxer suas notas, eu ajudo a organizar cada ponto.</p></div>';
+          } else {
+            $("content").innerHTML +=
+              '<div class="notice">' +
+              (busy
+                ? 'Pensando com Codex…<br><button id="recover">Parar resposta</button>'
+                : 'Não foi possível concluir a resposta.<br><span class="note">Sua mensagem continua aqui.</span><br><button id="recover">Tentar novamente</button>') +
+              "</div>";
+            $("recover").onclick = () => {
+              $("state").value = busy ? "chat" : "thinking";
+              render($("state").value);
+            };
+          }
+        }
+        update();
+      }
+      $("theme").onclick = () => {
+        const dark = document.body.classList.toggle("dark");
+        $("theme").setAttribute("aria-pressed", String(dark));
+        $("theme").textContent = dark ? "Tema claro" : "Tema escuro";
+      };
+      $("opacity").onclick = () => {
+        const solid = document.body.classList.toggle("solid");
+        $("opacity").setAttribute("aria-pressed", String(solid));
+      };
+      $("pin").onclick = () => {
+        const pinned = $("pin").getAttribute("aria-pressed") !== "true";
+        $("pin").setAttribute("aria-pressed", String(pinned));
+        $("pin").title = pinned ? "Desafixar posição" : "Fixar posição";
+        feedback(
+          pinned
+            ? "Posição fixada. Fechar e digitar continuam disponíveis."
+            : "Posição liberada. Arraste pelo cabeçalho na implementação.",
+        );
+      };
+      $("new").onclick = () => {
+        $("state").value = "empty";
+        $("prompt").value = "";
+        render("empty");
+        feedback("Nova conversa iniciada na prévia.");
+        $("prompt").focus();
+      };
+      $("close").onclick = () => {
+        document.querySelector(".panel").hidden = true;
+        document.querySelector(".panel").style.display = "none";
+        document.querySelector(".closed").hidden = false;
+        feedback("Painel oculto; a conversa foi preservada.");
+        $("reopen").focus();
+      };
+      $("reopen").onclick = () => {
+        document.querySelector(".panel").hidden = false;
+        document.querySelector(".panel").style.display = "flex";
+        document.querySelector(".closed").hidden = true;
+        $("prompt").focus();
+      };
+      $("state").onchange = () => render($("state").value);
+      $("prompt").oninput = update;
+      function send() {
+        if ($("send").disabled) return;
+        const text = $("prompt").value.trim();
+        if ($("state").value === "empty") $("content").replaceChildren();
+        appendMessage("user", text);
+        appendMessage(
+          "reply",
+          "Esta é uma resposta demonstrativa. Na implementação, sua mensagem será enviada ao provedor selecionado.",
+        );
+        $("prompt").value = "";
+        $("content").scrollTop = $("content").scrollHeight;
+        update();
+        feedback("Mensagem enviada apenas dentro da prévia local.");
+      }
+      $("send").onclick = send;
+      $("prompt").onkeydown = (e) => {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          send();
+        }
+      };
+      document.querySelector(".panel").onkeydown = (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          if (busy) {
+            $("state").value = "chat";
+            render("chat");
+            feedback("Resposta interrompida na prévia.");
+          } else $("close").click();
+        }
+      };
+      $("provider").onclick = () =>
+        feedback(
+          "Na implementação, abre o seletor de provedor nas configurações.",
+        );
+      $("voice").onclick = () =>
+        feedback(
+          "Ditado ilustrativo: na implementação usa o mesmo pipeline de voz. O protótipo não abre o microfone.",
+        );
+      render("empty");
+    </script>
+  </body>
+</html>

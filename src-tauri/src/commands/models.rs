@@ -169,9 +169,11 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> CommandResult<()>
     // Atomically claim the loading slot — prevents concurrent model loads
     // from tray double-clicks or overlapping commands. The guard resets the
     // flag on drop (including early returns, errors, and panics).
-    let _loading_guard = transcription_manager.try_start_loading().ok_or_else(|| {
-        CommandError::new(CommandErrorCode::Busy, "Model load already in progress")
-    })?;
+    let _loading_guard = transcription_manager
+        .try_start_loading_for(model_id)
+        .ok_or_else(|| {
+            CommandError::new(CommandErrorCode::Busy, "Model load already in progress")
+        })?;
 
     // Check if model exists and is available
     let model_info = model_manager.get_model_info(model_id).ok_or_else(|| {

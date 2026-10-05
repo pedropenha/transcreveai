@@ -162,6 +162,22 @@ function App() {
         toast.error(t("errors.noInputDeviceTitle"), {
           description: t("errors.noInputDevice"),
         });
+      } else if (
+        [
+          "translation_model_required",
+          "translation_model_unavailable",
+          "translation_model_incompatible",
+          "translation_model_changed",
+          "translation_target_changed",
+          "translation_model_loading",
+          "translation_meeting_active",
+          "translation_insertion_unsupported",
+          "translation_failed",
+        ].includes(error_type)
+      ) {
+        // These errors already emit toast://show for the native, non-activating
+        // notice. Showing Sonner here duplicates it while the Hub is visible.
+        return;
       } else {
         toast.error(
           t("errors.recordingFailed", { error: detail ?? "Unknown error" }),

@@ -249,8 +249,8 @@ assert.equal(CONFIRMATION_MS, 3_000);
 assert.equal(toastWindowHeight("hidden", false), 0);
 assert.equal(toastWindowHeight("confirming", false), 88);
 assert.equal(toastWindowHeight("notice", false), 88);
-assert.equal(toastWindowHeight("expanded", false), 96); // 64 card + 32 pad
-assert.equal(toastWindowHeight("expanded", true), 264); // + 168 menu
+assert.equal(toastWindowHeight("expanded", false), 104); // 72 card + 32 pad
+assert.equal(toastWindowHeight("expanded", true), 272); // + 168 menu
 assert.equal(toastWindowHeight("notice-expanded", false), 136);
 assert.equal(toastWindowHeight("notice-expanded", true), 136);
 

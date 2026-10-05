@@ -76,6 +76,7 @@ export const DEFAULT_HANDLERS: CommandHandlers = {
     provider_usage: [],
   },
   get_history_filter_options: { apps: [] },
+  history_app_icon: null,
   get_filler_words: [],
   set_filler_words: null,
   reset_filler_words: null,

@@ -69,7 +69,7 @@ assert.equal(safeMarkdownUrl("#anchor"), "#anchor");
 
 // --- T-092 drag/pin (FR-012-16): Fixar locks the panel ------------------
 assert.equal(canDragPanel(false), true);
-assert.equal(canDragPanel(true), false);
+assert.equal(canDragPanel(true), true);
 assert.equal(pinToggleKey(false), "assistant.pin");
 assert.equal(pinToggleKey(true), "assistant.unpin");
 // The pointer-move handler only fires while a grab is active.

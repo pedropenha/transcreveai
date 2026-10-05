@@ -362,10 +362,10 @@ fn resolve_position_returns_none_without_saved_position_or_monitors() {
 #[test]
 fn resolve_position_restores_the_saved_spot_when_the_monitor_is_unchanged() {
     let monitors = vec![monitor(Some("A"), (0, 0, 1920, 1040), 1.0)];
-    let saved = saved_pos(1500, 480, 1500.0 / 1920.0, 480.0 / 1040.0, Some("A"));
+    let saved = saved_pos(1400, 350, 1400.0 / 1920.0, 350.0 / 1040.0, Some("A"));
     assert_eq!(
         resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
-        Some((1500, 480, 0))
+        Some((1400, 350, 0))
     );
 }
 
@@ -378,7 +378,7 @@ fn resolve_position_clamps_a_partially_offscreen_rect_back_inside() {
     let saved = saved_pos(1900, 200, 1900.0 / 1920.0, 200.0 / 1040.0, Some("A"));
     assert_eq!(
         resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
-        Some((1500, 200, 0))
+        Some((1480, 200, 0))
     );
 }
 
@@ -393,7 +393,7 @@ fn resolve_position_uses_the_named_monitor_when_its_bounds_moved() {
     let saved = saved_pos(4500, 300, 0.9, 0.2, Some("B"));
     assert_eq!(
         resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
-        Some((4060, 300, 1))
+        Some((4040, 300, 1))
     );
 }
 
@@ -403,23 +403,23 @@ fn resolve_position_falls_back_to_primary_at_the_relative_spot() {
     // land on the primary at the same work-area fraction, clamped.
     let monitors = vec![monitor(Some("PRIMARY"), (0, 0, 1920, 1040), 1.0)];
     let saved = saved_pos(6000, 800, 0.9, 0.6, Some("GONE"));
-    // x = 0.9 * 1920 = 1728 → clamped to 1920 - 420 = 1500.
+    // x = 0.9 * 1920 = 1728 → clamped to 1920 - 440 = 1480.
     // y = 0.6 * 1040 = 624 → 624 + 560 overflows → 1040 - 560 = 480.
     assert_eq!(
         resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
-        Some((1500, 480, 0))
+        Some((1480, 400, 0))
     );
 }
 
 #[test]
 fn resolve_position_scales_the_panel_by_the_target_monitor() {
-    // 2x monitor: the 420x560 CSS footprint is 840x1120 physical —
+    // 2x monitor: the 440x640 CSS footprint is 880x1280 physical —
     // containment and clamping use the scaled size.
     let monitors = vec![monitor(Some("A"), (0, 0, 3840, 2080), 2.0)];
     let saved = saved_pos(3600, 1800, 0.9, 0.9, Some("A"));
     assert_eq!(
         resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
-        Some((3840 - 840, 2080 - 1120, 0))
+        Some((3840 - 880, 2080 - 1280, 0))
     );
 }
 
@@ -444,4 +444,216 @@ fn panel_position_and_pin_roundtrip_through_settings() {
     };
     assert_eq!((pos.x, pos.y), (100, 200));
     assert_eq!(pos.monitor_name, None);
+}
+
+#[test]
+fn panel_size_fits_small_and_high_dpi_work_areas() {
+    assert_eq!(panel_size((0, 0, 1920, 1080), 1.0), (440, 640));
+    assert_eq!(panel_size((-800, -400, 350, 300), 2.0), (350, 300));
+    assert_eq!(panel_size((0, 0, 1000, 700), 1.5), (660, 700));
+    assert_eq!(panel_size((0, 0, 0, 0), 1.0), (1, 1));
+}
+
+#[test]
+fn new_conversation_clears_capture_and_invalidates_trailing_transcript() {
+    let mut session = AssistantSession {
+        open: true,
+        dictation_routed: true,
+        dictating: true,
+        messages: vec![msg("user", "Old conversation")],
+        pending_prompt: Some("Queued".into()),
+        phase: AssistantPhase::Error,
+        error_detail: Some("Previous failure".into()),
+        ..AssistantSession::default()
+    };
+    let captured_epoch = session.dictation_epoch;
+    reset_conversation(&mut session);
+    assert!(session.open);
+    assert!(!session.dictating);
+    assert!(!session.dictation_routed);
+    assert!(session.messages.is_empty());
+    assert!(session.pending_prompt.is_none());
+    assert!(session.error_detail.is_none());
+    assert_eq!(session.phase, AssistantPhase::Idle);
+    assert!(!accepts_dictation(&session, captured_epoch));
+    assert!(accepts_dictation(&session, session.dictation_epoch));
+    session.open = false;
+    assert!(!accepts_dictation(&session, session.dictation_epoch));
+}
+
+#[test]
+fn dictation_button_stops_capture_even_if_provider_becomes_unavailable() {
+    assert!(can_toggle_dictation(true, false, Some("assistant")));
+    assert!(can_toggle_dictation(false, true, None));
+    assert!(!can_toggle_dictation(false, false, None));
+    assert!(!can_toggle_dictation(false, true, Some("transcribe")));
+    assert!(!can_toggle_dictation(false, true, Some("assistant")));
+}
+
+#[test]
+fn persisted_panel_on_small_monitor_uses_the_capped_footprint() {
+    let monitors = vec![monitor(Some("SMALL"), (-350, -300, 350, 300), 2.0)];
+    let saved = saved_pos(-100, -100, 0.5, 0.5, Some("SMALL"));
+    assert_eq!(
+        resolve_panel_position(Some(&saved), &monitors, 0, PANEL),
+        Some((-350, -300, 0))
+    );
+}
+
+#[test]
+fn closing_invalidates_a_reserved_start_and_duplicate_inputs_do_not_toggle_it() {
+    let mut session = AssistantSession {
+        open: true,
+        ..AssistantSession::default()
+    };
+    let epoch = reserve_assistant_input(&mut session).expect("open assistant accepts start");
+    assert!(session.dictation_pending);
+    assert!(reserve_assistant_input(&mut session).is_none());
+    reset_conversation(&mut session);
+    assert!(!session.dictation_pending);
+    assert!(!input_epoch_current(&session, epoch));
+    let new_epoch = reserve_assistant_input(&mut session).expect("new start");
+    assert_ne!(epoch, new_epoch);
+    assert!(!input_epoch_current(&session, epoch));
+    assert!(input_epoch_current(&session, new_epoch));
+    session.closing = true;
+    assert!(!input_epoch_current(&session, new_epoch));
+    assert!(reserve_assistant_input(&mut session).is_none());
+    session.closing = false;
+    session.dictation_pending = false;
+    assert_eq!(reserve_assistant_input(&mut session), Some(new_epoch));
+    session.open = false;
+    assert!(!input_epoch_current(&session, new_epoch));
+    assert!(reserve_assistant_input(&mut session).is_none());
+}
+
+#[test]
+fn explicit_windows_transparency_opt_out_disables_native_acrylic() {
+    assert!(!super::native::transparency_allowed(Some(0)));
+    assert!(super::native::transparency_allowed(Some(1)));
+    assert!(super::native::transparency_allowed(None));
+}
+
+#[test]
+fn stale_start_and_cleanup_cannot_consume_a_newer_reservation() {
+    let mut session = AssistantSession {
+        open: true,
+        ..AssistantSession::default()
+    };
+    let old = reserve_assistant_input(&mut session).expect("first reservation");
+    reset_conversation(&mut session);
+    let new = reserve_assistant_input(&mut session).expect("second reservation");
+    assert!(!reserved_start_current(&session, Some(old)));
+    assert!(!reserved_start_current(&session, None));
+    assert!(reserved_start_current(&session, Some(new)));
+    assert!(!cancel_reserved_epoch(&mut session, old));
+    assert!(session.dictation_pending);
+    assert!(cancel_reserved_epoch(&mut session, new));
+    assert!(!session.dictation_pending);
+}
+
+#[test]
+fn an_old_stop_drops_its_transcript_without_consuming_the_new_capture() {
+    let mut session = AssistantSession {
+        open: true,
+        ..AssistantSession::default()
+    };
+    let old = reserve_assistant_input(&mut session).expect("old");
+    reset_conversation(&mut session);
+    let new = reserve_assistant_input(&mut session).expect("new");
+    assert_eq!(
+        consume_dictation_route(&mut session, "assistant", Some(old)),
+        (DictationRoute::Drop, old)
+    );
+    assert!(session.dictation_pending);
+    assert_eq!(
+        consume_dictation_route(&mut session, "assistant", None),
+        (DictationRoute::Drop, 0)
+    );
+    assert_eq!(
+        consume_dictation_route(&mut session, "assistant", Some(new)),
+        (DictationRoute::Send, new)
+    );
+    assert!(!session.dictation_routed);
+    assert_eq!(
+        consume_dictation_route(&mut session, "assistant", Some(new)),
+        (DictationRoute::Drop, new)
+    );
+}
+
+#[test]
+fn ordinary_dictation_never_consumes_an_assistant_reservation() {
+    let mut session = AssistantSession {
+        open: true,
+        ..AssistantSession::default()
+    };
+    let epoch = reserve_assistant_input(&mut session).expect("reserved");
+    assert_eq!(
+        consume_dictation_route(&mut session, "transcribe", Some(epoch)),
+        (DictationRoute::Normal, 0)
+    );
+    assert!(session.dictation_pending);
+    assert!(input_epoch_current(&session, epoch));
+}
+
+#[test]
+fn debounced_coordinator_input_can_release_its_reservation() {
+    use crate::settings::ShortcutActivation;
+    use crate::transcription_coordinator::{CoordinatorState, InputEvent, SessionPolicy};
+    use std::time::{Duration, Instant};
+    let input = || InputEvent {
+        binding_id: "assistant".into(),
+        hotkey_string: "test".into(),
+        is_pressed: true,
+        mode: ShortcutActivation::Toggle,
+        hold_threshold: Duration::ZERO,
+        external: false,
+        policy: SessionPolicy::default(),
+    };
+    let now = Instant::now();
+    let mut machine = CoordinatorState::new();
+    assert!(machine.on_input(input(), now).is_some());
+    machine.on_start_result("assistant", false, now);
+    let mut session = AssistantSession {
+        open: true,
+        ..AssistantSession::default()
+    };
+    let epoch = reserve_assistant_input(&mut session).expect("reserve");
+    assert!(machine
+        .on_input(input(), now + Duration::from_millis(1))
+        .is_none());
+    assert!(cancel_reserved_epoch(&mut session, epoch));
+    assert!(!session.dictation_pending);
+    assert!(reserve_assistant_input(&mut session).is_some());
+}
+
+#[test]
+fn terminal_feedback_does_not_block_a_fresh_assistant_capture() {
+    use crate::settings::ShortcutActivation;
+    use crate::transcription_coordinator::{
+        CoordinatorState, InputEvent, PipelineOutcome, SessionPolicy,
+    };
+    use std::time::{Duration, Instant};
+    let now = Instant::now();
+    let input = || InputEvent {
+        binding_id: "assistant".into(),
+        hotkey_string: "test".into(),
+        is_pressed: true,
+        mode: ShortcutActivation::Toggle,
+        hold_threshold: Duration::ZERO,
+        external: true,
+        policy: SessionPolicy::default(),
+    };
+    let mut machine = CoordinatorState::new();
+    assert!(machine.accepts_assistant_start());
+    machine.on_input(input(), now);
+    assert!(!machine.accepts_assistant_start());
+    machine.on_input(input(), now + Duration::from_millis(50));
+    assert!(!machine.accepts_assistant_start());
+    machine.on_pipeline_finished(PipelineOutcome::Done, now + Duration::from_millis(60));
+    assert!(machine.current_session_snapshot().is_some());
+    assert!(machine.accepts_assistant_start());
+    machine.on_input(input(), now + Duration::from_millis(100));
+    machine.on_start_result("assistant", false, now + Duration::from_millis(101));
+    assert!(machine.accepts_assistant_start());
 }

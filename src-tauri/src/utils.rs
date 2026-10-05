@@ -164,6 +164,9 @@ pub fn disable_webview2_accelerators(window: &tauri::WebviewWindow) {
 /// Handles cancelling both recording and transcription operations and updates UI state.
 pub fn cancel_current_operation(app: &AppHandle) {
     info!("Initiating operation cancellation...");
+    if let Some(action) = crate::actions::ACTION_MAP.get("transcribe_translate") {
+        action.clear_session();
+    }
 
     // Unregister the cancel shortcut asynchronously
     shortcut::unregister_cancel_shortcut(app);

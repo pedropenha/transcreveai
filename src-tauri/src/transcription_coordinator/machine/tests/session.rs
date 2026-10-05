@@ -514,3 +514,44 @@ fn failed_start_reports_error_then_idles() {
     state.on_deadline(now + ERROR_DWELL + ms(1));
     assert!(matches!(state.stage, Stage::Idle));
 }
+
+#[test]
+fn translation_session_stop_from_flowbar_keeps_translation_binding() {
+    let mut state = CoordinatorState::new();
+    let now = Instant::now();
+    assert!(matches!(
+        state.on_input(toggle_input_for("transcribe_translate", true), now),
+        Some(Effect::Start { .. })
+    ));
+    assert_eq!(state.take_events()[0].mode, "translation");
+    let active = state.current_session_snapshot().unwrap();
+    let binding = crate::commands::flowbar::flowbar_dictation_binding(Some(&active.binding_id));
+    let effect = state.on_input(toggle_input_for(binding, true), now + ms(500));
+    assert!(
+        matches!(effect, Some(Effect::Stop { binding_id, .. }) if binding_id == "transcribe_translate")
+    );
+    assert!(state
+        .take_events()
+        .iter()
+        .all(|event| event.mode == "translation"));
+    finish_and_settle(&mut state, now + ms(600));
+    state.on_input(toggle_input(true), now + ms(1500));
+    assert_eq!(state.take_events().last().unwrap().mode, "dictation");
+}
+
+#[test]
+fn translation_failed_start_and_cancel_leave_capture_stage() {
+    let mut state = CoordinatorState::new();
+    let now = Instant::now();
+    state.on_input(toggle_input_for("transcribe_translate", true), now);
+    state.on_start_result("transcribe_translate", false, now);
+    assert_eq!(state.stage.name(), "error");
+    assert_eq!(state.take_events().last().unwrap().mode, "translation");
+    state.on_deadline(now + ERROR_DWELL + ms(1));
+    state.on_input(
+        toggle_input_for("transcribe_translate", true),
+        now + ERROR_DWELL + ms(50),
+    );
+    state.on_cancel(true);
+    assert_eq!(state.stage.name(), "idle");
+}

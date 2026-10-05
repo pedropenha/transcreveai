@@ -1,8 +1,8 @@
 /**
  * Overlay identity ("Papel & Anil", ADR-0003): the Flow Bar, the meeting toast
  * and the assistant panel are separate webviews. This checks they really
- * render with the self-hosted Instrument Sans and paint from the --ov-*
- * overlay tokens (dark in both themes), not from a stray hard-coded color.
+ * render with self-hosted Instrument fonts. Flow Bar/toast use dark --ov-*
+ * tokens; the approved Vidro & Anil assistant uses themed --as-* materials.
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -11,15 +11,22 @@ import { emitTauriEvent, installTauriMock } from "./helpers/tauri-mock";
 const SANS = '"Instrument Sans Variable"';
 
 /** `rgb(r, g, b)` that a CSS color expression resolves to in `page`. */
-async function resolveColor(page: Page, expression: string): Promise<string> {
-  return page.evaluate((value) => {
-    const probe = document.createElement("span");
-    probe.style.color = value;
-    document.body.appendChild(probe);
-    const resolved = getComputedStyle(probe).color;
-    probe.remove();
-    return resolved;
-  }, expression);
+async function resolveColor(
+  page: Page,
+  expression: string,
+  selector = "body",
+): Promise<string> {
+  return page.evaluate(
+    ({ value, selector }) => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      document.querySelector(selector)!.appendChild(probe);
+      const resolved = getComputedStyle(probe).color;
+      probe.remove();
+      return resolved;
+    },
+    { value: expression, selector },
+  );
 }
 
 async function expectInstrumentSans(page: Page, selector: string) {
@@ -133,9 +140,17 @@ for (const scheme of ["light", "dark"] as const) {
       await expect(page.getByRole("dialog")).toBeVisible();
       await expectInstrumentSans(page, ".as-stage");
       const panel = page.locator(".as-panel");
+      await expect(panel).toHaveCSS("border-top-width", "0px");
       expect(
-        await panel.evaluate((el) => getComputedStyle(el).borderTopColor),
-      ).toBe(await resolveColor(page, "var(--ov-line)"));
+        await page
+          .locator(".as-empty h1")
+          .evaluate((el) => getComputedStyle(el).fontFamily),
+      ).toContain("Instrument Serif");
+      expect(
+        await page.evaluate(() =>
+          document.fonts.load('32px "Instrument Serif"').then((f) => f.length),
+        ),
+      ).toBeGreaterThan(0);
     });
   });
 }

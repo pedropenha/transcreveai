@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { SourceApp } from "@/bindings";
 import { resolveAppIcon } from "@/toast/appIcon";
+import { useSeen } from "../useSeen";
 import { cachedSourceIcon, loadSourceIcon } from "./sourceIcons";
 import { iconCacheKey, logoCandidates, monogram } from "./notetakerView";
 
@@ -19,27 +20,6 @@ function bundledLogo(app: SourceApp | null): string | null {
   return null;
 }
 
-/** True once the element has been on screen (rows far below never ask). */
-function useSeen(): [React.RefObject<HTMLSpanElement>, boolean] {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [seen, setSeen] = useState(
-    () => typeof IntersectionObserver === "undefined",
-  );
-  useEffect(() => {
-    const node = ref.current;
-    if (seen || !node) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setSeen(true);
-        observer.disconnect();
-      }
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [seen]);
-  return [ref, seen];
-}
-
 /**
  * Logo of the app a meeting came from: embedded logo for known apps, else the
  * backend-extracted exe icon (lazy, cached per exe), else a monogram. Manual /
@@ -51,7 +31,7 @@ export const AppLogo: React.FC<AppLogoProps> = ({
   app,
   size = "md",
 }) => {
-  const [ref, seen] = useSeen();
+  const [ref, seen] = useSeen<HTMLSpanElement>();
   const bundled = bundledLogo(app);
   const key = iconCacheKey(app);
   // Keyed by exe so a reused instance never shows another app's icon.

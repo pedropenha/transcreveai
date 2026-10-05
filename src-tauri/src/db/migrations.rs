@@ -498,4 +498,12 @@ Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todo
     // additive: existing rows keep every column and simply have no path (the
     // UI falls back to a monogram). Written only after `is_safe_exe_path`.
     M::up("ALTER TABLE meetings ADD COLUMN app_exe_path TEXT;"),
+    // --- dictations.app_exe_path (16, History: origin app icon) ---------------
+    // Dictations now record the foreground app at session start: `app_exe`
+    // (file name) and `app_name` (friendly label) already existed but nothing
+    // wrote them; the *path* the icon is extracted from is persisted here.
+    // Nullable and additive, like migration 15: old rows keep every column
+    // (including FTS sync) and show "Aplicativo desconhecido". Written only
+    // after `is_safe_exe_path`.
+    M::up("ALTER TABLE dictations ADD COLUMN app_exe_path TEXT;"),
 ];

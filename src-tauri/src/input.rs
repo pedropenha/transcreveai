@@ -366,9 +366,18 @@ pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
 /// against those. Callers that can detect a failed chord (e.g. the
 /// receipt-sequenced paste path) may use a much shorter hold.
 pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    send_paste_ctrl_v_guarded(enigo, hold_ms, &|| Ok(()))
+}
+
+pub(crate) fn send_paste_ctrl_v_guarded(
+    enigo: &mut Enigo,
+    hold_ms: u64,
+    can_deliver: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
     // FR-005-01: must precede the guard — the wait depends on seeing the
     // user's own key releases.
     await_shortcut_modifier_release();
+    can_deliver()?;
     let _guard = InjectionGuard::begin();
     // Platform-specific key definitions
     #[cfg(target_os = "macos")]
@@ -399,7 +408,16 @@ pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> 
 /// This is commonly used in terminal applications on Linux to paste without formatting.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
 pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    send_paste_ctrl_shift_v_guarded(enigo, hold_ms, &|| Ok(()))
+}
+
+pub(crate) fn send_paste_ctrl_shift_v_guarded(
+    enigo: &mut Enigo,
+    hold_ms: u64,
+    can_deliver: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
     await_shortcut_modifier_release();
+    can_deliver()?;
     let _guard = InjectionGuard::begin();
     // Platform-specific key definitions
     #[cfg(target_os = "macos")]
@@ -436,7 +454,16 @@ pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), St
 /// This is more universal for terminal applications and legacy software.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
 pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
+    send_paste_shift_insert_guarded(enigo, hold_ms, &|| Ok(()))
+}
+
+pub(crate) fn send_paste_shift_insert_guarded(
+    enigo: &mut Enigo,
+    hold_ms: u64,
+    can_deliver: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
     await_shortcut_modifier_release();
+    can_deliver()?;
     let _guard = InjectionGuard::begin();
     #[cfg(target_os = "windows")]
     let insert_key_code = Key::Other(0x2D); // VK_INSERT

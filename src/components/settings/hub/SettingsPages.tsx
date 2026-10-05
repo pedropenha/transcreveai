@@ -36,6 +36,7 @@ import { PasteDelay } from "../debug/PasteDelay";
 import { LogLevelSelector } from "../debug/LogLevelSelector";
 import { RecordingBuffer } from "../debug/RecordingBuffer";
 import { SessionLimits } from "../SessionLimits";
+import { TranslatedDictationSettings } from "../TranslatedDictationSettings";
 import type { SettingsPage } from "./settingsNav";
 
 const GeneralPage: React.FC = () => {
@@ -57,6 +58,7 @@ const ShortcutsPage: React.FC = () => {
     <div className="st-stack">
       <SettingsGroup title={t("settings.general.title")}>
         <ShortcutInput shortcutId="transcribe" grouped />
+        <ShortcutInput shortcutId="transcribe_translate" grouped />
         <ShortcutActivationSetting descriptionMode="tooltip" grouped />
         {/* Cancel shortcut stays hidden on Linux (dynamic shortcut instability). */}
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped />}
@@ -101,6 +103,7 @@ const LanguagesPage: React.FC = () => {
         <LanguageSelector descriptionMode="tooltip" grouped />
       </SettingsGroup>
       <ModelSettingsCard />
+      <TranslatedDictationSettings />
       {active && codes.length > 0 ? (
         <section className="st-section" aria-labelledby="active-langs">
           <h2 id="active-langs" className="caps">

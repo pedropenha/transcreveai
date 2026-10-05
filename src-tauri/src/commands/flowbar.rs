@@ -22,7 +22,7 @@ use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::overlay::FlowbarRect;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Event emitted when the ◉ button is pressed and T-064's meeting session
 /// layer is not yet wired to consume it.
@@ -42,7 +42,12 @@ pub fn flowbar_toggle_dictation(app: AppHandle) -> CommandResult<()> {
     // --toggle-transcription CLI flag: the coordinator's state machine turns
     // an idle press into a hands-free start and a press during recording into
     // stop-and-insert.
-    crate::signal_handle::send_transcription_input(&app, "transcribe", "FlowBar");
+    let session = app
+        .try_state::<crate::TranscriptionCoordinator>()
+        .and_then(|coordinator| coordinator.current_session());
+    let binding =
+        flowbar_dictation_binding(session.as_ref().map(|session| session.binding_id.as_str()));
+    crate::signal_handle::send_transcription_input(&app, binding, "FlowBar");
     Ok(())
 }
 
@@ -94,4 +99,29 @@ pub async fn flowbar_retry_last_failed(
         entry.id,
     )
     .await
+}
+
+/// The stop button must use the action that owns the active translated capture.
+pub(crate) fn flowbar_dictation_binding(active: Option<&str>) -> &'static str {
+    if active == Some("transcribe_translate") {
+        "transcribe_translate"
+    } else {
+        "transcribe"
+    }
+}
+
+#[cfg(test)]
+mod translation_tests {
+    #[test]
+    fn translation_flowbar_routes_only_active_translated_capture() {
+        assert_eq!(
+            super::flowbar_dictation_binding(Some("transcribe_translate")),
+            "transcribe_translate"
+        );
+        assert_eq!(super::flowbar_dictation_binding(None), "transcribe");
+        assert_eq!(
+            super::flowbar_dictation_binding(Some("assistant")),
+            "transcribe"
+        );
+    }
 }

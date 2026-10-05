@@ -5,6 +5,9 @@ import {
   greetingPeriod,
   groupEntriesByDay,
   isStreakExact,
+  originIconKey,
+  originLabel,
+  originLogoCandidates,
   savedTimeParts,
 } from "./homeView";
 
@@ -95,5 +98,28 @@ assert.equal(greetingPeriod(12), "afternoon");
 assert.equal(greetingPeriod(17), "afternoon");
 assert.equal(greetingPeriod(18), "evening");
 assert.equal(greetingPeriod(2), "evening");
+
+// --- origin app ----------------------------------------------------------
+assert.equal(
+  originLabel({ app_name: "Claude", app_exe: "Claude.exe" }),
+  "Claude",
+);
+assert.equal(originLabel({ app_name: null, app_exe: "tool.exe" }), "tool.exe");
+assert.equal(originLabel({ app_name: "  ", app_exe: null }), null);
+assert.equal(originLabel({ app_name: "  ", app_exe: "tool.exe" }), "tool.exe");
+assert.equal(originLabel({}), null);
+assert.equal(originIconKey({ id: 1, app_exe: " Claude.EXE " }), "1:claude.exe");
+assert.notEqual(
+  originIconKey({ id: 1, app_exe: "Claude.exe" }),
+  originIconKey({ id: 2, app_exe: "claude.exe" }),
+  "a legacy row without a stored path must not suppress another entry's icon",
+);
+assert.equal(originIconKey({ id: 1, app_exe: null }), null);
+assert.equal(originIconKey({ id: 1, app_exe: "" }), null);
+assert.deepEqual(
+  originLogoCandidates({ app_name: "Teams", app_exe: "ms-teams.exe" }),
+  ["Teams", "ms-teams"],
+);
+assert.deepEqual(originLogoCandidates({ app_name: null, app_exe: null }), []);
 
 console.log("homeView tests passed");

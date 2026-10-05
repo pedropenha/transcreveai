@@ -345,23 +345,18 @@ pub enum DictationRoute {
 /// the panel drops its live preview; the pipeline sends (`Send`), drops
 /// (`Drop`), or pastes (`Normal`) accordingly — an assistant-claimed
 /// session **never** reaches `paste_for_session`.
-pub fn take_dictation_route(app: &AppHandle) -> DictationRoute {
+/// Capture routing and its conversation epoch under the same session lock.
+pub fn take_dictation_route_with_epoch(
+    app: &AppHandle,
+    binding_id: &str,
+    expected: Option<u64>,
+) -> (DictationRoute, u64) {
     let Some(mut session) = lock_session(app) else {
-        return DictationRoute::Normal;
+        return (DictationRoute::Normal, 0);
     };
-    let route = if !session.dictation_routed {
-        DictationRoute::Normal
-    } else if session.open {
-        DictationRoute::Send
-    } else {
-        DictationRoute::Drop
-    };
-    if session.dictation_routed || session.dictating {
-        session.dictation_routed = false;
-        session.dictating = false;
-        emit_state_locked(app, &mut session);
-    }
-    route
+    let routed = consume_dictation_route(&mut session, binding_id, expected);
+    emit_state_locked(app, &mut session);
+    routed
 }
 
 /// A claimed dictation that never reached `stop` (cancel, failed start) —
@@ -371,8 +366,108 @@ pub fn note_dictation_cancelled(app: &AppHandle) {
         return;
     };
     if session.dictation_routed || session.dictating {
+        session.dictation_epoch += 1;
+        session.dictation_pending = false;
         session.dictation_routed = false;
         session.dictating = false;
         emit_state_locked(app, &mut session);
     }
+}
+
+/// Reserve before enqueue so closing also cancels a not-yet-started microphone.
+pub(crate) fn reserve_assistant_input(session: &mut AssistantSession) -> Option<u64> {
+    if !session.open || session.closing || session.dictation_pending {
+        return None;
+    }
+    if !session.dictation_routed {
+        session.dictation_epoch += 1;
+        session.dictation_pending = true;
+        session.dictation_routed = true;
+        session.dictating = true;
+    }
+    Some(session.dictation_epoch)
+}
+
+pub(crate) fn input_epoch_current(session: &AssistantSession, epoch: u64) -> bool {
+    session.open && !session.closing && session.dictation_routed && session.dictation_epoch == epoch
+}
+
+pub(crate) fn reserve_dictation_input(app: &AppHandle, pressed: bool) -> Option<(u64, bool)> {
+    if pressed {
+        super::panel::open_panel(app);
+    }
+    let mut session = lock_session(app)?;
+    let fresh = !session.dictation_routed;
+    let epoch = if pressed {
+        reserve_assistant_input(&mut session)?
+    } else {
+        session.dictation_epoch
+    };
+    emit_state_locked(app, &mut session);
+    drop(session);
+    if pressed {
+        super::panel::focus_panel(app);
+    }
+    Some((epoch, fresh))
+}
+
+pub(crate) fn dictation_input_current(app: &AppHandle, epoch: u64) -> bool {
+    lock_session(app).is_some_and(|session| input_epoch_current(&session, epoch))
+}
+
+/// Serialize permission and microphone opening against close/reset.
+/// The closure only opens audio; it must not re-enter the assistant mutex.
+pub(crate) fn start_reserved_dictation<T>(
+    app: &AppHandle,
+    epoch: Option<u64>,
+    start: impl FnOnce() -> T,
+) -> Option<T> {
+    let mut session = lock_session(app)?;
+    if !reserved_start_current(&session, epoch) {
+        return None;
+    }
+    let result = start();
+    session.dictation_pending = false;
+    Some(result)
+}
+
+pub(crate) fn reserved_start_current(session: &AssistantSession, epoch: Option<u64>) -> bool {
+    session.dictation_pending && epoch.is_some_and(|epoch| input_epoch_current(session, epoch))
+}
+
+pub(crate) fn cancel_reserved_epoch(session: &mut AssistantSession, epoch: u64) -> bool {
+    if session.dictation_epoch != epoch {
+        return false;
+    }
+    session.dictation_epoch += 1;
+    session.dictation_pending = false;
+    session.dictation_routed = false;
+    session.dictating = false;
+    true
+}
+
+pub(crate) fn cancel_dictation_epoch(app: &AppHandle, epoch: u64) {
+    if let Some(mut session) = lock_session(app) {
+        if cancel_reserved_epoch(&mut session, epoch) {
+            emit_state_locked(app, &mut session);
+        }
+    }
+}
+
+pub(crate) fn consume_dictation_route(
+    session: &mut AssistantSession,
+    binding_id: &str,
+    expected: Option<u64>,
+) -> (DictationRoute, u64) {
+    if binding_id != "assistant" {
+        return (DictationRoute::Normal, 0);
+    }
+    let epoch = expected.unwrap_or(0);
+    if !expected.is_some_and(|epoch| input_epoch_current(session, epoch)) {
+        return (DictationRoute::Drop, epoch);
+    }
+    session.dictation_pending = false;
+    session.dictation_routed = false;
+    session.dictating = false;
+    (DictationRoute::Send, epoch)
 }

@@ -16,7 +16,7 @@ use super::language::{
 use super::postprocess::post_process_transcription_text;
 use super::prompt::build_initial_prompt;
 use super::{panic_payload_message, real_time_factor, ModelStateEvent, TranscriptionManager};
-use crate::settings::get_settings;
+use crate::settings::{get_settings, AppSettings};
 use crate::stt::types::{SttError, SttOptions, Transcript};
 use log::{debug, error, info};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -41,6 +41,15 @@ impl TranscriptionManager {
         &self,
         audio: &[f32],
         opts: &SttOptions,
+    ) -> Result<Transcript, SttError> {
+        self.transcribe_once_with_settings(audio, opts, None)
+    }
+
+    pub(crate) fn transcribe_once_with_settings(
+        &self,
+        audio: &[f32],
+        opts: &SttOptions,
+        session_settings: Option<&AppSettings>,
     ) -> Result<Transcript, SttError> {
         #[cfg(debug_assertions)]
         if std::env::var("TRANSCREVE_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
@@ -82,7 +91,9 @@ impl TranscriptionManager {
         }
 
         // Get current settings for configuration
-        let settings = get_settings(&self.app_handle);
+        let settings = session_settings
+            .cloned()
+            .unwrap_or_else(|| get_settings(&self.app_handle));
 
         // Validate selected language against the model's supported languages.
         // If the language isn't supported, fall back to "auto" to prevent errors.
@@ -124,6 +135,15 @@ impl TranscriptionManager {
         let (result, output_language, model_languages) = {
             let mut engine_guard = self.lock_engine();
 
+            if session_settings.is_some() {
+                let compatible = matches!(engine_guard.as_ref(), Some(LoadedEngine::TranscribeCpp(session)) if session.model().capabilities().supports_translate);
+                super::translation::validate_loaded_translation(
+                    &settings.selected_model,
+                    self.get_current_model().as_deref(),
+                    compatible,
+                )
+                .map_err(|error| SttError::Provider(error.to_string()))?;
+            }
             // Take the engine out so we own it during transcription.
             // If the engine panics, we simply don't put it back (effectively unloading it)
             // instead of poisoning the mutex.
@@ -169,6 +189,12 @@ impl TranscriptionManager {
                 let model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
                 model_is_whisper = model.arch() == "whisper";
                 model_supports_translate = caps.supports_translate;
+                if session_settings.is_some() && !model_supports_translate {
+                    self.return_engine(engine, &active_model);
+                    return Err(SttError::Provider(
+                        "translation_model_incompatible".to_string(),
+                    ));
+                }
                 model_languages = caps.languages;
                 debug!(
                     "transcribe-cpp model '{}' on '{}': initial_prompt={}, translate={}, languages={:?}",

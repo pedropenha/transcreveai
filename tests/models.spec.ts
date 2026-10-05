@@ -102,6 +102,54 @@ test.describe("Models & Providers screen (mocked Tauri IPC)", () => {
     ).toBeVisible();
   });
 
+  test("badges exactly the models that translate to English", async ({
+    page,
+  }) => {
+    const hf = {
+      HuggingFace: { repo_id: "ggerganov/whisper.cpp", revision: "main" },
+    };
+    await installTauriMock(page, {
+      get_app_settings: SETTINGS,
+      get_available_models: [
+        catalogModel({}),
+        catalogModel({
+          id: "whisper-medium",
+          name: "Whisper Medium",
+          is_downloaded: false,
+          source: hf,
+        }),
+        catalogModel({
+          id: "moonshine-tiny",
+          name: "Moonshine Tiny",
+          is_downloaded: false,
+          supports_translation: false,
+          source: hf,
+        }),
+      ],
+      get_current_model: "whisper-small",
+      get_model_recommendations: {
+        hardware: {},
+        default_model_id: "whisper-small",
+        labels: [],
+      },
+    });
+    await page.goto("/");
+    await page.getByTitle("Settings").click();
+    await page.getByRole("button", { name: "Models", exact: true }).click();
+
+    const table = page.getByRole("table", { name: "Models" });
+    await expect(
+      table
+        .getByRole("row", { name: /Whisper Medium/ })
+        .getByText("Translates to English"),
+    ).toBeVisible();
+    await expect(
+      table
+        .getByRole("row", { name: /Moonshine Tiny/ })
+        .getByText("Translates to English"),
+    ).toHaveCount(0);
+  });
+
   test("meeting pick sends a local_model provider id", async ({ page }) => {
     const mock = await installTauriMock(page, {
       get_app_settings: SETTINGS,
