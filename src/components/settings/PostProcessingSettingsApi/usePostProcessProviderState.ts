@@ -79,6 +79,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   const [cliAgents, setCliAgents] = useState<Record<string, CliAgentStatus>>(
     {},
   );
+  const [cliAgentSaving, setCliAgentSaving] = useState(false);
   const refreshCliAgents = useCallback(async () => {
     try {
       const result = await commands.cliAgentsStatus();
@@ -310,19 +311,24 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       const current =
         settings?.cli_agent_configs?.[selectedProviderId] ??
         DEFAULT_CLI_AGENT_CONFIG;
-      const result = await commands.cliAgentUpdateConfig(selectedProviderId, {
-        ...current,
-        ...patch,
-      });
-      if (result.status === "ok") {
-        await refreshSettings();
-        // A binary-path override can flip detection — re-poll.
-        void refreshCliAgents();
-      } else {
-        console.error(
-          "Failed to update CLI agent config:",
-          result.error.message,
-        );
+      setCliAgentSaving(true);
+      try {
+        const result = await commands.cliAgentUpdateConfig(selectedProviderId, {
+          ...current,
+          ...patch,
+        });
+        if (result.status === "ok") {
+          await refreshSettings();
+          // A binary-path override can flip detection — re-poll.
+          void refreshCliAgents();
+        } else {
+          console.error(
+            "Failed to update CLI agent config:",
+            result.error.message,
+          );
+        }
+      } finally {
+        setCliAgentSaving(false);
       }
     },
     [settings, selectedProviderId, refreshSettings, refreshCliAgents],
@@ -356,7 +362,8 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     cliAgentStatus,
     cliAgents,
     cliAgentConfig,
-    isCliAgentUpdating: isUpdating(`cli_agent_config:${selectedProviderId}`),
+    isCliAgentUpdating:
+      cliAgentSaving || isUpdating(`cli_agent_config:${selectedProviderId}`),
     updateCliAgentConfig,
     refreshCliAgents,
   };

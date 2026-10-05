@@ -41,6 +41,10 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
   - **Transcrição** — segmentos com horário e falante: `Você` (trilha mic), `Outros` ou `Falante N` (trilha system, após diarização), marcadores de ditado/lacuna.
   - **Resumo** — disponível após o processamento; editável.
 - **FR-009-14** Fechar a janela **não** para a gravação; a Flow Bar/bandeja reabre a janela.
+  Ao reutilizar a janela para outra reunião, transcrição, notas, resumo, estado
+  e cronômetro pertencem exclusivamente ao novo ID. Eventos e consultas
+  atrasados da reunião anterior não podem contaminar a nova. A hidratação
+  da mesma reunião continua preservando os segmentos recebidos ao vivo.
 - **FR-009-15** Transcrição ao vivo (configurável, padrão ligada): cada trilha é segmentada por VAD (blocos ≤ 30 s) e enviada ao provedor de reuniões; atraso alvo ≤ 10 s. Com a opção desligada, transcreve só ao final. Na v1 o provedor é sempre local; se o modelo estiver ocupado/indisponível, os blocos entram em fila.
 
 ### Pós-processamento
@@ -72,6 +76,9 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
 - **FR-009-19** "Minhas notas" **nunca** são reescritas pelo resumo; editar o resumo não altera as notas.
 - **FR-009-20** "Regenerar resumo" (ex.: com outro provedor). P2: templates personalizados ("1:1", "Entrevista", "Daily").
 - **FR-009-21** Sem chave de LLM configurada (BYOK, F011/T-016) → a reunião fica `ready` só com transcrição e notas, com aviso para configurar o resumo. Transcrição e notas nunca dependem do LLM.
+
+Em Configurações → Resumos de reunião, o usuário pode testar o provedor e o modelo selecionados com uma mensagem sintética curta. O teste não envia conteúdo de reuniões, respeita o modo offline e informa sucesso ou uma falha classificada (chave, rede, cota, tempo limite ou configuração). O botão fica indisponível durante a gravação das configurações e o resultado é descartado quando elas mudam. A interface informa que a chamada pode consumir uso da API. Listar modelos disponíveis não constitui sucesso desse teste.
+
 - **FR-009-22** Falha no processamento → `error` com "Tentar novamente"; áudio preservado.
 - **FR-009-27** Avisos (`toast://show`) se auto-dispensam após 30 s com uma barra de contagem regressiva visível; hover pausa a contagem. Avisos que aguardam resposta (check-in FR-009-09) são isentos.
 

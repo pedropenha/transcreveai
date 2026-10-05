@@ -555,6 +555,24 @@
           "placeholderWithOptions": "Buscar ou selecionar um modelo",
           "placeholderNoOptions": "Digite o nome de um modelo",
           "refreshModels": "Atualizar modelos"
+        },
+        "test": {
+          "description": "Envia uma mensagem curta de teste com as configurações salvas. Nenhum conteúdo de reunião é enviado. Pode haver cobrança de uso da API.",
+          "success": "{{model}} respondeu com sucesso.",
+          "errors": {
+            "missing_api_key": "Salve uma chave da API para esse provedor antes de testar.",
+            "unsupported": "Esse provedor não permite este teste.",
+            "provider": "O modelo não conseguiu responder. Confira a URL base e o identificador do modelo e tente novamente.",
+            "rate_limited": "O provedor atingiu um limite de requisições ou de cota. Confira a cota e o faturamento da API.",
+            "offline": "O modo offline está ativo. Desative-o para testar esse provedor.",
+            "unavailable": "O provedor está temporariamente indisponível. Tente novamente mais tarde.",
+            "timeout": "O modelo não respondeu a tempo. Tente novamente.",
+            "network": "Não foi possível acessar o provedor. Confira sua conexão e a URL base.",
+            "auth": "O provedor rejeitou a chave da API. Confira a chave e suas permissões."
+          },
+          "defaultModel": "O modelo padrão",
+          "testing": "Testando…",
+          "button": "Testar modelo selecionado"
         }
       },
       "prompts": {

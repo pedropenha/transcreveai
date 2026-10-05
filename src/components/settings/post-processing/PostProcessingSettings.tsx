@@ -19,6 +19,7 @@ import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
 import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
 import { CliAgentFields } from "../PostProcessingSettingsApi/CliAgentFields";
 import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
+import { LlmConnectionTest } from "../PostProcessingSettingsApi/LlmConnectionTest";
 import { usePostProcessProviderState } from "../PostProcessingSettingsApi/usePostProcessProviderState";
 import { ShortcutInput } from "../ShortcutInput";
 import { useSettings } from "../../../hooks/useSettings";
@@ -153,6 +154,31 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
           </div>
         </SettingContainer>
       )}
+      <LlmConnectionTest
+        providerId={state.selectedProviderId}
+        model={state.model}
+        configurationKey={JSON.stringify([
+          state.selectedProviderId,
+          state.baseUrl,
+          state.model,
+          state.apiKeyHint,
+          state.cliAgentConfig,
+          state.isBaseUrlUpdating,
+          state.isApiKeyUpdating,
+          state.isModelUpdating,
+          state.isCliAgentUpdating,
+        ])}
+        disabled={
+          !state.selectedProviderId ||
+          (!state.model.trim() &&
+            !state.isCliAgentProvider &&
+            !state.isAppleProvider) ||
+          state.isBaseUrlUpdating ||
+          state.isApiKeyUpdating ||
+          state.isModelUpdating ||
+          state.isCliAgentUpdating
+        }
+      />
     </>
   );
 };

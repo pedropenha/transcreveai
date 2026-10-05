@@ -41,6 +41,25 @@ pub struct OpenAiCompatibleProvider {
 
 impl OpenAiCompatibleProvider {
     pub fn new(config: PostProcessProvider, api_key: String, model: String) -> Self {
+        // Gemini's native model catalog returns `models/gemini-…`, while its
+        // OpenAI compatibility API expects the bare ID. Keep namespaces on
+        // other endpoints, where the prefix may be meaningful.
+        let google_compat = reqwest::Url::parse(&config.base_url)
+            .map(|url| {
+                url.scheme() == "https"
+                    && url.host_str() == Some("generativelanguage.googleapis.com")
+                    && url.path().trim_end_matches('/') == "/v1beta/openai"
+            })
+            .unwrap_or(false);
+        let model = if google_compat {
+            model
+                .trim()
+                .strip_prefix("models/")
+                .unwrap_or(model.trim())
+                .to_string()
+        } else {
+            model
+        };
         Self {
             id: ProviderId::from(config.id.as_str()),
             config,
@@ -183,5 +202,55 @@ impl LlmProvider for OpenAiCompatibleProvider {
             latency_ms: Some(response.provider_latency_ms as u64),
             detail: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn google_compatibility_uses_the_bare_gemini_model_id() {
+        let mut config = crate::settings::AppSettings::default()
+            .post_process_provider("custom")
+            .unwrap()
+            .clone();
+        config.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/".to_string();
+        let provider = OpenAiCompatibleProvider::new(
+            config,
+            String::new(),
+            "models/gemini-2.5-flash".to_string(),
+        );
+        let request = LlmRequest {
+            system: String::new(),
+            messages: Vec::new(),
+            max_tokens: 1024,
+            temperature: 0.0,
+            timeout: Duration::from_secs(30),
+            purpose: super::super::types::LlmPurpose::Summary,
+        };
+        assert_eq!(provider.request_body(&request)["model"], "gemini-2.5-flash");
+    }
+
+    #[test]
+    fn other_hosts_and_google_native_paths_preserve_model_namespaces() {
+        for base_url in [
+            "https://openrouter.ai/api/v1",
+            "https://generativelanguage.googleapis.com/v1beta",
+            "https://generativelanguage.googleapis.com.example.org/v1beta/openai/",
+            "http://localhost:1234/v1",
+        ] {
+            let mut config = crate::settings::AppSettings::default()
+                .post_process_provider("custom")
+                .unwrap()
+                .clone();
+            config.base_url = base_url.to_string();
+            let provider = OpenAiCompatibleProvider::new(
+                config,
+                String::new(),
+                "models/gemini-2.5-flash".to_string(),
+            );
+            assert_eq!(provider.model, "models/gemini-2.5-flash");
+        }
     }
 }

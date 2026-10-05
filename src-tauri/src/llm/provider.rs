@@ -16,7 +16,7 @@ pub trait LlmProvider: Send + Sync {
     fn id(&self) -> &ProviderId;
     async fn complete(&self, req: LlmRequest) -> Result<LlmResponse, LlmError>;
     /// Validate credentials/connectivity cheaply — `GET /models` where the
-    /// endpoint offers it, a 1-token completion otherwise. Backs the
-    /// `test_llm_connection` command.
+    /// endpoint offers it, a 1-token completion otherwise. This connectivity
+    /// check does not prove the selected model can generate a response.
     async fn health_check(&self) -> Result<HealthReport, LlmError>;
 }

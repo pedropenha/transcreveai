@@ -84,16 +84,71 @@ const readMeetingIdFromUrl = (): string | null => {
 const MeetingWindow: React.FC = () => {
   const { t } = useTranslation();
   const direction = getLanguageDirection(i18n.language);
-
   const [meetingId, setMeetingId] = useState<string | null>(
     readMeetingIdFromUrl,
   );
+  const [resolved, setResolved] = useState(readMeetingIdFromUrl() !== null);
+
+  // This native window is reused. Retargeting must create a fresh editor;
+  // otherwise snapshots/live rows and pending autosaves cross meeting IDs.
+  useEffect(() => {
+    let cancelled = false;
+    let opened = false;
+    const unlisten = listen<MeetingOpenPayload>(MEETING_OPEN_EVENT, (event) => {
+      if (cancelled || !event.payload.meeting_id) return;
+      opened = true;
+      setMeetingId(event.payload.meeting_id);
+      setResolved(true);
+    });
+    const resolve = async () => {
+      if (readMeetingIdFromUrl() !== null) return;
+      const current = await commands.meetingCurrent();
+      // An explicit open wins over an older current-session request.
+      if (cancelled || opened) return;
+      if (current.status === "ok" && current.data !== null) {
+        setMeetingId(current.data.meeting_id);
+      }
+      setResolved(true);
+    };
+    void resolve();
+    return () => {
+      cancelled = true;
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  if (!resolved || meetingId === null) {
+    return (
+      <div
+        dir={direction}
+        className="flex h-screen items-center justify-center bg-background p-6 text-center text-sm text-text-muted"
+      >
+        {resolved ? (
+          t("meeting.window.noMeeting")
+        ) : (
+          <LoaderCircle className="animate-spin text-mid-gray" size={20} />
+        )}
+      </div>
+    );
+  }
+
+  return <MeetingSession key={meetingId} meetingId={meetingId} />;
+};
+
+const MeetingSession: React.FC<{ meetingId: string }> = ({ meetingId }) => {
+  const { t } = useTranslation();
+  const direction = getLanguageDirection(i18n.language);
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [segments, setSegments] = useState<MeetingSegment[]>([]);
   const [notesMd, setNotesMd] = useState("");
   const [notFound, setNotFound] = useState(false);
-  // `null` meetingId before any resolution → still deciding, not "no meeting".
-  const [resolved, setResolved] = useState(readMeetingIdFromUrl() !== null);
+  const activeRef = useRef(true);
+  useEffect(() => {
+    activeRef.current = true;
+    return () => {
+      activeRef.current = false;
+    };
+  }, []);
 
   // Live `meeting://state` for the shown meeting — status + ticking timer.
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
@@ -134,6 +189,7 @@ const MeetingWindow: React.FC = () => {
 
   const loadMeeting = useCallback(async (id: string) => {
     const result = await commands.meetingGet(id);
+    if (!activeRef.current) return;
     if (result.status !== "ok" || result.data === null) {
       setNotFound(true);
       setMeeting(null);
@@ -168,32 +224,8 @@ const MeetingWindow: React.FC = () => {
     setSummaryDraft(null);
   }, []);
 
-  // Resolve which meeting to show: `?meeting_id=` wins, then the live session
-  // (`meeting_current`), matching `meeting_window::resolve_meeting_id`.
   useEffect(() => {
-    let cancelled = false;
-    const resolve = async () => {
-      const fromUrl = readMeetingIdFromUrl();
-      if (fromUrl !== null) {
-        setMeetingId(fromUrl);
-        setResolved(true);
-        return;
-      }
-      const current = await commands.meetingCurrent();
-      if (cancelled) return;
-      if (current.status === "ok" && current.data !== null) {
-        setMeetingId(current.data.meeting_id);
-      }
-      setResolved(true);
-    };
-    void resolve();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (meetingId !== null) void loadMeeting(meetingId);
+    void loadMeeting(meetingId);
   }, [meetingId, loadMeeting]);
 
   // FR-009-21 gate must follow the CURRENT provider settings, not the
@@ -205,7 +237,9 @@ const MeetingWindow: React.FC = () => {
   const refreshSummaryStatus = useCallback(async () => {
     try {
       const result = await commands.llmSummaryStatus();
-      if (result.status === "ok") setSummaryEnabled(result.data.enabled);
+      if (activeRef.current && result.status === "ok") {
+        setSummaryEnabled(result.data.enabled);
+      }
     } catch (e) {
       console.warn("llm_summary_status invoke failed:", e);
     }
@@ -222,19 +256,13 @@ const MeetingWindow: React.FC = () => {
   // Event listeners — all filtered to the shown meeting (the session events
   // are broadcast to every window).
   useEffect(() => {
+    let cancelled = false;
     const unlisteners: Array<Promise<() => void>> = [];
-
-    unlisteners.push(
-      listen<MeetingOpenPayload>(MEETING_OPEN_EVENT, (event) => {
-        const id = event.payload.meeting_id;
-        if (id && id !== meetingId) setMeetingId(id);
-      }),
-    );
 
     unlisteners.push(
       listen<MeetingStateEvent>(MEETING_STATE_EVENT_NAME, (event) => {
         const payload = event.payload;
-        if (payload.meeting_id !== meetingId) return;
+        if (cancelled || payload.meeting_id !== meetingId) return;
         setLiveStatus(payload.status);
         setElapsedMs(payload.elapsed_ms);
         // A terminal transition lands out-of-band (T-067 writes the row):
@@ -248,7 +276,7 @@ const MeetingWindow: React.FC = () => {
     unlisteners.push(
       listen<MeetingSegment>(MEETING_SEGMENT_EVENT, (event) => {
         const seg = event.payload;
-        if (seg.meeting_id !== meetingId) return;
+        if (cancelled || seg.meeting_id !== meetingId) return;
         setSegments((prev) => mergeSegments(prev, [seg]));
       }),
     );
@@ -256,7 +284,7 @@ const MeetingWindow: React.FC = () => {
     unlisteners.push(
       listen<MeetingProgressPayload>(MEETING_PROGRESS_EVENT, (event) => {
         const payload = event.payload;
-        if (payload.meeting_id !== meetingId) return;
+        if (cancelled || payload.meeting_id !== meetingId) return;
         // `step` is accepted defensively (meetingView::normalizeProgressStep
         // owns the vocabulary seam) — the UI only tracks liveness until T-067
         // ships its step names. The terminal "done" step is also the ONLY
@@ -271,19 +299,16 @@ const MeetingWindow: React.FC = () => {
       }),
     );
 
-    let cleanup: Array<() => void> = [];
-    Promise.all(unlisteners).then((fns) => {
-      cleanup = fns;
-    });
     return () => {
-      cleanup.forEach((fn) => fn());
+      cancelled = true;
+      // listen() may resolve after unmount (including StrictMode replay).
+      unlisteners.forEach((pending) => void pending.then((fn) => fn()));
     };
   }, [meetingId, loadMeeting]);
 
   // Autosave "Minhas notas" — debounced; writes only the note row
   // (FR-009-19: summary generation never touches this text).
   useEffect(() => {
-    if (meetingId === null) return;
     if (notesMd === persistedNotesRef.current) return;
     setNotesSaving(true);
     setNotesFailed(false);
@@ -291,6 +316,7 @@ const MeetingWindow: React.FC = () => {
     const body = notesMd;
     notesTimerRef.current = window.setTimeout(() => {
       void commands.meetingNotesUpdate(meetingId, body).then((result) => {
+        if (!activeRef.current) return;
         if (result.status === "ok") {
           persistedNotesRef.current = body;
           setNotesSavedAt(new Date());
@@ -307,13 +333,14 @@ const MeetingWindow: React.FC = () => {
   // Autosave the editable summary (writes only `summary_md` — FR-009-19 cuts
   // both ways: editing the summary never touches the notes row).
   useEffect(() => {
-    if (meetingId === null || summaryDraft === null) return;
+    if (summaryDraft === null) return;
     if (!summaryEditing) return;
     window.clearTimeout(summaryTimerRef.current);
     const body = summaryDraft;
     summaryTimerRef.current = window.setTimeout(() => {
       setSummarySaving(true);
       void commands.meetingSummaryUpdate(meetingId, body).then((result) => {
+        if (!activeRef.current) return;
         setSummarySaving(false);
         if (result.status === "ok") {
           setSummarySavedAt(new Date());
@@ -349,11 +376,10 @@ const MeetingWindow: React.FC = () => {
     [segments],
   );
 
-  const live =
-    meetingId !== null && (status === "recording" || status === "paused");
+  const live = status === "recording" || status === "paused";
 
   const commitTitle = useCallback(async () => {
-    if (meetingId === null || meeting === null) {
+    if (meeting === null) {
       setEditingTitle(false);
       return;
     }
@@ -361,6 +387,7 @@ const MeetingWindow: React.FC = () => {
     setEditingTitle(false);
     if (title === "" || title === meeting.title) return;
     const result = await commands.meetingRename(meetingId, title);
+    if (!activeRef.current) return;
     if (result.status === "ok") {
       setMeeting(result.data);
     } else {
@@ -382,17 +409,16 @@ const MeetingWindow: React.FC = () => {
   // re-check of the row keeps the UI honest either way.
   const [retryingSummary, setRetryingSummary] = useState(false);
   const retrySummary = async () => {
-    if (meetingId === null) return;
     setRetryingSummary(true);
     try {
       await invoke("meeting_regenerate_summary", { meetingId });
-      setProgressActive(true);
+      if (activeRef.current) setProgressActive(true);
     } catch {
       // Command missing (pre-T-067 build) or refused — re-hydrate so the
       // phase falls back to whatever the row actually says.
       await loadMeeting(meetingId);
     } finally {
-      setRetryingSummary(false);
+      if (activeRef.current) setRetryingSummary(false);
     }
   };
 
@@ -428,26 +454,13 @@ const MeetingWindow: React.FC = () => {
 
   // ---- Empty states ---------------------------------------------------------
 
-  if (!resolved) {
-    return (
-      <div
-        dir={direction}
-        className="flex h-screen items-center justify-center bg-background text-text"
-      >
-        <LoaderCircle className="animate-spin text-mid-gray" size={20} />
-      </div>
-    );
-  }
-
-  if (meetingId === null || (notFound && meeting === null)) {
+  if (notFound && meeting === null) {
     return (
       <div
         dir={direction}
         className="flex h-screen items-center justify-center bg-background p-6 text-center text-sm text-text-muted"
       >
-        {notFound
-          ? t("meeting.window.notFound")
-          : t("meeting.window.noMeeting")}
+        {t("meeting.window.notFound")}
       </div>
     );
   }

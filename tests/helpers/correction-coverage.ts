@@ -8,17 +8,23 @@ import v8ToIstanbul from "v8-to-istanbul";
 const { createCoverageMap } = istanbulCoverage;
 
 export const CORRECTION_SOURCE_FILES =
-  process.env.CORRECTION_COVERAGE_SCOPE === "translation"
-    ? [
-        "src/components/settings/TranslatedDictationSettings.tsx",
-        "src/components/settings/translationModels.ts",
-      ]
-    : [
-        "src/components/home/HistoryAppLogo.tsx",
-        "src/components/home/historyIcons.ts",
-        "src/components/useSeen.ts",
-        "src/components/home/homeView.ts",
-      ];
+  process.env.CORRECTION_COVERAGE_SCOPE === "meeting"
+    ? ["src/meeting/MeetingWindow.tsx"]
+    : process.env.CORRECTION_COVERAGE_SCOPE === "summary"
+      ? [
+          "src/components/settings/PostProcessingSettingsApi/LlmConnectionTest.tsx",
+        ]
+      : process.env.CORRECTION_COVERAGE_SCOPE === "translation"
+        ? [
+            "src/components/settings/TranslatedDictationSettings.tsx",
+            "src/components/settings/translationModels.ts",
+          ]
+        : [
+            "src/components/home/HistoryAppLogo.tsx",
+            "src/components/home/historyIcons.ts",
+            "src/components/useSeen.ts",
+            "src/components/home/homeView.ts",
+          ];
 
 const activePages = new WeakSet<Page>();
 

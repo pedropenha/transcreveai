@@ -555,6 +555,24 @@
           "placeholderWithOptions": "Search or select a model",
           "placeholderNoOptions": "Type a model name",
           "refreshModels": "Refresh models"
+        },
+        "test": {
+          "description": "Sends a short test message using the saved settings. No meeting content is sent. API usage may be charged.",
+          "success": "{{model}} responded successfully.",
+          "errors": {
+            "missing_api_key": "Save an API key for this provider before testing.",
+            "unsupported": "This provider does not support this test.",
+            "provider": "The model could not respond. Check the base URL and model identifier, and try again.",
+            "rate_limited": "The provider has reached a rate or quota limit. Check your API quota and billing.",
+            "offline": "Offline mode is enabled. Disable it to test this provider.",
+            "unavailable": "The provider is temporarily unavailable. Try again later.",
+            "timeout": "The model did not respond in time. Try again.",
+            "network": "Could not reach the provider. Check your connection and base URL.",
+            "auth": "The provider rejected the API key. Check the key and its permissions."
+          },
+          "defaultModel": "The default model",
+          "testing": "Testing…",
+          "button": "Test selected model"
         }
       },
       "prompts": {

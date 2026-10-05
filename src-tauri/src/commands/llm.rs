@@ -1,7 +1,7 @@
 //! Tauri commands for the LLM BYOK surface (T-050, FR-009-21):
 //!
-//! * `test_llm_connection` — validates the vault key against the configured
-//!   provider (`LlmProvider::health_check`). The key is read via
+//! * `test_llm_connection` — tests the selected model with a synthetic
+//!   summary completion. The key is read via
 //!   `secrets::provider_api_key` and only ever becomes request headers; the
 //!   report carries a classified `kind`, never the key.
 //! * `llm_summary_status` — the gating state the meeting window needs:
@@ -12,7 +12,7 @@
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::llm::cli_agent;
 use crate::llm::router;
-use crate::llm::types::LlmError;
+use crate::llm::types::{LlmError, LlmMessage, LlmPurpose, LlmRequest};
 use crate::secrets;
 use crate::settings::{self, AppSettings, CliAgentConfig, PostProcessProvider};
 use serde::Serialize;
@@ -89,7 +89,9 @@ fn detail_for(error: &LlmError) -> String {
         LlmError::MissingApiKey => "No API key configured for this provider".to_string(),
         LlmError::Offline => "Offline mode is on".to_string(),
         LlmError::Unsupported => "This provider cannot be tested over HTTP".to_string(),
-        LlmError::Provider(detail) => detail.clone(),
+        LlmError::Provider(_) => {
+            "The provider could not generate a response with the selected model".to_string()
+        }
     }
 }
 
@@ -168,8 +170,8 @@ pub async fn llm_summary_status(app: AppHandle) -> CommandResult<LlmSummaryStatu
     Ok(summary_status(&settings, api_key.as_deref()))
 }
 
-/// Validate the configured provider's vault key with a cheap health check
-/// (`GET /models` where available, else a 1-token completion). Never returns
+/// Test the configured provider and selected model with a small synthetic
+/// summary. Sends no meeting content and never returns
 /// the key; failures come back as `ok:false` + a classified `kind` rather
 /// than a command error, since "the test failed" is a normal outcome.
 #[tauri::command]
@@ -212,6 +214,15 @@ pub async fn test_llm_connection(
         .cloned()
         .unwrap_or_default();
 
+    if model.trim().is_empty() && !cli_agent::is_cli_agent(&provider.id) {
+        let error = LlmError::Provider("No model configured — select a model to test".to_string());
+        return Ok(LlmConnectionReport::failure(
+            &provider_id,
+            &error,
+            detail_for(&error),
+        ));
+    }
+
     let llm = router::build_provider(&router::LlmRoute {
         provider: provider.clone(),
         model,
@@ -232,19 +243,42 @@ pub async fn test_llm_connection(
         }
     };
 
-    match llm.health_check().await {
-        Ok(report) => Ok(LlmConnectionReport {
-            ok: report.ok,
-            provider_id,
-            latency_ms: report.latency_ms,
+    Ok(probe_provider(
+        llm.as_ref(),
+        &provider_id,
+        std::time::Duration::from_secs(30),
+    )
+    .await)
+}
+
+/// One request, no fallback or retry: a successful model-list response must
+/// never hide a failure of the model the user chose. The generous but bounded
+/// token budget accommodates reasoning models before their short text answer.
+async fn probe_provider(
+    llm: &dyn crate::llm::LlmProvider,
+    provider_id: &str,
+    timeout: std::time::Duration,
+) -> LlmConnectionReport {
+    let request = LlmRequest {
+        system: String::new(),
+        messages: vec![LlmMessage::user("Summarize this synthetic meeting in one short sentence: The team agreed to meet tomorrow. Reply with the summary only.")],
+        max_tokens: 1024,
+        temperature: 0.0,
+        timeout,
+        purpose: LlmPurpose::Summary,
+    };
+    let result = tokio::time::timeout(timeout, llm.complete(request))
+        .await
+        .unwrap_or(Err(LlmError::Timeout));
+    match result {
+        Ok(response) => LlmConnectionReport {
+            ok: true,
+            provider_id: provider_id.to_string(),
+            latency_ms: Some(u64::from(response.provider_latency_ms)),
             kind: None,
-            detail: report.detail,
-        }),
-        Err(e) => Ok(LlmConnectionReport::failure(
-            &provider_id,
-            &e,
-            detail_for(&e),
-        )),
+            detail: None,
+        },
+        Err(error) => LlmConnectionReport::failure(provider_id, &error, detail_for(&error)),
     }
 }
 
@@ -376,6 +410,113 @@ pub fn cli_agent_update_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct ProbeProvider {
+        failure: Option<LlmError>,
+        hang: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::llm::LlmProvider for ProbeProvider {
+        fn id(&self) -> &crate::stt::types::ProviderId {
+            unreachable!("the selected provider is already resolved")
+        }
+
+        async fn complete(
+            &self,
+            request: crate::llm::LlmRequest,
+        ) -> Result<crate::llm::LlmResponse, LlmError> {
+            assert_eq!(request.purpose, crate::llm::LlmPurpose::Summary);
+            assert_eq!(request.messages.len(), 1);
+            assert!(request.messages[0].content.contains("synthetic"));
+            assert!(request.max_tokens >= 512 && request.max_tokens <= 1024);
+            assert!(request.timeout <= std::time::Duration::from_secs(30));
+            if self.hang {
+                std::future::pending::<()>().await;
+            }
+            if let Some(error) = &self.failure {
+                return Err(match error {
+                    LlmError::Auth => LlmError::Auth,
+                    LlmError::Provider(detail) => LlmError::Provider(detail.clone()),
+                    LlmError::RateLimited { retry_after } => LlmError::RateLimited {
+                        retry_after: *retry_after,
+                    },
+                    _ => unreachable!("unsupported fake failure"),
+                });
+            }
+            Ok(crate::llm::LlmResponse {
+                text: "Synthetic response".to_string(),
+                model: "gemini-2.5-flash".to_string(),
+                usage: crate::llm::LlmUsage::default(),
+                provider_latency_ms: 42,
+            })
+        }
+
+        async fn health_check(&self) -> Result<crate::stt::types::HealthReport, LlmError> {
+            panic!("listing models does not test the selected model")
+        }
+    }
+
+    #[tokio::test]
+    async fn connection_probe_generates_a_synthetic_summary() {
+        let provider = ProbeProvider {
+            failure: None,
+            hang: false,
+        };
+        let report = probe_provider(&provider, "custom", std::time::Duration::from_secs(30)).await;
+        assert!(report.ok);
+        assert_eq!(report.provider_id, "custom");
+        assert_eq!(report.latency_ms, Some(42));
+        assert_eq!(report.kind, None);
+        assert_eq!(report.detail, None);
+    }
+
+    #[tokio::test]
+    async fn connection_probe_reports_model_and_credential_failures() {
+        for error in [
+            LlmError::Auth,
+            LlmError::Provider("model unavailable".to_string()),
+            LlmError::RateLimited { retry_after: None },
+        ] {
+            let expected = LlmErrorKind::from(&error);
+            let provider = ProbeProvider {
+                failure: Some(error),
+                hang: false,
+            };
+            let report =
+                probe_provider(&provider, "custom", std::time::Duration::from_secs(30)).await;
+            assert!(!report.ok);
+            assert_eq!(report.kind, Some(expected));
+            assert_eq!(report.latency_ms, None);
+            assert!(report.detail.is_some());
+        }
+    }
+
+    #[test]
+    fn connection_probe_provider_detail_cannot_echo_keys_or_urls() {
+        let detail = detail_for(&LlmError::Provider(
+            "HTTP 400: https://user:password@example.org/?key=arbitrary-secret".to_string(),
+        ));
+        assert!(!detail.contains("http"));
+        assert!(!detail.contains("password"));
+        assert!(!detail.contains("arbitrary-secret"));
+    }
+
+    #[tokio::test]
+    async fn connection_probe_enforces_a_deadline_even_for_cli_providers() {
+        let provider = ProbeProvider {
+            failure: None,
+            hang: true,
+        };
+        let report = probe_provider(
+            &provider,
+            "cli_agent/codex",
+            std::time::Duration::from_millis(1),
+        )
+        .await;
+        assert!(!report.ok);
+        assert_eq!(report.kind, Some(LlmErrorKind::Timeout));
+    }
 
     fn settings_with(provider_id: &str, model: &str) -> AppSettings {
         let mut settings = AppSettings {
