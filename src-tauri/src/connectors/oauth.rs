@@ -11,6 +11,10 @@ use tokio::{
     net::TcpListener,
 };
 pub const NOTION_RESOURCE: &str = "https://mcp.notion.com";
+/// Built-in multi-tenant Entra public application maintained by the project.
+/// A public client ID is not a credential; admins/users can still point a
+/// connection at their own registration via `ConnectorInput::client_id`.
+pub const AZURE_DEVOPS_DEFAULT_CLIENT_ID: &str = "4a3a52bb-fcb9-48ce-a172-3ba07a974d30";
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -109,12 +113,9 @@ pub async fn prepare(config: &mut ConnectorConfig) -> ConnectorResult<Login> {
             )
         }
         ConnectorKind::AzureDevops => {
-            let tenant = config.tenant.as_deref().unwrap_or("organizations");
+            let tenant = config.tenant.as_deref().unwrap_or("common");
             if tenant != "organizations" && tenant != "common" {
                 super::policy::canonical_id(tenant)?;
-            }
-            if config.client_id.is_none() {
-                return Err(invalid());
             }
             (
                 format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize"),
@@ -127,7 +128,13 @@ pub async fn prepare(config: &mut ConnectorConfig) -> ConnectorResult<Login> {
             )
         }
     };
-    let client_id = config.client_id.clone().ok_or_else(invalid)?;
+    let client_id = match config.kind {
+        ConnectorKind::AzureDevops => config
+            .client_id
+            .clone()
+            .unwrap_or_else(|| AZURE_DEVOPS_DEFAULT_CLIENT_ID.to_string()),
+        _ => config.client_id.clone().ok_or_else(invalid)?,
+    };
     let oauth = BasicClient::new(ClientId::new(client_id.clone()))
         .set_auth_uri(AuthUrl::new(auth_url.clone()).map_err(|_| invalid())?)
         .set_token_uri(TokenUrl::new(token_url.clone()).map_err(|_| invalid())?)

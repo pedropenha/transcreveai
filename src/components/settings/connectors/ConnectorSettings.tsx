@@ -444,12 +444,18 @@ export function ConnectorSettings() {
                   <span>{t("connectors.clientId")}</span>
                   <input
                     value={form.client_id ?? ""}
-                    required
+                    aria-describedby="azure-client-id-hint"
                     onChange={(event) =>
                       update({ client_id: event.target.value || null })
                     }
                   />
                 </label>
+                <p
+                  id="azure-client-id-hint"
+                  className="connector-help connector-wide"
+                >
+                  {t("connectors.clientIdHint")}
+                </p>
                 <label className="connector-field">
                   <span>{t("connectors.tenant")}</span>
                   <input
@@ -543,11 +549,7 @@ export function ConnectorSettings() {
             <button
               type="button"
               className="connector-button"
-              disabled={
-                busy !== null ||
-                !form.label.trim() ||
-                (form.kind === "azure_devops" && !form.client_id)
-              }
+              disabled={busy !== null || !form.label.trim()}
               onClick={save}
             >
               {t("connectors.save")}
@@ -594,7 +596,7 @@ export function ConnectorSettings() {
           )}
           {connection.kind === "azure_devops" && !connection.client_id && (
             <>
-              <p className="connector-help">{t("connectors.entraGuide")}</p>
+              <p className="connector-help">{t("connectors.builtinEntra")}</p>
               <button
                 type="button"
                 className="connector-link"
@@ -632,10 +634,7 @@ export function ConnectorSettings() {
               <button
                 type="button"
                 className="connector-button"
-                disabled={
-                  busy !== null ||
-                  (connection.kind === "azure_devops" && !connection.client_id)
-                }
+                disabled={busy !== null}
                 onClick={() =>
                   run(connection.id, () =>
                     connectorApi.beginOAuth(connection.id),

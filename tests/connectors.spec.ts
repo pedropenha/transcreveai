@@ -37,20 +37,38 @@ async function open(page: Page, extra: CommandHandlers = {}) {
   return mock;
 }
 
-test("missing Entra registration never becomes a ready connection", async ({
+test("built-in Entra app starts OAuth without a user registration", async ({
   page,
 }) => {
-  const mock = await open(page);
+  let authorizing = false;
+  const mock = await open(page, {
+    connector_begin_oauth: () => {
+      authorizing = true;
+      return { ...config, status: "authorizing" };
+    },
+    connector_list_connections: () => [
+      { ...config, status: authorizing ? "authorizing" : "disconnected" },
+    ],
+  });
   await expect(page.getByText("Team planning", { exact: true })).toBeVisible();
   await expect(page.getByTestId("connectors-page")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Connect in browser", exact: true }),
-  ).toBeDisabled();
+    page.getByText(/built-in Transcreve\.ai Entra application/i).first(),
+  ).toBeVisible();
+  const connect = page.getByRole("button", {
+    name: "Connect in browser",
+    exact: true,
+  });
+  await expect(connect).toBeEnabled();
   expect(mock.calls.some((call) => call.cmd === "connector_begin_oauth")).toBe(
     false,
   );
+  await connect.click();
+  expect(mock.calls.some((call) => call.cmd === "connector_begin_oauth")).toBe(
+    true,
+  );
   await expect(
-    page.getByText(/Application ID|application registration/i).first(),
+    page.getByRole("button", { name: /cancel/i }).first(),
   ).toBeVisible();
 });
 

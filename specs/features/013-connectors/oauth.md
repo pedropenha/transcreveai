@@ -18,6 +18,8 @@ Notion documenta cliente MCP em Rust com SDK oficial e crate `oauth2`, PKCE, reg
 
 Azure: registrar aplicação Entra para desktop e validar audiência/tenant e permissão delegada para Azure DevOps. Pedir `offline_access` quando necessário ao fluxo de refresh, sem confundir com o modo offline do app. OAuth legado específico de Azure DevOps não é base nova. Compatibilidade do MCP remoto Azure com um cliente não impede usar token Entra diretamente na REST. [Orientação Microsoft](https://learn.microsoft.com/en-us/azure/devops/integrate/get-started/authentication/authentication-guidance?view=azure-devops), [fluxo PKCE](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow).
 
+Decisão de UX (2026-10-05): o app embute um Application ID público multi-tenant mantido pelo projeto (`AZURE_DEVOPS_DEFAULT_CLIENT_ID` em `connectors/oauth.rs`) — client ID de cliente público não é segredo. O usuário conecta direto sem registrar nada; os campos Application ID/Tenant ficam como override avançado para organizações que preferem o próprio registro. Tenant padrão `common` (o registro aceita contas organizacionais e pessoais).
+
 ## Jornada
 
 1. Usuário clica Conectar Notion ou Conectar Azure DevOps.
