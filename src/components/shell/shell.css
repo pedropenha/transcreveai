@@ -371,6 +371,15 @@
     justify-content: center;
     padding-inline: 0;
   }
+  /* The width forces the collapsed look, so the toggle has nothing to do
+     and would overlap the brand mark in the 64 px column. */
+  .hub-rail .rail-logo {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .hub-rail .rail-collapse {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

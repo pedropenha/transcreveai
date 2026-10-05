@@ -2,7 +2,7 @@
 
 **Status:** aprovado para implementação incremental · **Tarefa:** T-008 · **Direção:** ~~Sinal Calmo~~ substituída por Papel & Anil ([ADR-0003](docs/adr/0003-identidade-visual-papel-e-anil.md); tokens vigentes em `src/styles/theme.css`)
 
-Este documento orienta a implementação visual do Hub, da Flow Bar, dos toasts e dos estados de gravação. Ele não implementa as telas previstas em T-040 e T-042. O contrato legível por máquina está em [`design-tokens.json`](design-tokens.json), e a referência visual autocontida está em [`design-preview.html`](design-preview.html).
+Este documento orienta a implementação visual do Hub, da Flow Bar, dos toasts e dos estados de gravação. Ele não implementa as telas previstas em T-040 e T-042. O contrato legível por máquina está em [`design-tokens.json`](design-tokens.json), e a referência visual autocontida está em [`docs/design/design-preview.html`](docs/design/design-preview.html).
 
 ## 1. Direção escolhida
 
@@ -238,6 +238,6 @@ Os aliases legados (`--color-background-ui`, `--color-logo-primary`, `--color-mi
 1. `design-tokens.json` é o contrato canônico legível por máquina.
 2. `src/styles/theme.css` é o espelho de runtime em CSS custom properties.
 3. `src/App.css` registra no Tailwind 4 apenas tokens consumidos por utilities.
-4. `design-preview.html` é uma amostra autocontida; não é importado pelo app.
+4. `docs/design/design-preview.html` é uma amostra autocontida; não é importado pelo app.
 5. Valores novos não devem aparecer soltos em componentes. Primeiro criar o token primitivo, depois o semântico e, por fim, consumi-lo.
 6. T-040 e T-042 podem ampliar tokens de componente, mas não devem redefinir os primitivos sem revisão visual e de contraste.
