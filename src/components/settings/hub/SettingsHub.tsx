@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ChevronRight,
+  Cable,
   Cpu,
   FileText,
   Globe,
@@ -38,6 +39,7 @@ const PAGE_ICONS: Record<SettingsPage, LucideIcon> = {
   "transcription/api": KeyRound,
   "intelligence/summaries": FileText,
   "intelligence/assistant": Sparkles,
+  "intelligence/connectors": Cable,
   "app/system": Monitor,
   "app/privacy": ShieldCheck,
   "app/advanced": SettingsIcon,

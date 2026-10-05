@@ -121,3 +121,7 @@ Em Configurações → Resumos de reunião, o usuário pode testar o provedor e 
 - Loopback: `cpal` no Windows suporta criar _input stream_ sobre um dispositivo de saída (WASAPI loopback); mudanças de dispositivo padrão via `IMMNotificationClient`.
 - O `audio engine` tem um único stream de mic com múltiplos assinantes (ditado, reunião, medidor) — nunca abrir o mic duas vezes.
 - macOS (v1.0): ScreenCaptureKit / Core Audio process taps (macOS 14.4+), exigindo permissão de gravação de áudio do sistema.
+
+## Expansão especificada — conectores (v1.1+ proposta, não implementada)
+
+[F013: Notetaker e duas fases](../013-connectors/notetaker.md) define primeiro configuração/instalação MCP com OAuth e destinos padrão; depois ações na aba Resumo e detalhe do Hub: vincular/publicar resumo em página Notion e revisar/criar Task, Feature ou item de backlog Azure com seleção de projeto/equipe/backlog/pai/sprint. Vínculos persistem por reunião/versão e regenerar não publica automaticamente. Refs: FR-013-24..31, AC-013-21..28; T-094..T-103. Não altera a aceitação já registrada da v1.

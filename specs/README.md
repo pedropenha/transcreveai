@@ -48,6 +48,10 @@ Detalhes em [constitution.md](constitution.md#0-hierarquia-de-autoridade). Se um
 | [features/012-voice-assistant](features/012-voice-assistant/spec.md)             | Assistente por voz no overlay + providers de agentes CLI      | v1.1+ (antecipável)               |
 | [tasks.md](tasks.md)                                                             | Plano de implementação por fases                              | —                                 |
 
+## Expansão proposta — conectores
+
+F013 ainda não altera o escopo aceito da v1: [spec](features/013-connectors/spec.md), [pesquisa](features/013-connectors/research.md), [plano e contratos](features/013-connectors/plan.md) e [ADR-0004 proposto](../docs/adr/0004-conectores-e-mcp-independentes-do-provider.md). Notion/Azure DevOps por OAuth, exportação e assistente com Codex ou BYOK; MCP instalado/configurado primeiro e ações do resumo depois. [Jornada em duas fases](features/013-connectors/notetaker.md). [OAuth e persistência](features/013-connectors/oauth.md). Implementação planejada em T-094..T-103.
+
 ## Convenções
 
 - **IDs**: `FR-<feature>-<nn>` (funcional), `NFR-<feature>-<nn>` (não funcional), `AC-<feature>-<nn>` (aceitação), `US-<feature>-<nn>` (história), `T-<nnn>` (tarefa).

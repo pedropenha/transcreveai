@@ -65,12 +65,16 @@ log = "0.4.25"
 env_filter = "0.1.0"
 # `process` for the headless `cli_agent` LLM providers (F012); `time`/
 # `io-util` are already pulled in transitively but declared for clarity.
-tokio = { version = "1.43.0", features = ["process", "io-util", "time"] }
+tokio = { version = "1.43.0", features = ["process", "io-util", "time", "net", "sync", "rt", "macros", "io-std"] }
 vad-rs = { git = "https://github.com/cjpais/vad-rs", rev = "2a412ed858695b9251f3f5a1a20d95b59fa7c498", default-features = false }
 earshot = "1.2.2"
 enigo = "0.6.1"
 rodio = { git = "https://github.com/cjpais/rodio.git", rev = "fed30292db417cb95305c118c0e1d804fb74cbff" }
 reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "deflate"] }
+# F013 uses official MCP/OAuth libraries; transports stay backend-only.
+rmcp = { version = "=3.5.0", default-features = false, features = ["client", "server", "macros", "transport-io", "transport-streamable-http-client-reqwest", "reqwest-native-tls"] }
+oauth2 = { version = "=5.0.0", default-features = false, features = ["reqwest"] }
+reqwest13 = { package = "reqwest", version = "=0.13.2", default-features = false, features = ["json", "stream", "native-tls"] }
 futures-util = "0.3"
 rustfft = "6.4.0"
 strsim = "0.11.0"
@@ -149,6 +153,9 @@ windows = { version = "0.61.3", features = [
   "Win32_System_Threading",
   "Win32_System_Variant",
   "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Pipes",
+  "Win32_System_RemoteDesktop",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Graphics_Dwm",

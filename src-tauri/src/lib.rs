@@ -7,6 +7,9 @@ pub mod audio_toolkit;
 mod autostart;
 mod catalog;
 pub mod cli;
+mod connector_mcp;
+mod connectors;
+pub use connector_mcp::run_stdio as run_connectors_mcp;
 mod clipboard;
 mod commands;
 pub mod db;
@@ -1113,6 +1116,21 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::toast::toast_reopen,
             commands::toast::toast_dismiss,
             commands::toast::toast_set_content_height,
+            commands::connectors::connector_list_connections,
+            commands::connectors::connector_save_connection,
+            commands::connectors::connector_begin_oauth,
+            commands::connectors::connector_cancel_oauth,
+            commands::connectors::connector_disconnect,
+            commands::connectors::connector_delete_connection,
+            commands::connectors::connector_test_connection,
+            commands::connectors::connector_azure_catalog,
+            commands::connectors::connector_save_defaults,
+            commands::connectors::connector_read,
+            commands::connectors::connector_query,
+            commands::connector_mcp::mcp_status,
+            commands::connector_mcp::mcp_pair,
+            commands::connector_mcp::mcp_revoke,
+            commands::connector_mcp::mcp_config,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![
@@ -1290,6 +1308,7 @@ pub fn run(cli_args: CliArgs) {
             MacosLauncher::LaunchAgent,
             Some(vec![]),
         ))
+        .manage(connector_mcp::ConnectorMcpState::default())
         .manage(cli_args.clone())
         .setup(move |app| {
             #[cfg(target_os = "windows")]
@@ -1401,6 +1420,19 @@ pub fn run(cli_args: CliArgs) {
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 
             initialize_core_logic(&app_handle);
+
+            // Restore connector state interrupted by shutdown (pending OAuth
+            // logins) and restart the local MCP bridge only when live grants
+            // exist. Neither performs network or browser access.
+            if let Err(error) = connectors::restore(&app_handle) {
+                log::warn!("connector state restore failed: {error}");
+            }
+            let mcp_handle = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = connector_mcp::restore(&mcp_handle).await {
+                    log::warn!("connector MCP bridge restore failed: {error}");
+                }
+            });
 
             // Secure Input monitor (macOS): detects stuck secure input that
             // silently blocks keyed shortcuts, warns the user, and activates

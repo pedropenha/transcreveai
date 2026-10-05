@@ -1293,6 +1293,10 @@
         "title": "Assistant",
         "description": "Which AI answers the assistant panel."
       },
+      "connectors": {
+        "title": "Connectors",
+        "description": "Connect Notion and Azure DevOps independently of your AI provider."
+      },
       "system": {
         "title": "System",
         "description": "Startup, tray icon and the Flow Bar."
@@ -1471,5 +1475,21 @@
       "summaryProvider": "Summary · {{provider}}"
     },
     "startError": "Could not start the meeting."
+  },
+  "connectors": {
+    "intro": "Connect services to read selected content. Each connection stays separate from your AI provider.",
+    "add": "Add connection", "addNotion": "Add Notion", "addAzure": "Add Azure DevOps", "edit": "Edit connection", "configuration": "Connection configuration",
+    "service": "Service", "name": "Name", "clientId": "Application ID", "tenant": "Tenant ID", "organization": "Organization",
+    "allowedProjects": "Allowed project IDs", "allowedPages": "Allowed page IDs", "pageIdsHelp": "Enter one Notion page ID per line. Only these roots can be read.",
+    "defaultPage": "Default page", "none": "None", "choose": "Choose…", "empty": "No connections yet.",
+    "save": "Save", "cancel": "Cancel", "connect": "Connect in browser", "reconnect": "Reconnect", "cancelAuthorization": "Cancel authorization",
+    "test": "Test access", "disconnect": "Disconnect", "delete": "Delete connection", "readable": "Read access verified", "notReadable": "Read access unavailable",
+    "publicationUnknown": "Publishing permission has not been verified.", "redirect": "Registered redirect URI",
+    "azureDefaults": "Azure destination defaults", "loadingCatalog": "Loading available destinations…", "project": "Project", "team": "Team", "backlog": "Backlog level", "area": "Area Path", "workItemType": "Work item type", "sprintPolicy": "Sprint", "sprintAsk": "Ask each time", "sprintFixed": "Specific sprint", "sprintCurrent": "Current team sprint", "iteration": "Sprint", "saveDefaults": "Save defaults",
+    "entraGuide": "To connect Azure DevOps, register a Microsoft Entra public desktop application with a loopback redirect and delegated Azure DevOps user_impersonation permission. Enter its public Application ID and tenant ID here. Do not enter a client secret. Your organization may require administrator consent.",
+    "entraDocs": "Microsoft registration and authentication guidance",
+    "status": { "disconnected": "Not connected", "authorizing": "Authorizing", "ready": "Ready", "reconnect_required": "Reconnect required", "temporary_failure": "Temporary failure" },
+    "errors": { "temporary_failure": "Could not complete the request. Try again.", "invalid_notion_page_id": "Enter valid Notion page UUIDs, one per line.", "invalid_destination": "Choose an available project, team and sprint. Reload the catalog if a destination changed.", "offline": "You are offline. Reconnect before using this service.", "auth_invalid": "Authorization expired. Reconnect the account.", "permission_denied": "This account lacks access to that destination.", "policy_denied": "This destination is outside the connection's allowed scope.", "resource_unavailable": "The selected destination is unavailable.", "vault_unavailable": "The system credential vault is unavailable.", "timeout": "The service did not respond in time. Try again.", "rate_limited": "The service is limiting requests. Try again later." },
+    "mcp": { "title": "Local MCP client", "explanation": "Pair a local client with selected connections to read allowed content. Add the shown command to that client's configuration yourself. The app must be running.", "running": "Local bridge is available", "stopped": "Local bridge is unavailable", "clientName": "Client name", "allowedConnections": "Connections this client may read", "pair": "Pair client", "showConfig": "Show configuration", "revoke": "Revoke access", "manualSetup": "Copy this command into your MCP client's configuration:", "copy": "Copy configuration", "error": "Could not update the local client. Try again." }
   }
 }

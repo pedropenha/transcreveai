@@ -4,6 +4,14 @@ use std::path::PathBuf;
 #[derive(Parser, Debug, Clone, Default)]
 #[command(name = "transcreve-ai", about = "Transcreve.ai - Speech to Text")]
 pub struct CliArgs {
+    /// Serve the paired read-only connectors MCP over stdio, without starting Tauri.
+    #[arg(long, requires = "mcp_client_id")]
+    pub connectors_mcp: bool,
+
+    /// Non-secret identity of the locally paired MCP client.
+    #[arg(long, requires = "connectors_mcp")]
+    pub mcp_client_id: Option<String>,
+
     /// Start with the main window hidden
     #[arg(long)]
     pub start_hidden: bool,

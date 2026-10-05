@@ -38,6 +38,7 @@ import { RecordingBuffer } from "../debug/RecordingBuffer";
 import { SessionLimits } from "../SessionLimits";
 import { TranslatedDictationSettings } from "../TranslatedDictationSettings";
 import type { SettingsPage } from "./settingsNav";
+import { ConnectorSettings } from "../connectors/ConnectorSettings";
 
 const GeneralPage: React.FC = () => {
   const { t } = useTranslation();
@@ -272,6 +273,7 @@ const PAGES: Record<SettingsPage, React.FC> = {
   "transcription/api": ApiPage,
   "intelligence/summaries": SummariesPage,
   "intelligence/assistant": AssistantPage,
+  "intelligence/connectors": ConnectorSettings,
   "app/system": SystemPage,
   "app/privacy": PrivacyPage,
   "app/advanced": AdvancedPage,

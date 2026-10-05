@@ -179,6 +179,30 @@ Relatório: [implementação e validação](../docs/design/assistant-validation.
 
 ---
 
+## Fase 6 — Conectores (F013, proposta v1.1+)
+
+Especificação solicitada em 2026-10-05; nenhuma implementação concluída. Documentos: [F013](features/013-connectors/spec.md), [pesquisa](features/013-connectors/research.md), [plano](features/013-connectors/plan.md), [ADR-0004 proposto](../docs/adr/0004-conectores-e-mcp-independentes-do-provider.md). Tarefas dependem das decisões de escopo/distribuição e dos gates descritos no plano.
+
+### Etapa 1 — Instalar/disponibilizar e configurar MCPs
+
+Jornada confirmada em [notetaker.md](features/013-connectors/notetaker.md); OAuth e persistência em [oauth.md](features/013-connectors/oauth.md). Conexões/defaults e MCP de leitura devem funcionar antes da etapa 2.
+
+- [ ] **T-094** **Estender — fundação e spike OAuth/MCP.** Registrar escopo/release; validar callback desktop Notion, cliente OAuth/MCP, variante Azure Entra, cofre/refresh, SDK/licenças, offline/política e empacotamento. Atualizar constituição/F011/F012/contratos conforme decisão aceita. Depende de: T-016, T-050. — Refs: FR-013-01..06,20,23,24; AC-013-01,02,05..07,17..21.
+- [ ] **T-095** **Estender — conexão Notion MCP OAuth.** Login/registro/callback, persistência/refresh, identidade, páginas/destinos e leitura limitada. Criação de subpágina/append tipado é habilitada somente na etapa 2, com aprovação. Depende de: T-094. — Refs: FR-013-02,04..07,24,27; AC-013-01,05,15,17..21,23.
+- [ ] **T-096** **Estender — conexão Azure OAuth e adapter.** Entra desktop sem segredo global, projetos/equipes e leitura/work schema; catálogo de backlog/áreas/iterações e pais. Criação/updates/relação pai tipados só na etapa 2 com revisão. Depende de: T-094. — Refs: FR-013-03..06,08,13,24..26,29; AC-013-02,05,09,15,17..22,24,25.
+- [ ] **T-101** **Estender — configurações/diagnóstico MCP.** UI conectar/reconectar/desconectar, estados OAuth, serviço remoto adicionado versus bridge local instalado, versão/teste de leitura e en/pt-BR. Depende de: T-095, T-096. — Refs: FR-013-19,21..24; AC-013-12,17..21.
+- [ ] **T-102** **Estender — destinos padrão e seletores.** Configuração Notion página padrão e Azure projeto/equipe/backlog/Area Path/tipo/política de sprint (perguntar, fixa, atual); catálogos reais, persistência, escopo, invalidação e resolução no preparo. Preparar seletores para override/pai na etapa 2. Depende de: T-096, T-101. — Refs: FR-013-25,26,29; AC-013-21,22,24,25.
+- [ ] **T-099** **Fachada MCP na etapa 1.** Instalação/distribuição, IPC/pareamento e leitura allowlisted, config sem segredo e aceite Codex externo. Preparar extensão de tools de proposta/status para etapa 2; não anunciar ferramentas mutantes antes desse gate. Depende de: T-094..096, T-101, T-102. — Refs: FR-013-15..20,23,24; AC-013-05..07,20,21 e parte de leitura de AC-013-11; proposta/status/ownership de AC-013-11,16 somente na etapa 2. Não habilita automaticamente MCP pessoal no CLI interno.
+
+### Etapa 2 — Ações no resumo do Notetaker
+
+Iniciar após checkpoint autenticado da etapa 1 (T-100); não exige concluir os critérios de escrita antes desse checkpoint.
+
+- [ ] **T-097** **Estender — propostas e publicação confirmada.** Resumo atual como origem; criação manual e sugestões estruturadas Codex/BYOK de Task/Feature/item de backlog e destinos candidatos; aprovação com defaults resolvidos, journal, hierarquia, reconciliação e cancelamento. Depende de: gate etapa 1, T-090, T-099, T-102. — Refs: FR-013-09..14,17,18,20,22,23,26..31; AC-013-03,04,08..10,13,14,22..28.
+- [ ] **T-098** **Estender — ações no resumo e revisão.** Aba Resumo e detalhe do Hub com Enviar ao Notion, Criar item Azure e Sugerir itens IA; seleção página/modo, cartões, projeto/backlog/tipo/pai/sprint editáveis, revisão por item e estados localizados. Depende de: T-097, T-101, T-102. — Refs: FR-013-09,11,12,14,21,22,26..31; AC-013-04,12,14,22..28.
+- [ ] **T-103** **Estender — vínculo reunião ↔ recurso remoto.** Persistir página/item/link por reunião/versão/operação; diferenciar vincular e publicar; resumo regenerado não duplica nem sincroniza; referências visíveis após reinício e isolamento por meeting_id. Depende de: T-097. — Refs: FR-013-27,30,31; AC-013-23,26,27.
+- [ ] **T-100** **Validar — dois checkpoints.** Primeiro validar etapa 1 após T-099 (OAuth/refresh, defaults, diagnóstico/leitura e MCP real). Depois validar etapa 2 após T-098/T-103 (Notion/pai/sprint/backlog, IA manual/Codex/BYOK, offline/revogação, conflitos/duplicação/vínculos). ECC, TDD/cobertura >=80%, revisão segurança/Rust/React e smoke Windows autenticado. Checkbox só fecha após ambos; gate etapa 1 registrado separadamente. — Refs: AC-013-01..28, NFR-013-01..05. Evidências futuras: `docs/design/t100-connectors-validation.md`.
+
 ## Dependências (resumo)
 
 ```mermaid

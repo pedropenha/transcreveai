@@ -22,6 +22,7 @@ export const SETTINGS_PAGES = [
   "transcription/api",
   "intelligence/summaries",
   "intelligence/assistant",
+  "intelligence/connectors",
   "app/system",
   "app/privacy",
   "app/advanced",

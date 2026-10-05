@@ -19,6 +19,8 @@ O usuário escolhe entre transcrever **localmente** (offline) ou via **API paga 
 
 ### III. Privacidade
 
+Exceção de produto autorizada em 2026-10-05: [F013](features/013-connectors/spec.md) adiciona conexão OAuth Notion/Azure DevOps, configuração MCP e ações de publicação do Notetaker em duas fases. Amplia deliberadamente I/II para estes conectores, sem habilitar ações remotas gerais ou antecipar o release v1. Aprovação explícita por proposta e envio somente aos serviços conectados continuam obrigatórios.
+
 1. Com provedor local, nenhum áudio ou texto sai da máquina.
 2. Envio para nuvem só para provedores configurados explicitamente pelo usuário.
 3. Microfone aberto só durante sessão iniciada pelo usuário (ou auto-início que ele habilitou). Nada de gravação oculta.

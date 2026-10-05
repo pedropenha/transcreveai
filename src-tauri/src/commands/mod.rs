@@ -1,5 +1,7 @@
 pub mod assistant;
 pub mod audio;
+pub mod connector_mcp;
+pub mod connectors;
 pub mod detector;
 pub mod error;
 pub mod flowbar;

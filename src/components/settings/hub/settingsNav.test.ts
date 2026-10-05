@@ -52,7 +52,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   pagesOf("intelligence").map((entry) => entry.slug),
-  ["summaries", "assistant"],
+  ["summaries", "assistant", "connectors"],
 );
 
 console.log("settingsNav: all assertions passed");

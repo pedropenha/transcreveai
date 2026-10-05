@@ -7,6 +7,27 @@ use transcreve_ai_app_lib::CliArgs;
 fn main() {
     let cli_args = CliArgs::parse();
 
+    // MCP owns stdout. Branch before logs, Tauri, single-instance, audio and windows.
+    if cli_args.connectors_mcp {
+        let result = match cli_args.mcp_client_id.as_deref() {
+            Some(client_id) => tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| "MCP runtime unavailable".to_string())
+                .and_then(|runtime| {
+                    runtime.block_on(transcreve_ai_app_lib::run_connectors_mcp(client_id))
+                }),
+            None => Err("MCP client is not paired".to_string()),
+        };
+        if result.is_err() {
+            eprintln!(
+                "Connectors MCP unavailable. Open Transcreve.ai and check the paired connection."
+            );
+            std::process::exit(1);
+        }
+        return;
+    }
+
     #[cfg(target_os = "linux")]
     {
         // DMABUF renderer causes crashes on various GPU/display server configurations

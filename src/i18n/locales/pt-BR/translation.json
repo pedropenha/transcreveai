@@ -1293,6 +1293,10 @@
         "title": "Assistente",
         "description": "Qual IA responde no painel do assistente."
       },
+      "connectors": {
+        "title": "Conectores",
+        "description": "Conecte Notion e Azure DevOps independentemente do provedor de IA."
+      },
       "system": {
         "title": "Sistema",
         "description": "Inicialização, ícone na bandeja e a Flow Bar."
@@ -1471,5 +1475,21 @@
       "summaryProvider": "Resumo · {{provider}}"
     },
     "startError": "Não foi possível iniciar a reunião."
+  },
+  "connectors": {
+    "intro": "Conecte serviços para ler conteúdo selecionado. Cada conexão é independente do provedor de IA.",
+    "add": "Adicionar conexão", "addNotion": "Adicionar Notion", "addAzure": "Adicionar Azure DevOps", "edit": "Editar conexão", "configuration": "Configuração da conexão",
+    "service": "Serviço", "name": "Nome", "clientId": "ID do aplicativo", "tenant": "ID do tenant", "organization": "Organização",
+    "allowedProjects": "IDs de projetos permitidos", "allowedPages": "IDs de páginas permitidas", "pageIdsHelp": "Informe um ID de página do Notion por linha. Somente essas páginas-raiz podem ser lidas.",
+    "defaultPage": "Página padrão", "none": "Nenhuma", "choose": "Escolha…", "empty": "Nenhuma conexão ainda.",
+    "save": "Salvar", "cancel": "Cancelar", "connect": "Conectar pelo navegador", "reconnect": "Reconectar", "cancelAuthorization": "Cancelar autorização",
+    "test": "Testar acesso", "disconnect": "Desconectar", "delete": "Excluir conexão", "readable": "Acesso de leitura verificado", "notReadable": "Acesso de leitura indisponível",
+    "publicationUnknown": "A permissão de publicação ainda não foi verificada.", "redirect": "URI de redirecionamento registrada",
+    "azureDefaults": "Destinos padrão do Azure", "loadingCatalog": "Carregando destinos disponíveis…", "project": "Projeto", "team": "Equipe", "backlog": "Nível de backlog", "area": "Area Path", "workItemType": "Tipo de item", "sprintPolicy": "Sprint", "sprintAsk": "Perguntar a cada criação", "sprintFixed": "Sprint específica", "sprintCurrent": "Sprint atual da equipe", "iteration": "Sprint", "saveDefaults": "Salvar padrões",
+    "entraGuide": "Para conectar o Azure DevOps, registre um aplicativo público de desktop no Microsoft Entra com redirecionamento loopback e permissão delegada Azure DevOps user_impersonation. Informe aqui o ID público do aplicativo e o ID do tenant. Não informe client secret. Sua organização pode exigir consentimento do administrador.",
+    "entraDocs": "Orientações da Microsoft para registro e autenticação",
+    "status": { "disconnected": "Não conectado", "authorizing": "Autorizando", "ready": "Pronto", "reconnect_required": "Reconexão necessária", "temporary_failure": "Falha temporária" },
+    "errors": { "temporary_failure": "Não foi possível concluir a solicitação. Tente novamente.", "invalid_notion_page_id": "Informe UUIDs válidos de páginas do Notion, um por linha.", "invalid_destination": "Escolha projeto, equipe e sprint disponíveis. Recarregue o catálogo se o destino mudou.", "offline": "Você está offline. Reconecte antes de usar este serviço.", "auth_invalid": "A autorização expirou. Reconecte a conta.", "permission_denied": "Esta conta não tem acesso ao destino.", "policy_denied": "Este destino está fora do escopo permitido da conexão.", "resource_unavailable": "O destino selecionado está indisponível.", "vault_unavailable": "O cofre de credenciais do sistema está indisponível.", "timeout": "O serviço não respondeu a tempo. Tente novamente.", "rate_limited": "O serviço está limitando solicitações. Tente mais tarde." },
+    "mcp": { "title": "Cliente MCP local", "explanation": "Pareie um cliente local com conexões selecionadas para ler conteúdo permitido. Adicione o comando exibido à configuração desse cliente. O app precisa estar aberto.", "running": "Ponte local disponível", "stopped": "Ponte local indisponível", "clientName": "Nome do cliente", "allowedConnections": "Conexões que este cliente pode ler", "pair": "Parear cliente", "showConfig": "Exibir configuração", "revoke": "Revogar acesso", "manualSetup": "Copie este comando para a configuração do cliente MCP:", "copy": "Copiar configuração", "error": "Não foi possível atualizar o cliente local. Tente novamente." }
   }
 }

@@ -349,8 +349,8 @@ async secretHint(providerId: string) : Promise<Result<string | null, CommandErro
 }
 },
 /**
- * Validate the configured provider's vault key with a cheap health check
- * (`GET /models` where available, else a 1-token completion). Never returns
+ * Test the configured provider and selected model with a small synthetic
+ * summary. Sends no meeting content and never returns
  * the key; failures come back as `ok:false` + a classified `kind` rather
  * than a command error, since "the test failed" is a normal outcome.
  */
@@ -1921,6 +1921,126 @@ async toastSetContentHeight(height: number) : Promise<Result<null, CommandError>
     else return { status: "error", error: e  as any };
 }
 },
+async connectorListConnections() : Promise<Result<ConnectorConfig[], ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_list_connections") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorSaveConnection(input: ConnectorInput, id: string | null) : Promise<Result<ConnectorConfig, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_save_connection", { input, id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorBeginOauth(connectionId: string) : Promise<Result<ConnectorConfig, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_begin_oauth", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorCancelOauth(connectionId: string) : Promise<Result<null, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_cancel_oauth", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorDisconnect(connectionId: string) : Promise<Result<null, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_disconnect", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorDeleteConnection(connectionId: string) : Promise<Result<null, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_delete_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorTestConnection(connectionId: string) : Promise<Result<ConnectionTest, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_test_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorAzureCatalog(connectionId: string, projectId: string | null, teamId: string | null) : Promise<Result<AzureCatalog, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_azure_catalog", { connectionId, projectId, teamId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorSaveDefaults(connectionId: string, defaults: AzureDestinationDefaults) : Promise<Result<ConnectorConfig, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_save_defaults", { connectionId, defaults }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorRead(connectionId: string, resourceId: string, projectId: string | null) : Promise<Result<RemoteDocument, ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_read", { connectionId, resourceId, projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectorQuery(connectionId: string, projectId: string | null) : Promise<Result<RemoteDocument[], ConnectorError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connector_query", { connectionId, projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async mcpStatus() : Promise<Result<McpStatus, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async mcpPair(label: string, connectionIds: string[]) : Promise<Result<McpGrant, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_pair", { label, connectionIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async mcpRevoke(clientId: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_revoke", { clientId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async mcpConfig(clientId: string) : Promise<Result<McpConfiguration, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_config", { clientId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
@@ -2366,7 +2486,10 @@ pinned: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
+export type AzureCatalog = { projects: CatalogEntry[]; teams: CatalogEntry[]; backlogs: CatalogEntry[]; areas: CatalogEntry[]; iterations: CatalogEntry[]; work_item_types: CatalogEntry[] }
+export type AzureDestinationDefaults = { project_id: string; team_id: string; backlog_id: string | null; area_path: string | null; work_item_type: string | null; sprint_policy: SprintPolicy; iteration_id: string | null; iteration_path: string | null }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+export type CatalogEntry = { id: string; name: string; path: string | null; start_date: string | null; finish_date: string | null; is_current: boolean }
 /**
  * Nível de limpeza do pipeline (FR-004-11 / data-model `text.cleanup_level`).
  * 
@@ -2517,6 +2640,18 @@ export type CommandErrorCode =
  * frontend shows the first-use modal in response to this code.
  */
 "consent_required"
+export type ConnectionTest = { identity_hint: string | null; readable: boolean; publication: string }
+export type ConnectorConfig = { id: string; kind: ConnectorKind; label: string; enabled: boolean; organization: string | null; tenant: string | null; client_id: string | null; scope: ConnectorScope; policy_revision: number; status: ConnectorStatus; identity_hint: string | null; default_notion_page_id: string | null; azure_defaults: AzureDestinationDefaults | null; 
+/**
+ * DCR redirect is public metadata; never contains an authorization code.
+ */
+oauth_redirect: string | null }
+export type ConnectorError = { code: ConnectorErrorCode; message: string }
+export type ConnectorErrorCode = "auth_invalid" | "permission_denied" | "resource_unavailable" | "policy_denied" | "offline" | "rate_limited" | "timeout" | "payload_too_large" | "invalid_schema" | "cancelled" | "unsupported_capability" | "vault_unavailable" | "temporary_failure" | "busy"
+export type ConnectorInput = { kind: ConnectorKind; label: string; enabled: boolean; organization: string | null; tenant: string | null; client_id: string | null; scope: ConnectorScope; default_notion_page_id: string | null }
+export type ConnectorKind = "notion" | "azure_devops"
+export type ConnectorScope = { notion_page_ids: string[]; azure_project_ids: string[] }
+export type ConnectorStatus = "disconnected" | "authorizing" | "ready" | "reconnect_required" | "temporary_failure"
 export type CustomSounds = { start: boolean; stop: boolean }
 /**
  * Effective local model id per usage slot after inheritance is applied
@@ -2665,6 +2800,9 @@ key_hint: string | null; missing_api_key: boolean; missing_model: boolean;
  */
 offline: boolean }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+export type McpConfiguration = { command: string; args: string[]; transport: string }
+export type McpGrant = { client_id: string; label: string; connection_ids: string[]; expires_at: number; revoked: boolean }
+export type McpStatus = { running: boolean; grants: McpGrant[] }
 export type Meeting = { 
 /**
  * uuid
@@ -2944,6 +3082,7 @@ export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+export type RemoteDocument = { connection_id: string; id: string; url: string; title: string; text: string; revision: number | null; truncated: boolean }
 export type SecureInputStatus = { 
 /**
  * Secure input is currently enabled (live check)
@@ -3011,6 +3150,7 @@ exe: string | null;
  * its `.exe` suffix.
  */
 name: string }
+export type SprintPolicy = "ask" | "fixed" | "current_team"
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */

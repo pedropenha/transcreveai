@@ -58,6 +58,8 @@ O app escuta o microfone, instala um hook global de teclado, injeta teclas, lê 
 ### LLM e injeção de prompt
 
 - **FR-011-22** Chamadas de LLM **sem ferramentas**; a saída é sempre tratada como texto a inserir, nunca como comando.
+
+  Exceção autorizada F013: assistente/Notetaker pode devolver proposta estruturada tipada, validada no backend e revisada pelo usuário antes de publicação no conector. Credenciais OAuth nunca entram no modelo. Isso não habilita ferramentas gerais no pipeline de texto ou resumo.
 - **FR-011-23** Conteúdo do usuário (ditado, seleção, transcrição) sempre delimitado e declarado como dado no prompt; salvaguardas de saída da F004 (FR-004-15).
 
 ### Cadeia de suprimentos
@@ -66,6 +68,8 @@ O app escuta o microfone, instala um hook global de teclado, injeta teclas, lê 
 - **FR-011-25** Instalador e binários assinados; atualizações assinadas (chave do updater do Tauri).
 - **FR-011-26** Auditoria de dependências conforme `rules/rust/security.md` (`cargo audit`, `cargo deny check`) e equivalente para o frontend; lockfiles versionados.
 - **FR-011-27** Nenhum servidor HTTP/WebSocket local exposto na v1 — por isso os itens de `rules/common/security.md` sobre endpoints (CSRF, rate limiting, autenticação) não se aplicam hoje. Se um dia existir um (ex.: MCP, como o Wispr tem), esses itens passam a valer integralmente.
+
+  F013 autoriza callback OAuth temporário de loopback, com state/PKCE, limite de tamanho, tentativa de uso único e timeout, e IPC de bridge local pareado. Não autoriza listener MCP TCP público. Saída de rede inclui endpoints OAuth e APIs/MCP dos conectores habilitados, conforme FR-013-06/22/23 e [oauth.md](../013-connectors/oauth.md); offline bloqueia essas chamadas. Privacidade deve discriminar conteúdo enviado ao serviço e contexto enviado à IA.
 
 ## Critérios de aceitação
 
