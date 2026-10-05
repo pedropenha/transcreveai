@@ -39,6 +39,7 @@
 .connector-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  align-items: start;
   gap: 14px;
 }
 .connector-field {
@@ -81,13 +82,47 @@
   align-items: center;
   gap: 8px;
   font-size: var(--fs-sm);
+  min-width: 0;
 }
-.connector-scope input {
+.connector-scope input[type="checkbox"] {
   width: 18px;
   height: 18px;
+  flex-shrink: 0;
+}
+.connector-scope-filter {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  background: var(--panel);
+  font-size: var(--fs-sm);
+}
+.connector-scope-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 4px 14px;
+  max-height: 168px;
+  overflow-y: auto;
+  padding-right: 6px;
 }
 .connector-wide {
   grid-column: 1 / -1;
+}
+.connector-advanced summary {
+  cursor: pointer;
+  color: var(--text-muted, #586159);
+  font-size: 0.85rem;
+}
+.connector-advanced[open] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 14px;
+}
+.connector-advanced[open] summary {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
 }
 .connector-actions {
   display: flex;
@@ -134,12 +169,6 @@
   background: transparent;
   text-decoration: underline;
   cursor: pointer;
-}
-.connector-defaults {
-  display: grid;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
 }
 .connector-error,
 .connector-card [role="alert"] {

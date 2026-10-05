@@ -4,15 +4,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   connectorApi,
   type AzureCatalog,
-  type AzureDestinationDefaults,
-  type CatalogEntry,
   type ConnectorConfig,
   type ConnectorInput,
   type ConnectorKind,
   type ConnectionTest,
-  type SprintPolicy,
 } from "./api";
-import { buildAzureDefaults, normalizeNotionPages } from "./connectorModel";
+import { normalizeNotionPages } from "./connectorModel";
 import { McpClientSettings } from "./McpClientSettings";
 import "./connectors.css";
 
@@ -35,240 +32,13 @@ const asMessage = (error: unknown): string => {
   return "temporary_failure";
 };
 
-const findPath = (items: CatalogEntry[], id: string | null) =>
-  items.find((item) => item.id === id)?.path ?? null;
-
-interface ChoiceProps {
-  label: string;
-  value: string | null;
-  options: CatalogEntry[];
-  onChange: (value: string | null) => void;
-  required?: boolean;
-  disabled?: boolean;
-}
-
-function CatalogChoice({
-  label,
-  value,
-  options,
-  onChange,
-  required,
-  disabled,
-}: ChoiceProps) {
-  const { t } = useTranslation();
-  return (
-    <label className="connector-field">
-      <span>{label}</span>
-      <select
-        value={value ?? ""}
-        onChange={(event) => onChange(event.target.value || null)}
-        required={required}
-        disabled={disabled}
-      >
-        <option value="">{t("connectors.choose")}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function AzureDefaults({
-  connection,
-  onSaved,
-}: {
-  connection: ConnectorConfig;
-  onSaved: (config: ConnectorConfig) => void;
-}) {
-  const { t } = useTranslation();
-  const [catalog, setCatalog] = useState<AzureCatalog | null>(null);
-  const [draft, setDraft] = useState<AzureDestinationDefaults>(
-    () =>
-      connection.azure_defaults ?? {
-        project_id: "",
-        team_id: "",
-        backlog_id: null,
-        area_path: null,
-        work_item_type: null,
-        sprint_policy: "ask",
-        iteration_id: null,
-        iteration_path: null,
-      },
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let active = true;
-    connectorApi
-      .catalog(
-        connection.id,
-        draft.project_id || undefined,
-        draft.team_id || undefined,
-      )
-      .then((value) => {
-        if (active) setCatalog(value);
-      })
-      .catch((reason: unknown) => {
-        if (active) setError(asMessage(reason));
-      });
-    return () => {
-      active = false;
-    };
-  }, [connection.id, draft.project_id, draft.team_id]);
-
-  const update = (patch: Partial<AzureDestinationDefaults>) =>
-    setDraft((old) => ({ ...old, ...patch }));
-  const save = async () => {
-    if (!catalog) return;
-    const checked = buildAzureDefaults(draft, catalog);
-    if (!checked) {
-      setError("invalid_destination");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      onSaved(await connectorApi.saveDefaults(connection.id, checked));
-    } catch (reason) {
-      setError(asMessage(reason));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <section
-      className="connector-defaults"
-      aria-label={t("connectors.azureDefaults")}
-    >
-      <h3>{t("connectors.azureDefaults")}</h3>
-      {!catalog ? (
-        <p>{t("connectors.loadingCatalog")}</p>
-      ) : (
-        <div className="connector-grid">
-          <CatalogChoice
-            label={t("connectors.project")}
-            value={draft.project_id}
-            options={catalog.projects}
-            required
-            onChange={(id) =>
-              update({
-                project_id: id ?? "",
-                team_id: "",
-                backlog_id: null,
-                area_path: null,
-                work_item_type: null,
-                iteration_id: null,
-                iteration_path: null,
-              })
-            }
-          />
-          <CatalogChoice
-            label={t("connectors.team")}
-            value={draft.team_id}
-            options={catalog.teams}
-            required
-            disabled={!draft.project_id}
-            onChange={(id) =>
-              update({
-                team_id: id ?? "",
-                backlog_id: null,
-                area_path: null,
-                work_item_type: null,
-                iteration_id: null,
-                iteration_path: null,
-              })
-            }
-          />
-          <CatalogChoice
-            label={t("connectors.backlog")}
-            value={draft.backlog_id}
-            options={catalog.backlogs}
-            disabled={!draft.team_id}
-            onChange={(id) => update({ backlog_id: id })}
-          />
-          <CatalogChoice
-            label={t("connectors.area")}
-            value={
-              catalog.areas.find((item) => item.path === draft.area_path)?.id ??
-              null
-            }
-            options={catalog.areas}
-            disabled={!draft.team_id}
-            onChange={(id) =>
-              update({ area_path: findPath(catalog.areas, id) })
-            }
-          />
-          <CatalogChoice
-            label={t("connectors.workItemType")}
-            value={draft.work_item_type}
-            options={catalog.work_item_types}
-            disabled={!draft.team_id}
-            onChange={(id) => update({ work_item_type: id })}
-          />
-          <label className="connector-field">
-            <span>{t("connectors.sprintPolicy")}</span>
-            <select
-              value={draft.sprint_policy}
-              disabled={!draft.team_id}
-              onChange={(event) =>
-                update({
-                  sprint_policy: event.target.value as SprintPolicy,
-                  iteration_id: null,
-                  iteration_path: null,
-                })
-              }
-            >
-              <option value="ask">{t("connectors.sprintAsk")}</option>
-              <option value="fixed">{t("connectors.sprintFixed")}</option>
-              <option value="current_team">
-                {t("connectors.sprintCurrent")}
-              </option>
-            </select>
-          </label>
-          {draft.sprint_policy === "fixed" && (
-            <CatalogChoice
-              label={t("connectors.iteration")}
-              value={draft.iteration_id}
-              options={catalog.iterations}
-              required
-              onChange={(id) =>
-                update({
-                  iteration_id: id,
-                  iteration_path: findPath(catalog.iterations, id),
-                })
-              }
-            />
-          )}
-        </div>
-      )}
-      {error && (
-        <p role="alert">
-          {t(`connectors.errors.${error}`, {
-            defaultValue: t("connectors.errors.temporary_failure"),
-          })}
-        </p>
-      )}
-      <button
-        className="connector-button"
-        type="button"
-        onClick={save}
-        disabled={busy || !catalog || !draft.project_id || !draft.team_id}
-      >
-        {t("connectors.saveDefaults")}
-      </button>
-    </section>
-  );
-}
-
 export function ConnectorSettings() {
   const { t } = useTranslation();
   const [connections, setConnections] = useState<ConnectorConfig[]>([]);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [form, setForm] = useState<ConnectorInput>(blank("notion"));
   const [notionPages, setNotionPages] = useState("");
+  const [scopeFilter, setScopeFilter] = useState("");
   const [catalogs, setCatalogs] = useState<Record<string, AzureCatalog>>({});
   const [tests, setTests] = useState<Record<string, ConnectionTest>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -308,6 +78,7 @@ export function ConnectorSettings() {
         : blank("notion"),
     );
     setNotionPages(connection?.scope.notion_page_ids.join("\n") ?? "");
+    setScopeFilter("");
     if (connection?.kind === "azure_devops") loadCatalog(connection.id);
   };
   const loadCatalog = (id: string) => {
@@ -440,31 +211,34 @@ export function ConnectorSettings() {
                 >
                   {t("connectors.entraDocs")}
                 </button>
-                <label className="connector-field">
-                  <span>{t("connectors.clientId")}</span>
-                  <input
-                    value={form.client_id ?? ""}
-                    aria-describedby="azure-client-id-hint"
-                    onChange={(event) =>
-                      update({ client_id: event.target.value || null })
-                    }
-                  />
-                </label>
-                <p
-                  id="azure-client-id-hint"
-                  className="connector-help connector-wide"
-                >
-                  {t("connectors.clientIdHint")}
-                </p>
-                <label className="connector-field">
-                  <span>{t("connectors.tenant")}</span>
-                  <input
-                    value={form.tenant ?? ""}
-                    onChange={(event) =>
-                      update({ tenant: event.target.value || null })
-                    }
-                  />
-                </label>
+                <details className="connector-advanced connector-wide">
+                  <summary>{t("connectors.advanced")}</summary>
+                  <label className="connector-field">
+                    <span>{t("connectors.clientId")}</span>
+                    <input
+                      value={form.client_id ?? ""}
+                      aria-describedby="azure-client-id-hint"
+                      onChange={(event) =>
+                        update({ client_id: event.target.value || null })
+                      }
+                    />
+                  </label>
+                  <p
+                    id="azure-client-id-hint"
+                    className="connector-help connector-wide"
+                  >
+                    {t("connectors.clientIdHint")}
+                  </p>
+                  <label className="connector-field">
+                    <span>{t("connectors.tenant")}</span>
+                    <input
+                      value={form.tenant ?? ""}
+                      onChange={(event) =>
+                        update({ tenant: event.target.value || null })
+                      }
+                    />
+                  </label>
+                </details>
                 <label className="connector-field">
                   <span>{t("connectors.organization")}</span>
                   <input
@@ -475,34 +249,49 @@ export function ConnectorSettings() {
                   />
                 </label>
                 {editing !== "new" && catalogs[editing] && (
-                  <fieldset className="connector-scope">
+                  <fieldset className="connector-scope connector-wide">
                     <legend>{t("connectors.allowedProjects")}</legend>
-                    {catalogs[editing].projects.map((project) => (
-                      <label key={project.id}>
-                        <input
-                          type="checkbox"
-                          checked={form.scope.azure_project_ids.includes(
-                            project.id,
-                          )}
-                          onChange={(event) =>
-                            update({
-                              scope: {
-                                ...form.scope,
-                                azure_project_ids: event.target.checked
-                                  ? [
-                                      ...form.scope.azure_project_ids,
-                                      project.id,
-                                    ]
-                                  : form.scope.azure_project_ids.filter(
-                                      (id) => id !== project.id,
-                                    ),
-                              },
-                            })
-                          }
-                        />
-                        {project.name}
-                      </label>
-                    ))}
+                    <input
+                      type="text"
+                      className="connector-scope-filter"
+                      placeholder={t("connectors.filterProjects")}
+                      value={scopeFilter}
+                      onChange={(event) => setScopeFilter(event.target.value)}
+                    />
+                    <div className="connector-scope-list">
+                      {catalogs[editing].projects
+                        .filter((project) =>
+                          project.name
+                            .toLowerCase()
+                            .includes(scopeFilter.toLowerCase()),
+                        )
+                        .map((project) => (
+                          <label key={project.id}>
+                            <input
+                              type="checkbox"
+                              checked={form.scope.azure_project_ids.includes(
+                                project.id,
+                              )}
+                              onChange={(event) =>
+                                update({
+                                  scope: {
+                                    ...form.scope,
+                                    azure_project_ids: event.target.checked
+                                      ? [
+                                          ...form.scope.azure_project_ids,
+                                          project.id,
+                                        ]
+                                      : form.scope.azure_project_ids.filter(
+                                          (id) => id !== project.id,
+                                        ),
+                                  },
+                                })
+                              }
+                            />
+                            {project.name}
+                          </label>
+                        ))}
+                    </div>
                   </fieldset>
                 )}
               </>
@@ -688,18 +477,6 @@ export function ConnectorSettings() {
               · {t("connectors.publicationUnknown")}
             </p>
           )}
-          {connection.kind === "azure_devops" &&
-            connection.status === "ready" && (
-              <AzureDefaults
-                key={`${connection.id}:${connection.policy_revision}`}
-                connection={connection}
-                onSaved={(config) =>
-                  setConnections((old) =>
-                    old.map((item) => (item.id === config.id ? config : item)),
-                  )
-                }
-              />
-            )}
           {connection.kind === "notion" &&
             connection.default_notion_page_id && (
               <p className="connector-help">
