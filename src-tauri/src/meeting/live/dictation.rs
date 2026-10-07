@@ -60,14 +60,31 @@ impl DictationTracker {
         })
     }
 
-    /// Whether `[start_ms, end_ms)` overlaps any dictation interval; the
-    /// open one counts to +∞.
-    pub fn overlaps(&self, start_ms: i64, end_ms: i64) -> bool {
+    /// The dictation intervals that fall inside `[start_ms, end_ms)`, each
+    /// clipped to that window and sorted by start. The open interval is
+    /// clipped to `end_ms`.
+    ///
+    /// A block-level pass needs the boundaries themselves, not just "is this
+    /// range tainted?": it splits the block *at* them rather than excluding
+    /// the whole block — AC-009-03 at block granularity. An empty result
+    /// therefore also answers "nothing dictated here".
+    pub fn intervals_within(&self, start_ms: i64, end_ms: i64) -> Vec<(i64, i64)> {
         if end_ms <= start_ms {
-            return false;
+            return Vec::new();
         }
-        self.closed.iter().any(|&(a, b)| start_ms < b && end_ms > a)
-            || self.open_since.is_some_and(|a| end_ms > a)
+        let mut out: Vec<(i64, i64)> = self
+            .closed
+            .iter()
+            .copied()
+            .chain(self.open_since.map(|a| (a, end_ms)))
+            .filter_map(|(a, b)| {
+                let lo = a.max(start_ms);
+                let hi = b.min(end_ms);
+                (hi > lo).then_some((lo, hi))
+            })
+            .collect();
+        out.sort_unstable();
+        out
     }
 }
 
@@ -75,30 +92,36 @@ impl DictationTracker {
 mod tests {
     use super::*;
 
+    /// "Does this range touch a dictation?" — an empty interval list is the
+    /// answer, so the overlap semantics stay pinned by their own tests.
+    fn overlaps(tracker: &DictationTracker, start_ms: i64, end_ms: i64) -> bool {
+        !tracker.intervals_within(start_ms, end_ms).is_empty()
+    }
+
     #[test]
     fn dictation_interval_excludes_overlapping_ranges() {
         let mut tracker = DictationTracker::default();
         tracker.begin(1_000);
         // While open, everything that reaches into it is excluded.
-        assert!(tracker.overlaps(500, 1_500));
-        assert!(tracker.overlaps(1_000, 1_001));
+        assert!(overlaps(&tracker, 500, 1_500));
+        assert!(overlaps(&tracker, 1_000, 1_001));
         assert!(
-            !tracker.overlaps(0, 1_000),
+            !overlaps(&tracker, 0, 1_000),
             "ends exactly at open → no overlap"
         );
         assert!(
-            !tracker.overlaps(2_000, 2_000),
+            !overlaps(&tracker, 2_000, 2_000),
             "empty range never overlaps"
         );
 
         assert_eq!(tracker.end(5_000), Some((1_000, 5_000)));
-        assert!(tracker.overlaps(4_999, 5_500));
+        assert!(overlaps(&tracker, 4_999, 5_500));
         assert!(
-            !tracker.overlaps(5_000, 9_000),
+            !overlaps(&tracker, 5_000, 9_000),
             "start < b fails at the edge"
         );
-        assert!(tracker.overlaps(999, 1_001));
-        assert!(!tracker.overlaps(0, 1_000));
+        assert!(overlaps(&tracker, 999, 1_001));
+        assert!(!overlaps(&tracker, 0, 1_000));
     }
 
     #[test]
@@ -114,14 +137,51 @@ mod tests {
     }
 
     #[test]
+    fn intervals_within_clips_to_the_window_and_sorts() {
+        let mut tracker = DictationTracker::default();
+        tracker.begin(1_000);
+        tracker.end(5_000);
+        tracker.begin(20_000);
+        tracker.end(22_000);
+
+        // Fully inside.
+        assert_eq!(
+            tracker.intervals_within(0, 60_000),
+            vec![(1_000, 5_000), (20_000, 22_000)]
+        );
+        // Clipped on both sides, and intervals outside drop out entirely.
+        assert_eq!(
+            tracker.intervals_within(2_000, 21_000),
+            vec![(2_000, 5_000), (20_000, 21_000)]
+        );
+        // Touching the edge is not an overlap, so it yields nothing.
+        assert!(tracker.intervals_within(5_000, 20_000).is_empty());
+        assert!(tracker.intervals_within(100, 100).is_empty());
+        assert!(tracker.intervals_within(500, 400).is_empty());
+    }
+
+    #[test]
+    fn intervals_within_clips_the_open_interval_to_the_window() {
+        let mut tracker = DictationTracker::default();
+        tracker.begin(30_000);
+        // An open dictation runs to +∞; inside a window it ends at the edge.
+        assert_eq!(tracker.intervals_within(0, 60_000), vec![(30_000, 60_000)]);
+        assert_eq!(
+            tracker.intervals_within(40_000, 50_000),
+            vec![(40_000, 50_000)]
+        );
+        assert!(tracker.intervals_within(0, 30_000).is_empty());
+    }
+
+    #[test]
     fn dictation_spanning_blocks_is_one_interval() {
         // AC-009-03: a dictation crossing a block boundary is one marker —
         // the interval lives on the meeting clock, not per block.
         let mut tracker = DictationTracker::default();
         tracker.begin(55_000);
         tracker.end(65_000);
-        assert!(tracker.overlaps(59_000, 61_000));
-        assert!(tracker.overlaps(50_000, 70_000));
+        assert!(overlaps(&tracker, 59_000, 61_000));
+        assert!(overlaps(&tracker, 50_000, 70_000));
     }
 
     #[test]

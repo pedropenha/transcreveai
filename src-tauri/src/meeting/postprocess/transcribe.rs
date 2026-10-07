@@ -28,21 +28,18 @@ use crate::db::meetings::{
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::meeting::blocks::{scan_meeting_blocks, ScannedBlock, Track};
+use crate::meeting::live::{block_spans, transcript_pipeline, transcript_text};
+use crate::pipeline::PipelineInput;
 use crate::settings::{AppSettings, VadBackend};
 use crate::stt::local::LocalSttProvider;
 use crate::stt::orchestrator::SttOrchestrator;
 use crate::stt::selection::effective_meeting_model_id;
 use crate::stt::types::{AudioBuffer, SttOptions};
 
-use super::coverage::{covered_ranges, pending_spans, resolve_spans, speech_regions, BlockSpan};
+use super::coverage::{covered_ranges, pending_spans, resolve_spans, BlockSpan};
 use super::prompt::speaker_for_track;
 use super::{Worker, PCT_TRANSCRIBE_DONE, PCT_TRANSCRIBE_START, STEP_TRANSCRIBE};
 
-/// FR-009-15: pending blocks are VAD-sliced into ≤ 30 s sub-segments.
-const MAX_REGION_MS: u64 = 30_000;
-/// Silence shorter than this keeps a speech region open — same constant the
-/// recorder's offline profile uses (`VAD_OFFLINE_HANGOVER_MS`).
-const MERGE_GAP_MS: u64 = crate::audio_toolkit::vad::VAD_OFFLINE_HANGOVER_MS;
 /// VAD thresholds mirroring `managers::audio` (they are private there;
 /// duplicated deliberately so post-processing does not depend on the
 /// recorder's internals).
@@ -162,8 +159,11 @@ impl Worker {
                 .filter(|l| !l.is_empty() && l != "auto"),
             vocabulary_hints: settings.custom_words.clone(),
             diarize: false,
-            timeout: SttOrchestrator::dictation_timeout(MAX_REGION_MS as f64 / 1000.0),
+            // Placeholder: `transcribe_block` overrides it per block with
+            // the real audio length (`block_timeout`).
+            timeout: SttOrchestrator::block_timeout(0.0),
         };
+        let text_pipeline = transcript_pipeline(&settings);
         let mut vad = self.make_vad(&settings).ok_or_else(|| {
             CommandError::new(
                 CommandErrorCode::Internal,
@@ -173,7 +173,14 @@ impl Worker {
 
         let total = pending.len();
         for (done, pending) in pending.iter().enumerate() {
-            match self.transcribe_block(&orchestrator, vad.as_mut(), &opts, meeting, pending) {
+            match self.transcribe_block(
+                &orchestrator,
+                vad.as_mut(),
+                &opts,
+                &text_pipeline,
+                meeting,
+                pending,
+            ) {
                 Ok(produced) => {
                     log::debug!(
                         "Meeting {}: block {}-{:04} produced {} segment(s)",
@@ -297,15 +304,25 @@ impl Worker {
         }
     }
 
-    /// Transcribe one pending block: VAD → ≤ 30 s speech regions → one STT
-    /// call per region → `meeting_segments` rows + `meeting://segment`
-    /// events. Speaker labels use the track defaults — `Você`/`Outros` —
-    /// until step 3's diarization lands (P1).
+    /// Transcribe one pending block in **one** STT call → a
+    /// `meeting_segments` row + a `meeting://segment` event. Speaker labels
+    /// use the track defaults — `Você`/`Outros` — until step 3's diarization
+    /// lands (P1).
+    ///
+    /// The VAD only trims the block's outer silence here, exactly as the
+    /// live pass does (`live::spans`): slicing a block into speech regions
+    /// and calling the engine per region measured worse on real meeting
+    /// audio, so both paths now hand the engine the whole block. Dictation
+    /// intervals are not consulted — unlike the live pass, the post-pass has
+    /// no tracker (the intervals die with the session), so a dictation
+    /// inside a block that only post-processing reaches is not excluded.
+    /// That gap predates this change.
     fn transcribe_block(
         &mut self,
         orchestrator: &SttOrchestrator,
         vad: &mut dyn VoiceActivityDetector,
         opts: &SttOptions,
+        text_pipeline: &PipelineInput,
         meeting: &Meeting,
         pending: &PendingBlock,
     ) -> anyhow::Result<usize> {
@@ -329,28 +346,36 @@ impl Worker {
             voiced.push(verdict);
         }
 
-        let regions = speech_regions(&voiced, frame_ms, MERGE_GAP_MS, MAX_REGION_MS);
+        let total_ms = (samples.len() as u64 * 1_000) / 16_000;
+        let spans = block_spans(total_ms, frame_ms, &voiced, &[]);
         let mut produced = 0usize;
         let speaker = speaker_for_track(pending.track);
-        for (region_start_ms, region_end_ms) in regions {
-            let sample_start = (region_start_ms * 16) as usize;
-            let sample_end = ((region_end_ms * 16) as usize).min(samples.len());
+        for span in spans {
+            let (sample_start, sample_end) = span.samples(samples.len());
             if sample_start >= sample_end {
                 continue;
             }
             let audio = AudioBuffer::dictation(samples[sample_start..sample_end].to_vec());
+            // A whole block needs the block deadline, not the utterance one.
+            let opts = SttOptions {
+                timeout: SttOrchestrator::block_timeout(audio.duration_secs()),
+                ..opts.clone()
+            };
             let outcome = orchestrator
-                .transcribe_blocking(audio, opts)
+                .transcribe_blocking(audio, &opts)
                 .map_err(|e| anyhow::anyhow!("meeting block transcription failed: {}", e))?;
-            let text = outcome.transcript.text.trim().to_string();
-            if text.is_empty() {
+            let raw = outcome.transcript.text.trim();
+            if raw.is_empty() {
                 continue;
             }
+            // Same deterministic text pipeline the live pass applies, so a
+            // block transcribed late reads like one transcribed live.
+            let text = transcript_text(text_pipeline, raw);
             let mut segment = MeetingSegment::new(
                 &meeting.id,
                 pending.track.label(),
-                pending.span.start_ms + region_start_ms as i64,
-                pending.span.start_ms + region_end_ms as i64,
+                pending.span.start_ms + span.start_ms as i64,
+                pending.span.start_ms + span.end_ms as i64,
                 &text,
             );
             segment.speaker = Some(speaker.to_string());

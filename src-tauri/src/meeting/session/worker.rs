@@ -35,7 +35,7 @@ use crate::db::notes::{Note, NoteRepository, SqliteNoteRepository};
 use crate::managers::audio::AudioRecordingManager;
 use crate::meeting::blocks::{meeting_audio_dir, SealedBlock, Track};
 use crate::meeting::capture::{
-    CaptureConfig, MeetingCapture, MeetingCaptureEvent, MicTap, SystemSource, LIVE_CHUNK_DURATION,
+    CaptureConfig, MeetingCapture, MeetingCaptureEvent, MicTap, SystemSource,
 };
 use crate::meeting::live::{
     dictation_marker_text, DictationTracker, LiveTranscriber, SharedDictationTracker,
@@ -493,13 +493,10 @@ impl Worker {
         } else {
             SystemSource::Disabled
         };
-        // FR-009-15: with live transcription on, the writers also emit ~8 s
-        // live chunks so text lands well before the 60 s block seals.
-        let live_chunk_samples = if get_settings(&self.app).meeting_live_transcript_enabled {
-            LIVE_CHUNK_DURATION.as_secs() as usize * WHISPER_SAMPLE_RATE as usize
-        } else {
-            0
-        };
+        // FR-009-15 (amended by ADR-0005): a block reaches the engine whole,
+        // so there are no sub-block chunks to emit. "Live transcription" now
+        // means "transcribe each block as it seals", and its gate is the
+        // transcriber thread itself — spawned only when the setting is on.
         // The Flow Bar's meeting waveform meters BOTH tracks: the mic side
         // emits `audio://level` through the shared recorder's visualizer, but
         // remote participants only ever reach the loopback — meter it here on
@@ -534,7 +531,6 @@ impl Worker {
                 time_base,
                 next_mic_index,
                 next_system_index,
-                live_chunk_samples,
                 system_level_cb,
                 ..CaptureConfig::default()
             },
@@ -604,19 +600,6 @@ impl Worker {
 
     fn handle_capture_event(&mut self, event: MeetingCaptureEvent) {
         let now = Instant::now();
-        if let MeetingCaptureEvent::LiveChunk {
-            track,
-            start_offset_ms,
-            samples,
-        } = event
-        {
-            // Live feed only — no machine state, no bookkeeping; the block
-            // pass re-covers anything a chunk misses.
-            if let Some(transcriber) = &self.transcriber {
-                transcriber.enqueue_chunk(track, start_offset_ms, samples);
-            }
-            return;
-        }
         if let MeetingCaptureEvent::BlockSealed(block) = event {
             // Bookkeeping first — the pending row and the live queue matter
             // even when the machine is already gone (stop-time tails still
@@ -664,7 +647,7 @@ impl Worker {
             return;
         };
         match event {
-            MeetingCaptureEvent::BlockSealed(_) | MeetingCaptureEvent::LiveChunk { .. } => {}
+            MeetingCaptureEvent::BlockSealed(_) => {}
             MeetingCaptureEvent::TrackUnavailable { track, message } => {
                 log::warn!("Meeting {:?} track unavailable: {message}", track);
                 machine.track_unavailable(track);

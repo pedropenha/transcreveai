@@ -134,71 +134,6 @@ pub fn pending_spans<'a>(spans: &'a [BlockSpan], covered: &[(i64, i64)]) -> Vec<
         .collect()
 }
 
-/// Speech regions of a VAD's per-frame verdicts, merged and bounded.
-///
-/// - `voiced`: one `bool` per `frame_ms`-sized frame (16 ms Earshot, 30 ms
-///   Silero — caller passes the backend's frame width).
-/// - `merge_gap_ms`: silence shorter than this keeps a region open
-///   (the recorder's offline hangover, 450 ms).
-/// - `max_region_ms`: FR-009-15's 30 s bound — a long unbroken run is split
-///   at the first silence after the bound, or hard-split when none comes.
-///
-/// Returns `(start_ms, end_ms)` ranges in the block's local clock.
-pub fn speech_regions(
-    voiced: &[bool],
-    frame_ms: u64,
-    merge_gap_ms: u64,
-    max_region_ms: u64,
-) -> Vec<(u64, u64)> {
-    if frame_ms == 0 {
-        return Vec::new();
-    }
-    let merge_gap_frames = merge_gap_ms.div_ceil(frame_ms) as usize;
-    let max_region_frames = max_region_ms.div_ceil(frame_ms) as usize;
-
-    // First pass: merge voiced frames, closing a region when silence exceeds
-    // the merge gap.
-    let mut regions: Vec<(usize, usize)> = Vec::new(); // frame indices [s, e)
-    for (i, is_voiced) in voiced.iter().enumerate() {
-        if !is_voiced {
-            continue;
-        }
-        match regions.last_mut() {
-            // Extend the open region only when the silence between it and
-            // this frame stays under the merge gap. `end` is exclusive, so
-            // `i - end` is the number of silent frames in between.
-            Some((_, end)) if i.saturating_sub(*end) <= merge_gap_frames => {
-                *end = i + 1;
-            }
-            _ => regions.push((i, i + 1)),
-        }
-    }
-
-    // Second pass: bound each region to `max_region_frames`, splitting at the
-    // deepest silence inside the window when possible — a pause mid-sentence
-    // is a cleaner cut than an arbitrary frame.
-    let mut bounded: Vec<(u64, u64)> = Vec::with_capacity(regions.len());
-    for (start, end) in regions {
-        let mut cursor = start;
-        while end - cursor > max_region_frames {
-            let hard_end = (cursor + max_region_frames).min(end);
-            // Prefer the last silent frame inside the window.
-            let split = voiced[cursor..hard_end]
-                .iter()
-                .rposition(|v| !*v)
-                .map(|rel| cursor + rel + 1)
-                .filter(|split| *split > cursor)
-                .unwrap_or(hard_end);
-            bounded.push((cursor as u64 * frame_ms, split as u64 * frame_ms));
-            cursor = split;
-        }
-        if end > cursor {
-            bounded.push((cursor as u64 * frame_ms, end as u64 * frame_ms));
-        }
-    }
-    bounded
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,43 +254,6 @@ mod tests {
         // Full coverage → nothing pending.
         let covered = vec![(0, 60_000), (60_000, 120_000)];
         assert!(pending_spans(&spans, &covered).is_empty());
-    }
-
-    #[test]
-    fn speech_regions_merge_short_silences() {
-        // 16 ms frames; 5 voiced, 2 silent (32 ms < 450 ms merge), 6 voiced.
-        let mut voiced = vec![true; 5];
-        voiced.extend([false, false]);
-        voiced.extend(vec![true; 6]);
-        let regions = speech_regions(&voiced, 16, 450, 30_000);
-        assert_eq!(regions, vec![(0, 13 * 16)]);
-    }
-
-    #[test]
-    fn speech_regions_split_on_long_silence() {
-        let mut voiced = vec![true; 2];
-        voiced.extend(vec![false; 6]); // 96 ms > merge? no — test with merge 50
-        voiced.extend(vec![true; 2]);
-        let regions = speech_regions(&voiced, 10, 50, 30_000);
-        assert_eq!(regions, vec![(0, 20), (80, 100)]);
-    }
-
-    #[test]
-    fn speech_regions_split_at_bound() {
-        // 45 frames of unbroken speech, 30-frame bound → 30 + 15.
-        let voiced = vec![true; 45];
-        let regions = speech_regions(&voiced, 100, 0, 3_000);
-        assert_eq!(regions, vec![(0, 3_000), (3_000, 4_500)]);
-    }
-
-    #[test]
-    fn speech_regions_prefer_a_silence_split_inside_the_bound() {
-        // A 40-frame run with a one-frame pause at 25 (merged, 100 ms < 150)
-        // exceeds the 30-frame bound → cut at the pause, not at the bound.
-        let mut voiced = vec![true; 40];
-        voiced[25] = false;
-        let regions = speech_regions(&voiced, 100, 150, 3_000);
-        assert_eq!(regions, vec![(0, 2_600), (2_600, 4_000)]);
     }
 
     #[test]

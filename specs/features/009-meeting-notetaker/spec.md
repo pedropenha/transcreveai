@@ -45,7 +45,9 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
   e cronômetro pertencem exclusivamente ao novo ID. Eventos e consultas
   atrasados da reunião anterior não podem contaminar a nova. A hidratação
   da mesma reunião continua preservando os segmentos recebidos ao vivo.
-- **FR-009-15** Transcrição ao vivo (configurável, padrão ligada): cada trilha é segmentada por VAD (blocos ≤ 30 s) e enviada ao provedor de reuniões; atraso alvo ≤ 10 s. Com a opção desligada, transcreve só ao final. Na v1 o provedor é sempre local; se o modelo estiver ocupado/indisponível, os blocos entram em fila.
+- **FR-009-15** Transcrição durante a reunião (configurável, padrão ligada): cada bloco selado de 60 s por trilha é enviado **inteiro, numa única chamada** ao provedor de reuniões assim que sela — o atraso é a cadência do bloco (~60 s), não um alvo de latência. O VAD apara só o silêncio das pontas (450 ms de folga de cada lado) e descarta blocos sem fala; pausas internas permanecem na chamada. Com a opção desligada, transcreve só ao final, pelo mesmo caminho. Na v1 o provedor é sempre local; se o modelo estiver ocupado/indisponível, os blocos entram em fila.
+  - Fatiar o bloco por fala foi medido como pior (15% das falas sem texto, alucinações nas bordas dos cortes, frases quebradas) e mais lento — ver [ADR-0005](../../../docs/adr/0005-transcricao-de-reuniao-por-bloco.md). O preço aceito: as linhas do transcript têm granularidade de bloco, não de frase.
+- **FR-009-16** O texto de cada segmento de reunião passa pelo mesmo pipeline determinístico do ditado (normalizar → dicionário → limpeza `light`), **sem** a etapa de comandos de voz: numa reunião "enviar" ou "nova linha" são fala, não comando.
 
 ### Pós-processamento
 
@@ -102,7 +104,7 @@ Em Configurações → Resumos de reunião, o usuário pode testar o provedor e 
 
 - **AC-009-01** _Dado_ uma chamada de teste no Meet com outra pessoa falando, _quando_ gravo 5 min e paro, _então_ a transcrição tem falas de `Você` e de `Outros` nas posições corretas e o resumo lista as decisões combinadas.
 - **AC-009-02** _Quando_ fecho a janela da reunião, _então_ a gravação continua (cronômetro na Flow Bar) e reabrir mostra tudo.
-- **AC-009-03** _Dado_ uma gravação ativa, _quando_ dito uma mensagem no Slack com `Ctrl+Win`, _então_ o texto vai para o Slack, **não** aparece na transcrição e há um marcador "Ditado" no horário.
+- **AC-009-03** _Dado_ uma gravação ativa, _quando_ dito uma mensagem no Slack com `Ctrl+Win`, _então_ o texto vai para o Slack, **não** aparece na transcrição e há um marcador "Ditado" no horário. O bloco de `mic` que contém o ditado é dividido nas fronteiras do intervalo: só o trecho ditado fica excluído, e a fala de reunião em volta dele continua na ata (ADR-0005). A trilha `system` nunca é excluída.
 - **AC-009-04** _Quando_ mato o processo durante uma gravação e reabro o app, _então_ a reunião aparece como recuperada e, ao processar, contém tudo até ≤ 60 s antes do crash.
 - **AC-009-05** _Quando_ troco do alto-falante para um fone Bluetooth durante a gravação, _então_ o áudio dos outros continua sendo capturado.
 - **AC-009-06** _Dado_ "Minhas notas" com "cliente pediu desconto", _então_ o resumo considera essa informação e o texto de "Minhas notas" permanece idêntico após gerar o resumo.

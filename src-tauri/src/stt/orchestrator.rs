@@ -150,6 +150,19 @@ impl SttOrchestrator {
         Duration::from_secs(15) + Duration::from_secs_f64(audio_secs / 10.0)
     }
 
+    /// Deadline for a meeting block, which reaches the engine as one whole
+    /// sealed block — ~60 s of audio against a dictation's few seconds.
+    ///
+    /// `dictation_timeout`'s "15 s + audio/10" assumes an utterance: at 60 s
+    /// it allows 21 s, and Whisper Large v3 Turbo measured 17 s for a 60 s
+    /// block on a warm GPU (Parakeet v3 1.3 s, Nemotron 4 s). Four seconds
+    /// of headroom is not a budget — a cold load, a CPU fallback or a busy
+    /// machine would abandon work that is merely slow. This allows real time
+    /// plus 30 s of slack, so even a 1x-RTF backend finishes.
+    pub fn block_timeout(audio_secs: f64) -> Duration {
+        Duration::from_secs(30) + Duration::from_secs_f64(audio_secs.max(0.0))
+    }
+
     /// Transcreve `audio` aplicando a política de retry/fallback.
     pub async fn transcribe(
         &self,
@@ -592,6 +605,26 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, SttError::Provider(_)));
+    }
+
+    #[test]
+    fn block_timeout_covers_a_slow_backend() {
+        // A 60 s block at 1x RTF needs 60 s; the dictation formula would
+        // have allowed 21 s.
+        assert_eq!(
+            SttOrchestrator::block_timeout(60.0),
+            Duration::from_secs(90)
+        );
+        assert!(
+            SttOrchestrator::block_timeout(60.0) > SttOrchestrator::dictation_timeout(60.0),
+            "a block must never get less time than an utterance of the same length"
+        );
+        // Degenerate inputs stay bounded.
+        assert_eq!(SttOrchestrator::block_timeout(0.0), Duration::from_secs(30));
+        assert_eq!(
+            SttOrchestrator::block_timeout(-5.0),
+            Duration::from_secs(30)
+        );
     }
 
     #[test]

@@ -210,6 +210,31 @@ pub(crate) fn token_core(token: &str) -> String {
         .collect()
 }
 
+/// Pipeline de um texto que **não** é ditado: normalizar → dicionário →
+/// limpeza `light`. As mesmas etapas de [`run`] menos os comandos de voz.
+///
+/// A etapa de comandos existe porque quem dita fala *com* o app ("nova
+/// linha", "enviar"). Numa reunião ninguém está comandando nada: um
+/// participante que diz "enviar" está conversando, e virar quebra de linha —
+/// ou `press_enter` — corromperia a ata. Por isso os campos
+/// `voice_command_phrases` / `voice_submit_phrases` do `input` são ignorados
+/// aqui, e quem chama pode deixá-los vazios.
+///
+/// Fail-open fica com o chamador, como em [`run`]: um pânico aqui nunca deve
+/// descartar texto que o motor já produziu.
+pub fn run_transcript(input: &PipelineInput) -> String {
+    let text = normalize::run(&input.text);
+    let text = dictionary::run(&text, &input.custom_words, input.word_correction_threshold);
+    // FR-004-11/12: `none` pula a etapa; `medium`/`high` exigem LLM (v1.1+) e
+    // na v1 degradam para a `light` determinística.
+    let text = if input.cleanup_level == CleanupLevel::None {
+        text
+    } else {
+        cleanup::light(&text, input)
+    };
+    text.trim().to_string()
+}
+
 /// Executa as etapas v1 do pipeline sobre o texto transcrito, na ordem da
 /// spec: normalizar → comandos de voz → dicionário (vocab) → limpeza `light`.
 pub fn run(input: &PipelineInput) -> PipelineOutput {
@@ -265,6 +290,44 @@ mod tests {
             language: Some("pt-BR".to_string()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn run_transcript_cleans_without_obeying_voice_commands() {
+        // "enviar" no fim da fala é o comando de envio do ditado
+        // (FR-002-17). Numa ata é só uma palavra que alguém disse: ela tem
+        // de sobreviver, e o texto ainda assim sair limpo e capitalizado.
+        let mut input = pt_input("é, tipo, beleza, então é só enviar");
+        input.voice_submit_phrases = default_voice_submit_phrases();
+        input.voice_command_phrases = default_voice_command_phrases();
+
+        let ditado = run(&input);
+        assert!(
+            ditado.press_enter,
+            "no ditado, o 'enviar' final é um comando — é o contraste que importa"
+        );
+
+        let ata = run_transcript(&input);
+        assert!(
+            ata.to_lowercase().contains("enviar"),
+            "a ata perdeu a palavra falada: {ata:?}"
+        );
+        assert!(
+            !ata.to_lowercase().starts_with("é, tipo"),
+            "a limpeza light continua valendo: {ata:?}"
+        );
+    }
+
+    #[test]
+    fn run_transcript_respects_cleanup_none() {
+        let mut input = pt_input("é, tipo, eu acho que a gente pode fazer amanhã");
+        input.cleanup_level = CleanupLevel::None;
+        let out = run_transcript(&input);
+        // `none` pula só a limpeza; a normalização ainda roda.
+        assert!(
+            out.contains("tipo"),
+            "cleanup none manteve as muletas: {out:?}"
+        );
     }
 
     /// AC-004-01: "é, tipo, eu acho que a gente pode, né, fazer amanhã" no
