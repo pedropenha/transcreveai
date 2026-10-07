@@ -25,5 +25,23 @@ Siga a [constituição](specs/constitution.md) §0:
 
 ## Git
 
-- Remote `upstream` = Handy, com push bloqueado. Correções do Handy entram por cherry-pick seletivo (ADR-0001).
+- Remote `origin` = [pedropenha/transcreveai](https://github.com/pedropenha/transcreveai) (público). Remote `upstream` = Handy, com push bloqueado. Correções do Handy entram por cherry-pick seletivo (ADR-0001).
 - Commits convencionais (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`), com a mensagem focada no porquê.
+
+### Releases (git flow)
+
+- `main` é a branch de release; `integration/v1` acumula o trabalho da v1.
+- Cada release sai de uma branch `release/x.y.z` tirada da branch de
+  integração: nela entram só o bump de versão (`package.json`,
+  `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` — os três são
+  independentes, não há sincronia automática) e correções de estabilização.
+  Depois ela é mesclada em `main` e de volta na integração.
+- A tag `vX.Y.Z` **não é criada à mão**: o `release.yml` (manual, via
+  `workflow_dispatch`) lê a versão do `tauri.conf.json`, e o `tauri-action`
+  cria a tag no ref disparado e sobe os artefatos. Dispare sempre a partir
+  de `main`, para a tag não nascer apontando para uma branch de trabalho.
+- A versão **tem de subir** a cada release: o updater só oferece versão
+  maior que a instalada.
+- As 66 tags `v0.1.0`…`v0.9.7` herdadas do Handy ficaram só no clone local,
+  fora do `origin` — elas apontam para o histórico do Handy e colidiriam com
+  as nossas releases.
