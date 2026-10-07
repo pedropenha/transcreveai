@@ -46,12 +46,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-26" # for Arm based macs (M1 and above). Uses macOS 26 for Apple Intelligence SDK.
-            args: "--target aarch64-apple-darwin"
-            target: "aarch64-apple-darwin"
-          - platform: "macos-latest" # for Intel based macs.
-            args: "--target x86_64-apple-darwin"
-            target: "x86_64-apple-darwin"
+          # macOS is out until there is a reason to pay for a Developer ID.
+          # Unsigned macOS updates would re-break the app's Accessibility and
+          # Microphone grants on every update (TCC keys them to the signing
+          # identity, which an ad-hoc signature changes per build), so the
+          # update would cost the same manual work it was meant to remove.
+          # Re-add both legs together with the certificate.
           - platform: "ubuntu-22.04" # Build .deb on 22.04
             args: "--bundles deb"
             target: "x86_64-unknown-linux-gnu"
@@ -73,7 +73,11 @@ jobs:
       platform: ${{ matrix.platform }}
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
-      sign-binaries: true
+      # OS-level code signing only (Azure Trusted Signing / Apple Developer
+      # ID): no certificate, so `true` would hand the signing step empty
+      # credentials and fail the job. The *updater* signature is unaffected —
+      # build.yml passes its key independently of this input.
+      sign-binaries: false
       asset-prefix: "transcreve-ai"
       upload-artifacts: false
       release-id: ${{ needs.create-release.outputs.release-id }}
