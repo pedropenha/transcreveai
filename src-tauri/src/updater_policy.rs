@@ -71,10 +71,14 @@ mod tests {
     }
 
     #[test]
-    fn shipped_config_has_no_channel_until_t049() {
+    fn shipped_config_has_our_release_channel() {
+        // The inverse of this assertion guarded the fork until it had its own
+        // endpoint and signing key. Now that it does, the risk flipped: an
+        // endpoint or key accidentally emptied would silently ship builds
+        // that can never update, and nothing else would catch it.
         assert!(
-            !build_has_release_channel(),
-            "remove this test when T-049 adds our own updater endpoint and key"
+            build_has_release_channel(),
+            "tauri.conf.json must keep both the updater endpoint and the pubkey"
         );
     }
 }

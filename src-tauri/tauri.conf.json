@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": ["resources/**/*"],
     "license": "MIT",
@@ -77,8 +77,10 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
-      "endpoints": []
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg1N0NDQkY5NDQwNzFDQ0EKUldUS0hBZEUrY3Q4aGEzYkR3ckdkV29EaTlTOEhxbTAxUVRxRTVadkZaVVd3bkhoL0I1dGd1aTcK",
+      "endpoints": [
+        "https://github.com/pedropenha/transcreveai/releases/latest/download/latest.json"
+      ]
     }
   }
 }

@@ -53,3 +53,8 @@ llvm-cov.json
 
 # Agent analysis tooling artifacts (untracked scratch output)
 .ua/
+
+# Updater signing keys — the private key must never reach the repo
+# (ours live outside the repo entirely).
+*.key
+!**/*.key.pub
