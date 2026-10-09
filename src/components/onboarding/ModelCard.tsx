@@ -79,6 +79,8 @@ interface ModelCardProps {
   /** Hardware suitability hint (FR-003-05); "recommended" renders via
    * `is_recommended`, so only the other labels show a badge. */
   suitability?: Suitability;
+  /** The model's engine has a GPU path on this machine (GPU badge). */
+  gpuAccelerated?: boolean;
   /** Usage slots (dictation/meeting/fallback) whose effective pick is this
    * model — shown as badges on the Models & Providers screen (FR-003-03). */
   usages?: SttUsage[];
@@ -98,6 +100,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
   downloadSpeed,
   showRecommended = true,
   suitability,
+  gpuAccelerated,
   usages,
 }) => {
   const { t } = useTranslation();
@@ -212,6 +215,11 @@ const ModelCard: React.FC<ModelCardProps> = ({
                     ? "settings.models.suitability.heavy"
                     : "settings.models.suitability.notAdvised",
                 )}
+              </Badge>
+            )}
+            {gpuAccelerated && (
+              <Badge variant="secondary">
+                {t("settings.models.suitability.gpuAccelerated")}
               </Badge>
             )}
             {usages?.map((usage) => (

@@ -7,6 +7,7 @@ import type { ModelCardStatus } from "./ModelCard";
 import ModelCard, { isLegacySource } from "./ModelCard";
 import TranscreveTextLogo from "../icons/TranscreveTextLogo";
 import { useModelStore } from "../../stores/modelStore";
+import { gpuAcceleratedForModel } from "../../lib/providers";
 import { featuredModels } from "./onboardingPicks";
 import {
   FALLBACK_LANGUAGE,
@@ -34,10 +35,17 @@ const Onboarding: React.FC<OnboardingProps> = ({
     downloadProgress,
     downloadStats,
     cancelDownload,
+    recommendations,
+    loadRecommendations,
   } = useModelStore();
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const hasStartedSelection = useRef(false);
+
+  // Hardware probe for the GPU badge — advisory only, never blocks the flow.
+  useEffect(() => {
+    void loadRecommendations();
+  }, [loadRecommendations]);
 
   const isBusy = selectedModelId !== null;
 
@@ -199,6 +207,10 @@ const Onboarding: React.FC<OnboardingProps> = ({
                     status={getExistingModelStatus(model.id)}
                     disabled={isBusy}
                     onSelect={handleSelectExistingModel}
+                    gpuAccelerated={gpuAcceleratedForModel(
+                      recommendations,
+                      model.id,
+                    )}
                     showRecommended={false}
                   />
                 ))}
@@ -225,6 +237,10 @@ const Onboarding: React.FC<OnboardingProps> = ({
                   onCancel={handleCancelDownload}
                   downloadProgress={getModelDownloadProgress(model.id)}
                   downloadSpeed={getModelDownloadSpeed(model.id)}
+                  gpuAccelerated={gpuAcceleratedForModel(
+                    recommendations,
+                    model.id,
+                  )}
                   showRecommended={false}
                 />
               ))}
@@ -240,6 +256,10 @@ const Onboarding: React.FC<OnboardingProps> = ({
                   onCancel={handleCancelDownload}
                   downloadProgress={getModelDownloadProgress(model.id)}
                   downloadSpeed={getModelDownloadSpeed(model.id)}
+                  gpuAccelerated={gpuAcceleratedForModel(
+                    recommendations,
+                    model.id,
+                  )}
                   showRecommended={false}
                 />
               ))}
@@ -275,6 +295,10 @@ const Onboarding: React.FC<OnboardingProps> = ({
                     onCancel={handleCancelDownload}
                     downloadProgress={getModelDownloadProgress(model.id)}
                     downloadSpeed={getModelDownloadSpeed(model.id)}
+                    gpuAccelerated={gpuAcceleratedForModel(
+                      recommendations,
+                      model.id,
+                    )}
                     showRecommended={false}
                   />
                 ))}

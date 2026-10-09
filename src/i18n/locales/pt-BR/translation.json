@@ -267,7 +267,8 @@
       "suitability": {
         "goodFit": "Boa opção",
         "heavy": "Pesado para esta máquina",
-        "notAdvised": "Não recomendado"
+        "notAdvised": "Não recomendado",
+        "gpuAccelerated": "GPU"
       },
       "import": {
         "button": "Importar arquivo de modelo",
@@ -971,6 +972,7 @@
     "transcribing": "Transcrevendo...",
     "processing": "Processando...",
     "nothingHeard": "Nada ouvido",
+    "loadingModel": "Carregando o modelo…",
     "dictate": "Ditar",
     "notetaker": "Notetaker",
     "notes": "Notas",

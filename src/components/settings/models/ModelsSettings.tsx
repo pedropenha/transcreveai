@@ -12,6 +12,7 @@ import {
   effectiveDictationModelId,
   effectiveFallbackModelId,
   effectiveMeetingModelId,
+  gpuAcceleratedForModel,
   suitabilityForModel,
   type SttUsage,
 } from "@/lib/providers";
@@ -284,6 +285,7 @@ export const ModelsSettings: React.FC = () => {
     progress: getDownloadProgress(model.id),
     speed: getDownloadSpeed(model.id),
     suitability: suitabilityForModel(recommendations, model.id),
+    gpuAccelerated: gpuAcceleratedForModel(recommendations, model.id),
     usages: usagesByModelId.get(model.id),
   }));
 

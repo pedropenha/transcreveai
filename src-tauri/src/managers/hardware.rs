@@ -42,6 +42,10 @@ pub struct HardwareReport {
     /// VRAM of the largest usable GPU; 0 when no GPU or the backend does not
     /// report capacity (e.g. Metal on unified-memory Apple Silicon).
     pub max_gpu_vram_mb: u64,
+    /// The GPU execution provider the ONNX stack can use on this build/host
+    /// ("coreml" on macOS, "directml" on Windows x64), when one is compiled in.
+    /// `None` means ONNX-family engines (Parakeet, Moonshine, …) run CPU-bound.
+    pub ort_gpu_accelerator: Option<String>,
     pub tier: HardwareTier,
 }
 
@@ -65,6 +69,8 @@ pub enum Suitability {
 pub struct ModelSuitabilityEntry {
     pub model_id: String,
     pub label: Suitability,
+    /// Whether this model's engine can run GPU-bound on the probed machine.
+    pub gpu_accelerated: bool,
 }
 
 /// The whole "what does this machine look like and what should it run" bundle
@@ -168,6 +174,17 @@ pub fn model_suitability(model: &ModelInfo, hardware: &HardwareReport) -> Suitab
     suitability_label(hardware.tier, model.size_mb, is_turbo_model(model))
 }
 
+/// Whether `model`'s engine has a GPU path on this machine: transcribe.cpp
+/// engines (Whisper, GGUF Parakeet, …) use the enumerated Vulkan/Metal
+/// devices; ONNX engines (Parakeet, Moonshine, …) use the compiled-in ORT
+/// execution provider (CoreML on macOS, DirectML on Windows x64).
+pub fn model_gpu_accelerated(model: &ModelInfo, hardware: &HardwareReport) -> bool {
+    match model.engine_type {
+        crate::managers::model::EngineType::TranscribeCpp => !hardware.gpu_names.is_empty(),
+        _ => hardware.ort_gpu_accelerator.is_some(),
+    }
+}
+
 /// Build the full recommendations bundle for the current registry.
 pub fn recommendations_for(
     models: &[ModelInfo],
@@ -186,6 +203,7 @@ pub fn recommendations_for(
             .map(|m| ModelSuitabilityEntry {
                 model_id: m.id.clone(),
                 label: model_suitability(m, hardware),
+                gpu_accelerated: model_gpu_accelerated(m, hardware),
             })
             .collect(),
     }
@@ -251,6 +269,7 @@ pub fn detect_hardware() -> HardwareReport {
         ),
         gpu_names,
         max_gpu_vram_mb,
+        ort_gpu_accelerator: accelerators.ort.into_iter().find(|ep| ep != "cpu"),
     }
 }
 
@@ -366,6 +385,7 @@ mod tests {
                 vec![]
             },
             max_gpu_vram_mb: vram_mb,
+            ort_gpu_accelerator: None,
             tier: hardware_tier(total_ram_mb, has_avx2, gpu_present, vram_mb),
         }
     }
@@ -452,6 +472,29 @@ mod tests {
         )));
         assert!(is_turbo_model(&model("turbo", 1549)));
         assert!(!is_turbo_model(&model("small", 465)));
+    }
+
+    #[test]
+    fn gpu_acceleration_flag_tracks_engine_and_host() {
+        let mut whisper = model("whisper-turbo", 886);
+        whisper.engine_type = EngineType::TranscribeCpp;
+        let mut onnx = model("parakeet", 500);
+        onnx.engine_type = EngineType::Parakeet;
+
+        // GPU host with no ORT EP: whisper accelerates, ONNX stays CPU-bound.
+        let host = hw(16 * GB, true, true, 8 * GB);
+        assert!(model_gpu_accelerated(&whisper, &host));
+        assert!(!model_gpu_accelerated(&onnx, &host));
+
+        // Same host with an ORT GPU EP compiled in (CoreML/DirectML): both go.
+        let mut onnx_host = host.clone();
+        onnx_host.ort_gpu_accelerator = Some("coreml".to_string());
+        assert!(model_gpu_accelerated(&onnx, &onnx_host));
+
+        // No GPU devices and no EP: nothing accelerates.
+        let cpu_host = hw(16 * GB, true, false, 0);
+        assert!(!model_gpu_accelerated(&whisper, &cpu_host));
+        assert!(!model_gpu_accelerated(&onnx, &cpu_host));
     }
 
     #[test]
