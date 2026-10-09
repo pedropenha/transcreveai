@@ -4,12 +4,12 @@ Data: 2026-10-05. Implementação autorizada pelo usuário após SDD/OAuth e jor
 
 ## Lanes e ordem
 
-| Lane / papel ECC | Modelo | Superfície de escrita | Gate / verificação |
-| --- | --- | --- | --- |
-| Backend / tdd-guide Rust | gpt-6.1-sol | connectors e commands/connectors novos | Testes de domínio, OAuth/refresh, segredo, offline, catálogos |
-| Interface / tdd-guide React | gpt-6-sol | settings/connectors, navegação de settings e en/pt-BR | Testes de estado/defaults e interação |
-| Spike / architect + security-reviewer | gpt-6-astra | leitura/revisão | SDK/metadata, callbacks, scopes/registro Entra, achados de segurança |
-| Integração / orquestrador | modelo da sessão | wiring, dependências, bindings, bridge e docs | Build/test, smoke, revisões, evidência por fase |
+| Lane / papel ECC                      | Modelo           | Superfície de escrita                                 | Gate / verificação                                                   |
+| ------------------------------------- | ---------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
+| Backend / tdd-guide Rust              | gpt-6.1-sol      | connectors e commands/connectors novos                | Testes de domínio, OAuth/refresh, segredo, offline, catálogos        |
+| Interface / tdd-guide React           | gpt-6-sol        | settings/connectors, navegação de settings e en/pt-BR | Testes de estado/defaults e interação                                |
+| Spike / architect + security-reviewer | gpt-6-astra      | leitura/revisão                                       | SDK/metadata, callbacks, scopes/registro Entra, achados de segurança |
+| Integração / orquestrador             | modelo da sessão | wiring, dependências, bindings, bridge e docs         | Build/test, smoke, revisões, evidência por fase                      |
 
 Contratos são compartilhados entre lanes antes de integrar; ninguém modifica a superfície de outra lane sem handoff. Cargo/build centralizado para evitar concorrência no mesmo target. Modelo diferente não substitui revisão independente.
 

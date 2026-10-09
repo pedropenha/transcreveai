@@ -215,6 +215,14 @@ Solicitado em sessão de usuário no MacBook (2026): origem ausente no históric
 - [ ] **T-107** **"Não transcreve nada" no NoteTaker macOS — causa raiz: trilha system indisponível.** O `open` do cpal/WASAPI falhava sempre no macOS → `TrackUnavailable` → só o mic era transcrito ("só reconhece eu"); o aviso já existe via `machine.track_unavailable`. Resolvido por T-106; validação de smoke real (reunião com SCK + permissão) pendente. — Refs: F009.
 - [ ] **T-110** _(P1, opcional)_ **Detecção automática de reunião no macOS.** S1 via `kAudioHardwarePropertyProcessObjectList` (macOS 14+) e S2 via `CGWindowList`/Accessibility; consent store e toast automático. Não bloqueia T-105..T-107 — NoteTaker manual já cobre o caso relatado. — Refs: F008.
 
+### Aceleração GPU e recomendação por hardware (T-111..T-113)
+
+Solicitado em sessão de usuário no MacBook M3: modelos com caminho de GPU não devem rodar CPU-bound onde houver EP compatível, a recomendação deve considerar o hardware real, e o atalho com o modelo descarregado precisa de feedback visual.
+
+- [x] **T-111** **ONNX GPU-bound por plataforma: CoreML no macOS + DirectML no Windows x64.** `transcribe-rs` passa a compilar `ort-coreml` (target macOS) e `ort-directml` (target windows-x86_64) — ambos os EPs já vêm nos binários ORT que o CI baixa, custo ~0. `OrtAcceleratorSetting::CoreMl` na settings/bindings; `default_ort_accelerator()` → `DirectMl` no Windows x64 (Auto upstream exclui DML por serializar sessões) e `Auto` no macOS (a cadeia Auto do transcribe-rs já inclui CoreML). CPU continua fallback e opção explícita. — Refs: F003.
+- [x] **T-112** **Badge "GPU" por modelo, ciente do host.** `ModelSuitabilityEntry.gpu_accelerated`: transcribe.cpp → GPU enumerada (Metal/Vulkan); ONNX → EP de GPU compilado (`ort_gpu_accelerator` no `HardwareReport`, via `OrtAccelerator::available()`). Badge na tabela de modelos e nos cards do onboarding, ao lado do selo de adequação existente. i18n en/pt-BR. — Refs: F003, FR-003-05.
+- [x] **T-113** **Face "Carregando o modelo" na Flow Bar.** Quando o atalho dispara com o motor descarregado (idle unload/1º uso), o overlay mostra spinner + rótulo visível até `model-state-changed` reportar terminal (`loading_completed`/`loading_failed`/`unloaded`); captura já grava e a transcrição espera o load — nada se perde. `modelLoading` via `commands.isModelLoading` no `show-overlay` + listener; `loading_started` só aciona a face com sessão ativa (`windowActiveRef`). Nova `FlowbarView`/`OverlayHint` "loading-model" + testes. — Refs: F001, F002.
+
 ## Dependências (resumo)
 
 ```mermaid
