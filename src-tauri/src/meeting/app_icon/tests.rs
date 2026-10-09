@@ -199,6 +199,66 @@ fn dictation_icon_for_uses_the_shared_cache_once_per_path() {
     assert_eq!(cache.extractor.0.load(Ordering::SeqCst), 1);
 }
 
+#[test]
+fn sanitize_accepts_macos_app_bundle_paths() {
+    assert_eq!(
+        sanitize_exe_path(Some("  /Applications/Google Chrome.app ".to_string())).as_deref(),
+        Some("/Applications/Google Chrome.app")
+    );
+    for bad in [
+        "relative/Foo.app",
+        "/Applications/Foo.app/Contents/MacOS/Foo",
+        "/Applications/x.txt",
+        "/Applications/../evil.app",
+        "/Applications/back\\slash.app",
+        "",
+    ] {
+        assert_eq!(sanitize_exe_path(Some(bad.to_string())), None, "{bad:?}");
+    }
+}
+
+#[test]
+fn png_to_data_uri_validates_magic_and_size() {
+    let uri = rgba_to_png_data_uri(2, 2, &px(4)).unwrap();
+    let bytes = BASE64
+        .decode(uri.strip_prefix("data:image/png;base64,").unwrap())
+        .unwrap();
+    assert_eq!(png_to_data_uri(&bytes).as_deref(), Some(uri.as_str()));
+    assert!(png_to_data_uri(b"not a png").is_none());
+}
+
+struct ReadyPng;
+
+impl IconExtractor for ReadyPng {
+    fn extract(&self, _path: &str) -> Extraction {
+        let uri = rgba_to_png_data_uri(2, 2, &px(4)).unwrap();
+        let bytes = BASE64
+            .decode(uri.strip_prefix("data:image/png;base64,").unwrap())
+            .unwrap();
+        Extraction::FoundPng(bytes)
+    }
+}
+
+#[test]
+fn cache_resolves_ready_png_bytes() {
+    let cache = IconCache::new(ReadyPng, 8);
+    let uri = cache.resolve("/Applications/Foo.app").expect("icon");
+    assert!(uri.starts_with("data:image/png;base64,"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn extracts_real_icon_from_finder() {
+    let Extraction::FoundPng(bytes) =
+        MacIconExtractor.extract("/System/Library/CoreServices/Finder.app")
+    else {
+        panic!("finder icon");
+    };
+    let uri = png_to_data_uri(&bytes).expect("png");
+    assert!(uri.starts_with("data:image/png;base64,"));
+    assert!(uri.len() > "data:image/png;base64,".len() + 100);
+}
+
 #[cfg(windows)]
 #[test]
 fn dictation_icon_extracts_real_notepad_icon() {

@@ -7,17 +7,22 @@
 //! binding at `start` and *taken* (moved out) synchronously at `stop`: a later
 //! session can never overwrite the origin an earlier one still needs.
 //!
-//! Persisted as `app_exe` (file name, e.g. `Claude.exe`), `app_name`
-//! (friendly label) and `app_exe_path` (sanitized full path, only used to
-//! extract the icon and never sent over IPC).
+//! Persisted as `app_exe` (file name, e.g. `Claude.exe` or `Safari.app`),
+//! `app_name` (friendly label) and `app_exe_path` (sanitized full path —
+//! exe on Windows, `.app` bundle on macOS — only used to extract the icon
+//! and never sent over IPC).
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(any(windows, test))]
 use crate::meeting::app_icon::sanitize_exe_path;
 
 #[cfg(windows)]
 mod win;
+
+#[cfg(target_os = "macos")]
+mod mac;
 
 /// Where one dictation was spoken.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,11 +31,14 @@ pub struct DictationOrigin {
     pub exe_name: String,
     /// Friendly label shown in history (`Claude`, `Chrome`).
     pub app_name: String,
-    /// Sanitized full path (`is_safe_exe_path`), `None` when unsafe/unknown.
+    /// Sanitized icon source (`is_safe_icon_source_path`: exe on Windows,
+    /// `.app` bundle on macOS), `None` when unsafe/unknown.
     pub exe_path: Option<String>,
 }
 
-/// Friendly labels for common apps, keyed by lower-cased exe stem.
+/// Friendly labels for common apps, keyed by lower-cased exe stem —
+/// Windows-only: macOS reads the app's localized display name instead.
+#[cfg(any(windows, test))]
 const FRIENDLY_NAMES: &[(&str, &str)] = &[
     ("claude", "Claude"),
     ("chrome", "Chrome"),
@@ -75,6 +83,7 @@ fn file_name_of(path: &str) -> &str {
     path.rsplit(['\\', '/']).next().unwrap_or(path)
 }
 
+#[cfg(any(windows, test))]
 fn exe_stem(exe: &str) -> &str {
     let name = file_name_of(exe.trim());
     match name.len().checked_sub(4).and_then(|at| name.get(at..)) {
@@ -85,6 +94,7 @@ fn exe_stem(exe: &str) -> &str {
 
 /// Human label for an executable: the curated map first, else the stem with
 /// its first letter capitalized. Empty input gives an empty string.
+#[cfg(any(windows, test))]
 pub fn friendly_app_name(exe: &str) -> String {
     let stem = exe_stem(exe);
     let lowered = stem.to_lowercase();
@@ -102,6 +112,7 @@ impl DictationOrigin {
     /// Origin from the foreground process image path. `None` when the path has
     /// no usable file name; an unsafe path still yields an origin, just
     /// without `exe_path` (no icon, the name is still worth keeping).
+    #[cfg(any(windows, test))]
     pub fn from_image_path(image_path: &str) -> Option<Self> {
         let trimmed = image_path.trim();
         let exe_name = file_name_of(trimmed).trim();
@@ -163,7 +174,11 @@ fn probe_foreground() -> Option<DictationOrigin> {
     {
         win::foreground_image_path().and_then(|path| DictationOrigin::from_image_path(&path))
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        mac::foreground()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         None
     }

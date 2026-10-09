@@ -354,8 +354,15 @@ fn platform_icon(label: &str, exe: &str, path: Option<&str>) -> Option<String> {
     crate::meeting::app_icon::detection_icon(label, exe, path)
 }
 
-/// Icon extraction is Windows-only for now (macOS lands with v1.0 packaging).
-#[cfg(not(windows))]
+/// macOS: `NSWorkspace.iconForFile` renders the `.app` bundle icon to PNG.
+#[cfg(target_os = "macos")]
+fn platform_icon(label: &str, exe: &str, path: Option<&str>) -> Option<String> {
+    crate::meeting::app_icon::detection_icon(label, exe, path)
+}
+
+/// Icon extraction exists on Windows and macOS; other platforms get the
+/// monogram fallback.
+#[cfg(not(any(windows, target_os = "macos")))]
 fn platform_icon(_label: &str, _exe: &str, _path: Option<&str>) -> Option<String> {
     None
 }

@@ -3,9 +3,9 @@
 //! click-through hit-test predicate, and presence/dwell bookkeeping.
 
 use super::geometry::{docked_position, effective_edge, BarEdge};
-use super::positioning::{
-    is_mouse_within_monitor, monitor_index_for_rect, preferred_monitor_point,
-};
+#[cfg(target_os = "windows")]
+use super::positioning::monitor_index_for_rect;
+use super::positioning::{is_mouse_within_monitor, preferred_monitor_point};
 #[cfg(target_os = "windows")]
 use super::win32::windows_overlay_bounds_from_area;
 use super::*;

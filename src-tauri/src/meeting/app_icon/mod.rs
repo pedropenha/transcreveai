@@ -26,13 +26,18 @@ mod win;
 #[cfg(windows)]
 pub(crate) use win::WindowsIconExtractor;
 
+#[cfg(target_os = "macos")]
+mod mac;
+#[cfg(target_os = "macos")]
+pub(crate) use mac::MacIconExtractor;
+
 #[cfg(test)]
 mod tests;
 
 const PNG_DATA_URI_PREFIX: &str = "data:image/png;base64,";
 /// Max distinct exe paths remembered. Worst case is
 /// `CACHE_CAPACITY * MAX_DATA_URI_BYTES` = 4 MiB (typical icons are ~5 KB).
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const CACHE_CAPACITY: usize = 64;
 /// Hard ceiling on one data URI; larger icons are dropped (the toast shows
 /// no icon rather than shipping a heavy IPC payload).
@@ -49,7 +54,13 @@ pub(crate) struct RgbaImage {
 
 /// Outcome of one extraction attempt.
 pub(crate) enum Extraction {
+    /// Windows extractor yields raw pixels, PNG-encoded by the caller.
+    #[cfg_attr(not(any(windows, test)), allow(dead_code))]
     Found(RgbaImage),
+    /// The extractor emits ready PNG bytes (macOS renders an
+    /// `NSBitmapImageRep`); they go straight into the data URI.
+    #[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+    FoundPng(Vec<u8>),
     /// This exe has no usable icon (missing, rejected path, unreadable
     /// bitmap): safe to remember.
     Unavailable,
@@ -92,15 +103,32 @@ pub(crate) fn is_safe_exe_path(path: &str) -> bool {
     drive_form && exe && clean
 }
 
+/// macOS icon source: a `.app` bundle path. Absolute POSIX path with the
+/// same no-escape rules as [`is_safe_exe_path`] — no NUL, no backslashes,
+/// no `..` segments.
+fn is_safe_app_bundle_path(path: &str) -> bool {
+    path.starts_with('/')
+        && path.ends_with(".app")
+        && !path.contains('\0')
+        && !path.contains('\\')
+        && !path.split('/').any(|segment| segment == "..")
+}
+
+/// Icon source path in either platform shape: `X:\…\*.exe` on Windows,
+/// `/…/*.app` on macOS. Both pass through the same persistence field.
+pub(crate) fn is_safe_icon_source_path(path: &str) -> bool {
+    is_safe_exe_path(path) || is_safe_app_bundle_path(path)
+}
+
 /// Longest exe path persisted (Windows `MAX_PATH` is 260; long-path
 /// installs stay well below this).
 const MAX_EXE_PATH_CHARS: usize = 520;
 
 /// Boundary gate for an exe path arriving over IPC before it is stored on a
-/// meeting: trimmed, bounded and [`is_safe_exe_path`]-safe, else dropped.
+/// meeting: trimmed, bounded and [`is_safe_icon_source_path`]-safe, else dropped.
 pub(crate) fn sanitize_exe_path(raw: Option<String>) -> Option<String> {
     raw.map(|path| path.trim().to_string())
-        .filter(|path| path.chars().count() <= MAX_EXE_PATH_CHARS && is_safe_exe_path(path))
+        .filter(|path| path.chars().count() <= MAX_EXE_PATH_CHARS && is_safe_icon_source_path(path))
 }
 
 /// The exe path whose icon should be extracted, or `None` when the app has
@@ -113,7 +141,7 @@ pub(crate) fn extract_target<'a>(
     if is_known_app(label) || is_browser_exe(exe_name) {
         return None;
     }
-    exe_path.filter(|path| is_safe_exe_path(path))
+    exe_path.filter(|path| is_safe_icon_source_path(path))
 }
 
 /// Encode straight RGBA8 pixels as a PNG data URI; `None` on a bad buffer or
@@ -172,6 +200,7 @@ impl<E: IconExtractor> IconCache<E> {
         }
         let icon = match self.extractor.extract(exe_path) {
             Extraction::Found(img) => rgba_to_png_data_uri(img.width, img.height, &img.rgba),
+            Extraction::FoundPng(png) => png_to_data_uri(&png),
             Extraction::Unavailable => None,
         };
         let mut entries = self.lock();
@@ -204,7 +233,18 @@ pub(crate) fn dictation_extract_target<'a>(
     if is_known_app(label) {
         return None;
     }
-    exe_path.filter(|path| is_safe_exe_path(path))
+    exe_path.filter(|path| is_safe_icon_source_path(path))
+}
+
+/// Encode ready PNG bytes as a data URI; `None` when the buffer isn't a PNG
+/// or the URI would exceed [`MAX_DATA_URI_BYTES`].
+pub(crate) fn png_to_data_uri(png: &[u8]) -> Option<String> {
+    const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if !png.starts_with(PNG_MAGIC) {
+        return None;
+    }
+    let uri = format!("{PNG_DATA_URI_PREFIX}{}", BASE64.encode(png));
+    (uri.len() <= MAX_DATA_URI_BYTES).then_some(uri)
 }
 
 /// Icon for a dictation's origin app: priority rule, then the cache.
@@ -235,6 +275,30 @@ pub(crate) fn detection_icon(
 /// Process-wide icon for a dictation's origin app (Windows only); shares the
 /// bounded cache with [`detection_icon`].
 #[cfg(windows)]
+pub(crate) fn dictation_icon(label: &str, exe_path: Option<&str>) -> Option<String> {
+    dictation_icon_for(shared_cache(), label, exe_path)
+}
+
+#[cfg(target_os = "macos")]
+fn shared_cache() -> &'static IconCache<MacIconExtractor> {
+    static CACHE: std::sync::OnceLock<IconCache<MacIconExtractor>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| IconCache::new(MacIconExtractor, CACHE_CAPACITY))
+}
+
+/// Process-wide icon for a detection (macOS): `NSWorkspace.iconForFile` on
+/// the `.app` bundle, rendered to PNG.
+#[cfg(target_os = "macos")]
+pub(crate) fn detection_icon(
+    label: &str,
+    exe_name: &str,
+    exe_path: Option<&str>,
+) -> Option<String> {
+    icon_for(shared_cache(), label, exe_name, exe_path)
+}
+
+/// Process-wide icon for a dictation's origin app (macOS); shares the
+/// bounded cache with [`detection_icon`].
+#[cfg(target_os = "macos")]
 pub(crate) fn dictation_icon(label: &str, exe_path: Option<&str>) -> Option<String> {
     dictation_icon_for(shared_cache(), label, exe_path)
 }
