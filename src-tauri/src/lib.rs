@@ -1247,6 +1247,12 @@ pub fn run(cli_args: CliArgs) {
                     .filter(|metadata| {
                         let file_level = FILE_LOG_LEVEL.load(Ordering::Relaxed);
                         metadata.level() <= level_filter_from_u8(file_level)
+                            // enigo logs `location()` at DEBUG on every Flow Bar
+                            // hit-test poll (~12 lines/s while visible) — at the
+                            // 500 KB rotation cap that erases the session logs
+                            // within minutes. Keep enigo warnings/errors only.
+                            && (!metadata.target().starts_with("enigo")
+                                || metadata.level() <= log::Level::Warn)
                     }),
                     // Stream logs to the webview (via the `log://log` event) so the
                     // debug panel's live log viewer can show them in real time. Only
@@ -1256,6 +1262,8 @@ pub fn run(cli_args: CliArgs) {
                         WEBVIEW_LOG_STREAMING.load(Ordering::Relaxed)
                             && metadata.level()
                                 <= level_filter_from_u8(FILE_LOG_LEVEL.load(Ordering::Relaxed))
+                            && (!metadata.target().starts_with("enigo")
+                                || metadata.level() <= log::Level::Warn)
                     }),
                 ])
                 .build(),
@@ -1462,6 +1470,18 @@ pub fn run(cli_args: CliArgs) {
                 crate::managers::transcription::report_compute_devices();
                 let _ = crate::managers::transcription::get_available_accelerators();
             });
+
+            // Pre-warm the capture path (VAD + resolved-microphone cache) so the
+            // first dictation press opens the mic without Silero init or device
+            // enumeration on the critical path (T-114). No stream is opened.
+            {
+                let app_handle = app_handle.clone();
+                std::thread::spawn(move || {
+                    app_handle
+                        .state::<Arc<AudioRecordingManager>>()
+                        .warmup_capture_path();
+                });
+            }
 
             // Hide tray icon if --no-tray was passed
             if cli_args.no_tray {

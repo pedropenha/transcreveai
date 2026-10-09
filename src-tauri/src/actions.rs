@@ -6,6 +6,7 @@ use crate::insertion::InsertionStatus;
 use crate::managers::audio::{AudioRecordingManager, StopOutcome};
 use crate::managers::history::{HistoryManager, SessionEntry};
 use crate::managers::model::ModelManager;
+use crate::managers::transcription::StagedModelLoad;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{
@@ -671,13 +672,19 @@ impl ShortcutAction for TranscribeAction {
             ));
         }
 
-        // Load ASR model and VAD model in parallel
+        // Load ASR model and VAD model in parallel. The ASR load is only
+        // *staged* here: `is_loading` is already marked (so `start_stream` and
+        // `transcribe` wait correctly), but the heavy load job runs only after
+        // the microphone opens — see the `try_start_recording` block below.
         let kickoff_started = Instant::now();
-        if !tm.initiate_model_load_for(&settings.selected_model) {
-            self.clear_session();
-            emit_translation_error(app, "translation_model_loading");
-            return;
-        }
+        let staged_load = match tm.stage_model_load_for(&settings.selected_model) {
+            Some(staged) => staged,
+            None => {
+                self.clear_session();
+                emit_translation_error(app, "translation_model_loading");
+                return;
+            }
+        };
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -758,6 +765,13 @@ impl ShortcutAction for TranscribeAction {
         );
         debug!("Microphone mode - always_on: {}", is_always_on);
 
+        // The microphone opens before the staged model load runs: the load's
+        // CPU burst (GGUF mmap, Metal init, ORT session) starves CoreAudio
+        // bring-up for seconds on a cold start, and speech spoken while the
+        // mic stream was still opening is unrecoverable — a release queued
+        // behind that blocked start used to classify as "nada ouvido" (T-114).
+        // The load runs under held speech instead; `transcribe` waits on the
+        // load condvar.
         let mut recording_error: Option<String> = None;
         let recording_start_time = Instant::now();
         let capture = if binding_id == "assistant" {
@@ -771,6 +785,11 @@ impl ShortcutAction for TranscribeAction {
         } else {
             rm.try_start_recording(&binding_id, vad_policy)
         };
+
+        // Capture is armed (or failed) — run the staged model load now.
+        if let StagedModelLoad::Pending(run) = staged_load {
+            std::thread::spawn(run);
+        }
         match capture {
             Ok(readiness) => {
                 debug!(
