@@ -117,14 +117,6 @@ tauri-plugin-dialog = "2.6"
 hf-hub = { git = "https://github.com/cjpais/hf-hub", rev = "9918f11ab3473135eb7865aa4a5d79d597e6e810", features = [
   "tokio",
 ] }
-objc2-screen-capture-kit = "0.3.2"
-objc2-core-media = "0.3.2"
-block2 = "0.6"
-dispatch2 = "0.3"
-objc2-core-graphics = "0.3.2"
-objc2-core-foundation = "0.3.2"
-objc2-core-audio-types = "0.3.2"
-
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
 
@@ -139,14 +131,12 @@ tauri-plugin-updater = "2.10.1"
 # (disabling browser accelerator keys in the main window). Must match the
 # version wry links against so the COM types are identical.
 webview2-com = "0.38"
-# ONNX Runtime on Windows is CPU-only (no ort-directml), matching macOS/Linux.
-# The DirectML EP was experimental and, more importantly, pulled in pyke's
-# prebuilt ONNX Runtime which is compiled with a global /arch:AVX2 baseline that
-# executes BMI2/AVX in a static initializer and crashes at process startup on any
-# pre-Haswell CPU (Sandy/Ivy Bridge, older AMD). Dropping the feature means we
-# link a baseline ONNX Runtime (dynamically, via ORT_LIB_LOCATION in build.yml)
-# with proper runtime CPU dispatch. Base `transcribe-rs` (features = ["onnx"])
-# is inherited here, so Parakeet/Moonshine/etc. still run on CPU.
+# ONNX Runtime on Windows x64 links Microsoft's official build (see the
+# comment in the x86_64 target table below and build.yml's ORT step) — that
+# binary already ships DmlExecutionProvider, so `ort-directml` only turns the
+# EP *registration* on and costs ~0 bytes. Auto maps to DirectML there so ONNX
+# models (Parakeet, Moonshine, …) run GPU-bound; users can still force CPU.
+# Windows ARM64 keeps static CPU-only ORT (all its targets are modern anyway).
 windows = { version = "0.61.3", features = [
   "Win32_Media_Audio_Endpoints",
   "Win32_Storage_FileSystem",
@@ -191,6 +181,11 @@ transcribe-cpp = { version = "0.2.4", default-features = false, features = [
   "dynamic-backends",
   "vulkan",
 ] }
+# DirectML EP registration. The old pyke-prebuilt AVX2 crash that motivated
+# CPU-only ORT does not apply: build.yml now links Microsoft's official
+# onnxruntime.dll, which uses SSE2 baseline + runtime CPU dispatch and already
+# contains DmlExecutionProvider.
+transcribe-rs = { version = "0.3.8", features = ["onnx", "ort-directml"] }
 
 [target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
 transcribe-cpp = { version = "0.2.4", default-features = false }
@@ -199,12 +194,24 @@ transcribe-cpp = { version = "0.2.4", default-features = false }
 libc = "0.2" # sysctlbyname for RAM probing + statvfs for free disk space (FR-003-05/06)
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "da9c9a8d4eb7f0524a2508988df1a7d9585b4904" }
 transcribe-cpp = { version = "0.2.4", default-features = false, features = ["metal"] }
+# CoreML EP (Neural Engine/GPU): both ORT dylibs we ship (x86_64 from
+# blob.handy.computer, aarch64 via pyke's download) contain
+# CoreMLExecutionProvider, and Auto() registers it ahead of CPU.
+transcribe-rs = { version = "0.3.8", features = ["onnx", "ort-coreml"] }
 # Used by the receipt-sequenced ("reliable") paste path for lazy NSPasteboard
 # promises. Versions track what Tauri already pulls in.
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
 objc2-service-management = "0.3.2"
+# ScreenCaptureKit system-audio capture (audio_toolkit::loopback) — Apple-only.
+objc2-screen-capture-kit = "0.3.2"
+objc2-core-media = "0.3.2"
+objc2-core-graphics = "0.3.2"
+objc2-core-foundation = "0.3.2"
+objc2-core-audio-types = "0.3.2"
+block2 = "0.6"
+dispatch2 = "0.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }

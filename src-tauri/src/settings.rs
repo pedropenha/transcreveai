@@ -461,6 +461,8 @@ pub enum OrtAcceleratorSetting {
     #[serde(rename = "directml")]
     DirectMl,
     Rocm,
+    #[serde(rename = "coreml")]
+    CoreMl,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]

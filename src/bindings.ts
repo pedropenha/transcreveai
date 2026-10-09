@@ -2758,7 +2758,13 @@ gpu_names: string[];
  * VRAM of the largest usable GPU; 0 when no GPU or the backend does not
  * report capacity (e.g. Metal on unified-memory Apple Silicon).
  */
-max_gpu_vram_mb: number; tier: HardwareTier }
+max_gpu_vram_mb: number; 
+/**
+ * The GPU execution provider the ONNX stack can use on this build/host
+ * ("coreml" on macOS, "directml" on Windows x64), when one is compiled in.
+ * `None` means ONNX-family engines (Parakeet, Moonshine, …) run CPU-bound.
+ */
+ort_gpu_accelerator: string | null; tier: HardwareTier }
 /**
  * Coarse machine class, the row selector of FR-003-05's table.
  */
@@ -3099,7 +3105,11 @@ sha256: string | null } } |
 /**
  * One model's suitability label, joined to the model list by `model_id`.
  */
-export type ModelSuitabilityEntry = { model_id: string; label: Suitability }
+export type ModelSuitabilityEntry = { model_id: string; label: Suitability; 
+/**
+ * Whether this model's engine can run GPU-bound on the probed machine.
+ */
+gpu_accelerated: boolean }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
 /**
  * How `\n` is delivered while typing directly (`newline_mode`,
@@ -3113,7 +3123,7 @@ export type NewlineMode = "raw" | "shift_enter"
  */
 export type OperationRecord = { id: string; connection_id: string; meeting_id: string | null; action: string; status: OperationStatus; remote_id: string | null; remote_url: string | null; error_code: string | null; created_at: number; updated_at: number }
 export type OperationStatus = "awaiting_approval" | "executing" | "succeeded" | "failed" | "outcome_unknown" | "cancelled"
-export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
+export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm" | "coreml"
 export type OverlayPosition = "top" | "bottom"
 /**
  * Which recording overlay to display. `Minimal` and `Live` share one base

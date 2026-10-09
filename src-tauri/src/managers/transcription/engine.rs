@@ -504,14 +504,31 @@ pub fn apply_accelerator_settings(app: &tauri::AppHandle) {
     );
 
     let ort_pref = match settings.ort_accelerator {
-        OrtAcceleratorSetting::Auto => accel::OrtAccelerator::Auto,
+        OrtAcceleratorSetting::Auto => default_ort_accelerator(),
         OrtAcceleratorSetting::Cpu => accel::OrtAccelerator::CpuOnly,
         OrtAcceleratorSetting::Cuda => accel::OrtAccelerator::Cuda,
         OrtAcceleratorSetting::DirectMl => accel::OrtAccelerator::DirectMl,
         OrtAcceleratorSetting::Rocm => accel::OrtAccelerator::Rocm,
+        OrtAcceleratorSetting::CoreMl => accel::OrtAccelerator::CoreMl,
     };
     accel::set_ort_accelerator(ort_pref);
     info!("ORT accelerator set to: {}", ort_pref);
+}
+
+/// What `Auto` means for ONNX models on this build. CoreML joins transcribe-rs'
+/// own `Auto` chain on macOS (it is safe alongside other EPs), so it needs no
+/// override here. DirectML is deliberately excluded from upstream `Auto`
+/// because it forces sequential session execution — we opt in on Windows x64
+/// builds that ship the EP, where "GPU-bound by default" is the product goal.
+fn default_ort_accelerator() -> transcribe_rs::accel::OrtAccelerator {
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    {
+        transcribe_rs::accel::OrtAccelerator::DirectMl
+    }
+    #[cfg(not(all(windows, target_arch = "x86_64")))]
+    {
+        transcribe_rs::accel::OrtAccelerator::Auto
+    }
 }
 
 #[derive(Serialize, Clone, Debug, Type)]
