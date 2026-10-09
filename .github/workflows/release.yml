@@ -33,11 +33,24 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
+            // Idempotent: a re-run after a failed matrix leg must reuse the
+            // existing draft for this tag rather than die on already_exists.
+            const tag = `v${{ steps.get-version.outputs.version }}`;
+            try {
+              const { data } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+              return data.id;
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: `v${{ steps.get-version.outputs.version }}`,
-              name: `v${{ steps.get-version.outputs.version }}`,
+              tag_name: tag,
+              name: tag,
               draft: true,
               prerelease: ${{ steps.get-version.outputs.prerelease }},
               generate_release_notes: true
@@ -74,11 +87,13 @@ jobs:
           - platform: "ubuntu-24.04-arm" # Build for ARM64 Linux
             args: "--bundles appimage,deb,rpm"
             target: "aarch64-unknown-linux-gnu"
+          # NSIS only — `targets: "all"` would also try MSI, which rejects
+          # semver pre-release versions (0.10.0-beta.* → "must be numeric").
           - platform: "windows-latest"
-            args: ""
+            args: "--bundles nsis"
             target: "x86_64-pc-windows-msvc"
           - platform: "windows-11-arm" # for ARM64 Windows runner
-            args: "--target aarch64-pc-windows-msvc"
+            args: "--target aarch64-pc-windows-msvc --bundles nsis"
             target: "aarch64-pc-windows-msvc"
 
     uses: ./.github/workflows/build.yml
