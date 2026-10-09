@@ -18,6 +18,7 @@ const base: FlowbarViewInput = {
   hint: null,
   hovered: false,
   retrying: false,
+  modelLoading: false,
 };
 
 // Resting slit (FR-001-01) vs hover card (FR-001-02).
@@ -73,6 +74,35 @@ assert.equal(
 assert.equal(
   resolveFlowbarView({ ...base, phase: "error", retrying: true }),
   "working",
+);
+
+// T-113: a model load in flight during a session claims the "carregando"
+// face over capture and pipeline phases — the pill explains the pause.
+// Terminal faces still win, and an inactive bar never flashes it.
+assert.equal(
+  resolveFlowbarView({ ...base, phase: "recording", modelLoading: true }),
+  "loading-model",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, phase: "transcribing", modelLoading: true }),
+  "loading-model",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, phase: "done", modelLoading: true }),
+  "done",
+);
+assert.equal(
+  resolveFlowbarView({ ...base, phase: "error", modelLoading: true }),
+  "error",
+);
+assert.equal(
+  resolveFlowbarView({
+    ...base,
+    phase: "recording",
+    modelLoading: true,
+    windowActive: false,
+  }),
+  "recording",
 );
 
 // The terminal dwell outranks hover: an error pill hovering over the slit

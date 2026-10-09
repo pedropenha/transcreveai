@@ -117,6 +117,11 @@ const RecordingOverlay: React.FC = () => {
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
   const [captureReady, setCaptureReady] = useState(false);
+  // T-113: the engine can be unloaded when the shortcut fires (idle unload /
+  // first use). Capture starts anyway and transcription waits on the load —
+  // the pill shows "carregando o modelo" meanwhile so the press doesn't look
+  // dead.
+  const [modelLoading, setModelLoading] = useState(false);
   const [levels, setLevels] = useState<number[]>(Array(WAVE_BARS).fill(0));
   const [streamText, setStreamText] = useState<StreamTextEvent>({
     committed: "",
@@ -137,6 +142,10 @@ const RecordingOverlay: React.FC = () => {
   const meetingStatusRef = useRef<MeetingStatus>("idle");
   const meetingIdRef = useRef<string | null>(null);
   const overlayEventGenerationRef = useRef(0);
+  // Mirror of `windowActive` for event callbacks — a `loading_started` model
+  // event only claims the pill while a session overlay is up, never for a
+  // model switched from the settings window.
+  const windowActiveRef = useRef(false);
   const enterTimerRef = useRef<number | undefined>(undefined);
   const leaveTimerRef = useRef<number | undefined>(undefined);
   // The interactive surface the core keeps clickable (rest of the window stays
@@ -219,27 +228,55 @@ const RecordingOverlay: React.FC = () => {
 
         await syncLanguageFromSettings();
         await refreshSettings();
+        // T-113: the model may still be warming up — the capture started
+        // regardless and waits on the load, so flag the "carregando" face
+        // until `model-state-changed` reports the engine ready.
+        const modelReady = await commands
+          .isModelLoading()
+          .then((r) => !(r.status === "ok" && r.data))
+          .catch(() => true);
         if (generation !== overlayEventGenerationRef.current) return;
         setHint(overlayHint);
+        if (overlayHint === "recording" || overlayHint === "streaming") {
+          setModelLoading(!modelReady);
+        }
         if (overlayHint === "streaming") {
           setStreamPhase("listening");
           setWorkKind("transcribing");
           setElapsed(0);
           setSession((s) => s + 1); // remount the card fresh for this session
         }
+        windowActiveRef.current = true;
         setWindowActive(true);
       });
 
       const unlistenHide = await listen("hide-overlay", () => {
         overlayEventGenerationRef.current += 1;
+        windowActiveRef.current = false;
         setWindowActive(false);
         setHint(null);
         setNotice(null);
         setCaptureReady(false);
+        setModelLoading(false);
         clearHoverTimers();
         setHovered(false);
         setTip(null);
       });
+
+      // T-113: while a session overlay is up, a starting model load claims
+      // the "carregando" face; any terminal model event hands the pill back
+      // to the session faces (a failed load surfaces as the session's error).
+      const unlistenModelState = await listen<{ event_type: string }>(
+        "model-state-changed",
+        (event) => {
+          const kind = event.payload.event_type;
+          if (kind === "loading_started") {
+            if (windowActiveRef.current) setModelLoading(true);
+          } else {
+            setModelLoading(false);
+          }
+        },
+      );
 
       // Coordinator lifecycle — the authoritative state vocabulary (F001).
       const unlistenSession = await listen<SessionStatePayload>(
@@ -394,6 +431,7 @@ const RecordingOverlay: React.FC = () => {
       return () => {
         unlistenShow();
         unlistenHide();
+        unlistenModelState();
         unlistenSession();
         unlistenCursor();
         unlistenReady();
@@ -430,6 +468,7 @@ const RecordingOverlay: React.FC = () => {
     notice,
     hint,
     hovered,
+    modelLoading,
     retrying,
   });
 
@@ -643,6 +682,8 @@ const RecordingOverlay: React.FC = () => {
         return meetingStatus === "paused"
           ? t("overlay.meetingPaused")
           : t("overlay.meetingRecording");
+      case "loading-model":
+        return t("overlay.loadingModel");
       case "working":
         if (meetingStatus === "processing" && phase === "idle") {
           return t("overlay.meetingProcessing");
@@ -845,6 +886,23 @@ const RecordingOverlay: React.FC = () => {
           </div>
         );
       }
+
+      case "loading-model":
+        // T-113: cold load after an idle unload — the mic already records and
+        // the transcribe waits on the engine; the pill explains the pause.
+        // The user asked for the label to be visible, not AT-only.
+        return (
+          <div
+            className="scard fbar-card f-work f-loading"
+            role="status"
+            aria-label={t("overlay.loadingModel")}
+          >
+            <div className="frow frow-work">
+              <span className="sspinner" aria-hidden="true" />
+              <span className="swork-label">{t("overlay.loadingModel")}</span>
+            </div>
+          </div>
+        );
 
       case "working":
         // F001 processing shape: three pulsing dots + an AT-only label — the
