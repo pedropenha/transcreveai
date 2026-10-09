@@ -24,7 +24,7 @@ use anyhow::Result;
 use log::warn;
 
 use crate::audio_toolkit::audio::loopback::{
-    CpalLoopbackBackend, LoopbackBackend, SystemAudioCapture, SystemAudioEvent,
+    default_backend, LoopbackBackend, SystemAudioCapture, SystemAudioEvent,
     SystemAudioEventCallback,
 };
 use crate::audio_toolkit::{constants::WHISPER_SAMPLE_RATE, AudioFrameCallback};
@@ -434,7 +434,7 @@ impl MeetingCapture {
                             let _ = event_tx.send(MeetingCaptureEvent::System(event));
                         });
                         let backend: Box<dyn LoopbackBackend> = match source {
-                            SystemSource::Default => Box::new(CpalLoopbackBackend),
+                            SystemSource::Default => default_backend(),
                             SystemSource::Custom(backend) => backend,
                             SystemSource::Disabled => unreachable!("matched above"),
                         };

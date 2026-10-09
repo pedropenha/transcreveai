@@ -19,6 +19,14 @@ fn main() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/Transcreve.ai:$ORIGIN/../lib");
     }
 
+    // Weak-link ScreenCaptureKit (macOS 13+): the app's minimum is 10.15, so
+    // a hard link would kill the process at dyld on older systems. The
+    // loopback backend checks `Class::get("SCStream")` at open and fails
+    // gracefully instead.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-Wl,-weak_framework,ScreenCaptureKit");
+    }
+
     // Stage transcribe-cpp's shared runtime libraries (and the dlopen'd ggml
     // backend modules) for the installer. Self-gates on the shared /
     // dynamic-backends posture used by Linux and Windows; it's a no-op for the

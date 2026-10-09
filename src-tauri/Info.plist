@@ -4,5 +4,7 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Request microphone access to transcribe audio locally</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Transcreve.ai needs screen recording permission to capture the audio of other meeting participants</string>
 </dict>
 </plist>

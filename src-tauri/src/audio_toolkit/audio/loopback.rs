@@ -38,6 +38,9 @@ use super::{
 };
 use crate::audio_toolkit::constants;
 
+#[cfg(target_os = "macos")]
+mod mac;
+
 /// How often the worker re-checks the default render endpoint. With the
 /// 100 ms first reattach delay, a device swap reattaches well inside the
 /// FR-009-04 budget of 2 s.
@@ -179,12 +182,7 @@ impl SystemAudioCapture {
         frame_cb: AudioFrameCallback,
         event_cb: SystemAudioEventCallback,
     ) -> Result<Self, String> {
-        Self::start_with_backend(
-            Box::new(CpalLoopbackBackend),
-            POLL_INTERVAL,
-            frame_cb,
-            event_cb,
-        )
+        Self::start_with_backend(default_backend(), POLL_INTERVAL, frame_cb, event_cb)
     }
 
     /// Same as [`Self::start`] with an injected backend and poll cadence — the
@@ -420,6 +418,23 @@ fn run_loopback_worker(
             }
         }
     }
+}
+
+/// The platform's production backend: WASAPI loopback on Windows,
+/// ScreenCaptureKit on macOS, the (always-failing) cpal path elsewhere.
+#[cfg(windows)]
+pub(crate) fn default_backend() -> Box<dyn LoopbackBackend> {
+    Box::new(CpalLoopbackBackend)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn default_backend() -> Box<dyn LoopbackBackend> {
+    Box::new(mac::SckLoopbackBackend)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub(crate) fn default_backend() -> Box<dyn LoopbackBackend> {
+    Box::new(CpalLoopbackBackend)
 }
 
 /// Production [`LoopbackBackend`]: a cpal input stream over the default

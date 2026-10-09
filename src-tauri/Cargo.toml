@@ -117,6 +117,13 @@ tauri-plugin-dialog = "2.6"
 hf-hub = { git = "https://github.com/cjpais/hf-hub", rev = "9918f11ab3473135eb7865aa4a5d79d597e6e810", features = [
   "tokio",
 ] }
+objc2-screen-capture-kit = "0.3.2"
+objc2-core-media = "0.3.2"
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2-core-graphics = "0.3.2"
+objc2-core-foundation = "0.3.2"
+objc2-core-audio-types = "0.3.2"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

@@ -713,3 +713,30 @@ fn stop_reports_the_final_overrun() {
         )
     }));
 }
+
+/// Real-machine probe: `TRANSCREVE_PROBE_SCK=1 cargo test sck_probe` opens a
+/// live ScreenCaptureKit tap for a few seconds and reports how much audio it
+/// captured. Needs Screen Recording permission granted to the test binary —
+/// without it `open` fails with the permission message, which is what this
+/// probe exists to show.
+#[cfg(target_os = "macos")]
+#[test]
+fn sck_probe_reports_capture() {
+    if std::env::var("TRANSCREVE_PROBE_SCK").is_err() {
+        return;
+    }
+    let backend = super::mac::SckLoopbackBackend;
+    match backend.open() {
+        Err(message) => println!("PROBE-SCK: open failed: {message}"),
+        Ok(opened) => {
+            std::thread::sleep(Duration::from_secs(3));
+            println!(
+                "PROBE-SCK: attached on {:?}, rate={}, queued={} samples, dropped={}",
+                opened.stream.device_name(),
+                opened.stream.sample_rate(),
+                opened.samples.slots(),
+                opened.stream.dropped_samples()
+            );
+        }
+    }
+}
