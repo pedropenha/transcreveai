@@ -48,5 +48,9 @@ jobs:
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
       upload-artifacts: true
-      sign-binaries: true
+      # No OS-level signing certs are configured (no APPLE_CERTIFICATE, no
+      # AZURE_*): `true` hands empty credentials to the signing steps and
+      # fails the leg. The updater key is passed independently inside
+      # build.yml, so artifacts still get updater signatures.
+      sign-binaries: false
     secrets: inherit
