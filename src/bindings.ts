@@ -2074,8 +2074,10 @@ async mcpConfig(clientId: string) : Promise<Result<McpConfiguration, CommandErro
 }
 },
 /**
- * Stub implementation for non-macOS platforms
- * Always returns false since laptop detection is macOS-specific
+ * Checks if the Mac is a laptop by detecting battery presence
+ * 
+ * This uses pmset to check for battery information.
+ * Returns true if a battery is detected (laptop), false otherwise (desktop)
  */
 async isLaptop() : Promise<Result<boolean, CommandError>> {
     try {
