@@ -876,7 +876,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 3;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 4;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -1036,7 +1036,7 @@ fn default_recording_retention_period() -> RecordingRetentionPeriod {
 }
 
 fn default_audio_feedback_volume() -> f32 {
-    1.0
+    0.1
 }
 
 fn default_sound_theme() -> SoundTheme {
@@ -1856,6 +1856,17 @@ fn apply_settings_migrations(
         }
     }
 
+    if stored_schema_version < 4 {
+        // Feedback sounds shipped at full volume — far too loud. Stores still
+        // carrying the old default (explicitly or by never touching the
+        // slider) drop to the new one; any other stored value is a real
+        // preference and stays.
+        if settings.audio_feedback_volume == 1.0 {
+            settings.audio_feedback_volume = default_audio_feedback_volume();
+            updated = true;
+        }
+    }
+
     // Stamp the current schema version once, after all migration blocks.
     if stored_schema_version < u64::from(CURRENT_SETTINGS_SCHEMA_VERSION) {
         settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
@@ -2443,6 +2454,48 @@ mod tests {
             settings.transcribe_gpu_device.as_deref(),
             Some("[\"vulkan\",\"id\",\"0000:01:00.0\"]")
         );
+    }
+
+    #[test]
+    fn feedback_volume_migration_drops_old_full_volume_default() {
+        let raw = serde_json::json!({
+            "settings_schema_version": 3,
+            "audio_feedback_volume": 1.0
+        });
+        let mut settings: AppSettings = serde_json::from_value(raw.clone()).unwrap();
+
+        assert!(apply_settings_migrations(&mut settings, &raw));
+        assert_eq!(settings.audio_feedback_volume, 0.1);
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
+    fn feedback_volume_migration_keeps_explicit_value() {
+        let raw = serde_json::json!({
+            "settings_schema_version": 3,
+            "audio_feedback_volume": 0.5
+        });
+        let mut settings: AppSettings = serde_json::from_value(raw.clone()).unwrap();
+
+        apply_settings_migrations(&mut settings, &raw);
+        assert_eq!(settings.audio_feedback_volume, 0.5);
+    }
+
+    #[test]
+    fn feedback_volume_migration_respects_full_volume_at_current_version() {
+        // At schema ≥ 4 a stored 1.0 is a deliberate choice, not the retired
+        // default — the migration window is closed.
+        let raw = serde_json::json!({
+            "settings_schema_version": CURRENT_SETTINGS_SCHEMA_VERSION,
+            "audio_feedback_volume": 1.0
+        });
+        let mut settings: AppSettings = serde_json::from_value(raw.clone()).unwrap();
+
+        apply_settings_migrations(&mut settings, &raw);
+        assert_eq!(settings.audio_feedback_volume, 1.0);
     }
 
     #[test]
