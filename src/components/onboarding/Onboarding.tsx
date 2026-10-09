@@ -7,6 +7,12 @@ import type { ModelCardStatus } from "./ModelCard";
 import ModelCard, { isLegacySource } from "./ModelCard";
 import TranscreveTextLogo from "../icons/TranscreveTextLogo";
 import { useModelStore } from "../../stores/modelStore";
+import { featuredModels } from "./onboardingPicks";
+import {
+  FALLBACK_LANGUAGE,
+  LANGUAGE_METADATA,
+  resolveSupportedLanguage,
+} from "../../i18n/languages";
 
 interface OnboardingProps {
   onModelSelected: () => void;
@@ -17,7 +23,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
   onModelSelected,
   preview = false,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     models,
     downloadModel,
@@ -37,25 +43,32 @@ const Onboarding: React.FC<OnboardingProps> = ({
 
   // Curate the download list: legacy (.bin/ONNX) downloads are deprecated and
   // never shown here (they still appear in the compatible section if already on
-  // disk). The catalog arrives rank-sorted, so the first two recommended models
-  // are the featured picks — currently Parakeet Unified (English) and Nemotron
-  // Streaming (multilingual). Everything else hides behind "Show all".
+  // disk). The catalog arrives rank-sorted; the featured picks are the
+  // language-aware set (Parakeet TDT 0.6B v3 for pt-BR) filled from the
+  // recommended models. Everything else hides behind "Show all".
+  const language =
+    resolveSupportedLanguage(i18n.language, Object.keys(LANGUAGE_METADATA)) ??
+    FALLBACK_LANGUAGE;
   const { downloadable, topPicks, otherRecommended, rest } = useMemo(() => {
     const downloadable = models.filter(
       (m: ModelInfo) => !m.is_downloaded && !isLegacySource(m),
     );
     const recommended = downloadable.filter((m: ModelInfo) => m.is_recommended);
+    const topPicks = featuredModels(downloadable, language);
+    const featuredIds = new Set(topPicks.map((m) => m.id));
     // `models` arrives in editorial rank order (the backend sorts by rank_of,
     // then accuracy), so keep that order here: ranked-but-not-recommended models
     // surface first, then the unranked tail by accuracy.
-    const rest = downloadable.filter((m: ModelInfo) => !m.is_recommended);
+    const rest = downloadable.filter(
+      (m: ModelInfo) => !m.is_recommended && !featuredIds.has(m.id),
+    );
     return {
       downloadable,
-      topPicks: recommended.slice(0, 2),
-      otherRecommended: recommended.slice(2),
+      topPicks,
+      otherRecommended: recommended.filter((m) => !featuredIds.has(m.id)),
       rest,
     };
-  }, [models]);
+  }, [models, language]);
 
   const hasRecommended = topPicks.length > 0 || otherRecommended.length > 0;
   // When nothing recommended remains to download (e.g. all already on disk),
