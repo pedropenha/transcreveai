@@ -894,9 +894,12 @@ jobs:
           }
 
           # Administrative install extracts the MSI payload without elevation.
+          # MSI is optional: `--bundles nsis` skips it because the bundler
+          # rejects semver pre-release versions for the MSI target. When no
+          # MSI exists the NSIS audit above already covers the staged DLLs.
           $msiPackages = Get-ChildItem (Join-Path $bundleBase "msi") -Filter "*.msi" -ErrorAction SilentlyContinue
           if (-not $msiPackages) {
-            throw "No MSI packages found under $bundleBase for runtime DLL audit"
+            Write-Host "No MSI packages under $bundleBase — skipping MSI audit (nsis-only build)"
           }
 
           foreach ($pkg in $msiPackages) {

@@ -35,16 +35,21 @@ jobs:
           script: |
             // Idempotent: a re-run after a failed matrix leg must reuse the
             // existing draft for this tag rather than die on already_exists.
+            // getReleaseByTag never matches drafts, so scan the list.
             const tag = `v${{ steps.get-version.outputs.version }}`;
-            try {
-              const { data } = await github.rest.repos.getReleaseByTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag,
-              });
-              return data.id;
-            } catch (e) {
-              if (e.status !== 404) throw e;
+            const existing = await github.paginate(
+              github.rest.repos.listReleases,
+              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 },
+            );
+            const draft = existing.find((r) => r.tag_name === tag && r.draft);
+            if (draft) return draft.id;
+            const published = existing.find(
+              (r) => r.tag_name === tag && !r.draft,
+            );
+            if (published) {
+              throw new Error(
+                `A published release already exists for ${tag} — refusing to attach new artifacts to it`,
+              );
             }
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
