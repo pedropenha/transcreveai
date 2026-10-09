@@ -415,7 +415,7 @@ pub fn move_panel(app: &AppHandle, grab_x: f64, grab_y: f64, persist: bool) {
 #[cfg(target_os = "macos")]
 mod macos {
     use super::{PANEL_HEIGHT, PANEL_WIDTH};
-    use tauri::{AppHandle, WebviewUrl};
+    use tauri::{AppHandle, Manager, WebviewUrl};
     use tauri_nspanel::{
         tauri_panel, CollectionBehavior, ManagerExt, PanelBuilder, PanelLevel, StyleMask,
     };
@@ -504,7 +504,7 @@ mod macos {
                 crate::commands::CommandError::logged(
                     crate::commands::CommandErrorCode::NotFound,
                     "Assistant panel is unavailable",
-                    error,
+                    format!("{error:?}"),
                 )
             })?;
         panel.hide();

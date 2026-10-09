@@ -90,8 +90,10 @@ pub enum SystemAudioEvent {
 
 pub type SystemAudioEventCallback = Arc<dyn Fn(SystemAudioEvent) + Send + Sync + 'static>;
 
-/// One open loopback stream. Dropping it ends the capture.
-pub trait LoopbackStream: Send {
+/// One open loopback stream. Dropping it ends the capture. No `Send` bound:
+/// the stream is opened and drained on the capture worker thread and never
+/// leaves it — and `cpal::Stream` is not `Send` on CoreAudio.
+pub trait LoopbackStream {
     /// Name of the render endpoint this stream is bound to.
     fn device_name(&self) -> &str;
     /// Native sample rate of the stream (mono-averaged by the callback).
