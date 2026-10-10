@@ -481,6 +481,36 @@ mod imp {
         Some(outermost_app(&path).to_string())
     }
 
+    /// Pid of the process responsible for `pid` — the Activity Monitor
+    /// attribution. WebKit's GPU/content XPC services run outside the host
+    /// `.app` (`com.apple.WebKit.GPU`), and Safari does meeting audio in the
+    /// GPU process; the responsible pid is the hosting application (or the
+    /// same pid when the process already answers for itself). Returns `None`
+    /// when the call fails or the responsible pid is `pid` itself.
+    fn responsible_pid_for(pid: i32) -> Option<i32> {
+        // libproc private API, stable since 10.9 and present in libSystem.
+        extern "C" {
+            fn responsibility_get_pid_responsible_for_pid(
+                pid: i32,
+                responsible_pid: *mut i32,
+            ) -> i32;
+        }
+        let mut resp = 0i32;
+        // SAFETY: `resp` is a valid out-pointer; failure leaves it untouched.
+        let rc = unsafe { responsibility_get_pid_responsible_for_pid(pid, &mut resp) };
+        if rc != 0 || resp <= 0 || resp == pid {
+            return None;
+        }
+        Some(resp)
+    }
+
+    /// `.app` bundle path of the *responsible* application for `pid` — used
+    /// when `pid` itself resolves outside any bundle (XPC services).
+    fn responsible_bundle_path_for(pid: i32) -> Option<String> {
+        let resp = responsible_pid_for(pid)?;
+        bundle_path_for(resp).or_else(|| proc_path_for(resp))
+    }
+
     /// Executable path via `proc_pidpath` — fallback for processes with no
     /// `NSRunningApplication` (bare binaries, helpers outside a bundle).
     fn proc_path_for(pid: i32) -> Option<String> {
@@ -496,9 +526,16 @@ mod imp {
 
     /// `(exe_name, exe_path)` for a capturing pid: bundle file name
     /// (`Google Chrome.app`) or the bare binary name, with the normalized
-    /// `.app` path as the icon source.
+    /// `.app` path as the icon source. Processes outside any bundle —
+    /// WebKit's GPU service does Safari's meeting audio — are attributed to
+    /// their responsible application.
     fn identity_for(pid: i32) -> Option<(String, Option<String>)> {
         let path = bundle_path_for(pid).or_else(|| proc_path_for(pid))?;
+        let path = if outermost_app(&path) == path {
+            responsible_bundle_path_for(pid).unwrap_or(path)
+        } else {
+            path
+        };
         let exe_name = path_file_name(&path).to_string();
         if exe_name.is_empty() {
             return None;

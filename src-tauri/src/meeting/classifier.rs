@@ -435,6 +435,29 @@ mod tests {
     }
 
     #[test]
+    fn meet_colon_title_matches_the_seeded_pattern() {
+        // Google switched the Meet tab title from `Meet - <code>` to
+        // `Meet: <code>`; the builtin pattern (migration 19) must accept both.
+        let pattern = r"^Meet\s*[-:]|meet\.google\.com";
+        let re = Regex::new(pattern).unwrap();
+        assert!(re.is_match("Meet: fah-eyfg-jow"));
+        assert!(re.is_match("Meet - abc-defg-hij"));
+        assert!(re.is_match("meet.google.com/abc-defg-hij"));
+        assert!(!re.is_match("Meeting notes - Google Docs"));
+        assert!(!re.is_match("YouTube"));
+
+        let rules = vec![rule("Safari.app", "Google Meet", Some(pattern), "ask")];
+        let found = classify(
+            &[usage("Safari.app")],
+            &[window("Safari.app", "Meet: fah-eyfg-jow")],
+            &rules,
+            "app",
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].label, "Google Meet");
+    }
+
+    #[test]
     fn macos_safari_is_a_browser_exe() {
         // Safari.app needs a title hit too — mic-only Safari usage is not a
         // meeting signal.
