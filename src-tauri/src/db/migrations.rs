@@ -561,4 +561,14 @@ Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todo
             ('builtin-mac-webex',        'Webex.app',              NULL, 'Webex',           'ask', 1),
             ('builtin-mac-webex-legacy', 'Cisco Webex Meetings.app', NULL, 'Webex',         'ask', 1);",
     ),
+    // --- Meet tab title format update (19, T-117) ----------------------------
+    // Google renamed the Meet tab title from `Meet - <code>` to
+    // `Meet: <code>` (colon). Broaden the builtin pattern to `^Meet\s*[-:]`
+    // so both eras match; only builtin rules carrying the exact old pattern
+    // are touched — user-edited rules keep their customization.
+    M::up(
+        "UPDATE meeting_app_rules
+         SET title_pattern = '^Meet\\s*[-:]|meet\\.google\\.com'
+         WHERE builtin = 1 AND title_pattern = '^Meet -|meet\\.google\\.com';",
+    ),
 ];

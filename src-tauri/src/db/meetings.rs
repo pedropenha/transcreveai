@@ -782,8 +782,10 @@ mod tests {
         assert_eq!(chrome.label, "Google Meet");
         let pattern = chrome.title_pattern.expect("browser rule needs a pattern");
         let re = regex::Regex::new(&pattern).expect("seeded pattern must compile");
-        assert!(re.is_match("Meet - abc-defg-hij"));
+        assert!(re.is_match("Meet - abc-defg-hij"), "legacy dash title");
+        assert!(re.is_match("Meet: fah-eyfg-jow"), "current colon title");
         assert!(re.is_match("meet.google.com call"));
+        assert!(!re.is_match("Meeting notes - Google Docs"));
         assert!(!re.is_match("YouTube - Google Chrome"));
         assert!(by_exe("CiscoCollabHost.exe").is_some());
         assert!(by_exe("webexmta.exe").is_some());
@@ -797,10 +799,13 @@ mod tests {
         );
         let mac_chrome = by_exe("Google Chrome.app").unwrap();
         assert_eq!(mac_chrome.label, "Google Meet");
-        assert_eq!(
-            mac_chrome.title_pattern.as_deref(),
-            Some("^Meet -|meet\\.google\\.com")
-        );
+        let mac_pattern = mac_chrome
+            .title_pattern
+            .as_deref()
+            .expect("mac browser rule needs a pattern");
+        let re = regex::Regex::new(mac_pattern).expect("mac pattern must compile");
+        assert!(re.is_match("Meet: fah-eyfg-jow"), "current colon title");
+        assert!(re.is_match("Meet - abc-defg-hij"), "legacy dash title");
         assert!(by_exe("Safari.app").is_some());
         assert!(by_exe("Arc.app").is_some());
         assert!(by_exe("Webex.app").is_some());
