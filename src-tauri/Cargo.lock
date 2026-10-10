@@ -7668,7 +7668,7 @@ dependencies = [
 
 [[package]]
 name = "transcreve-ai"
-version = "0.10.0-beta.3"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
