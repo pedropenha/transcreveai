@@ -127,6 +127,9 @@ pub trait MeetingRepository {
     /// T-067: write a title — callers gate on "still the default placeholder"
     /// so a user-edited title is never clobbered.
     fn set_title(&self, id: &str, title: &str) -> Result<()>;
+    /// T-115: clear `audio_dir` after an audio-only delete removed the
+    /// blocks — the row keeps transcript, notes and summary.
+    fn clear_audio_dir(&self, id: &str) -> Result<()>;
 }
 
 pub struct SqliteMeetingRepository<'a> {
@@ -296,6 +299,14 @@ impl MeetingRepository for SqliteMeetingRepository<'_> {
         self.conn.execute(
             "UPDATE meetings SET title = ?1 WHERE id = ?2",
             params![title, id],
+        )?;
+        Ok(())
+    }
+
+    fn clear_audio_dir(&self, id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE meetings SET audio_dir = NULL WHERE id = ?1",
+            params![id],
         )?;
         Ok(())
     }
@@ -653,6 +664,26 @@ mod tests {
                 .app_exe_path,
             None
         );
+    }
+
+    #[test]
+    fn clear_audio_dir_nulls_only_the_audio_reference() {
+        // T-115: after the audio-only delete the row keeps its transcript
+        // data — only `audio_dir` is cleared.
+        let conn = setup();
+        let meetings = SqliteMeetingRepository::new(&conn);
+        let mut m = Meeting::new("Daily", "manual");
+        m.audio_dir = Some("audio/meetings/x".to_string());
+        m.summary_md = Some("resumo".to_string());
+        meetings.create(&m).expect("create");
+
+        meetings.clear_audio_dir(&m.id).expect("clear_audio_dir");
+
+        let fetched = meetings.get(&m.id).expect("get").expect("exists");
+        assert_eq!(fetched.audio_dir, None);
+        assert_eq!(fetched.summary_md.as_deref(), Some("resumo"));
+        // Unknown id is a no-op, matching the other setters.
+        meetings.clear_audio_dir("missing").expect("no-op");
     }
 
     #[test]

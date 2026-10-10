@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  applySelectAll,
   computeStreak,
   dayKey,
   greetingPeriod,
@@ -9,6 +10,9 @@ import {
   originLabel,
   originLogoCandidates,
   savedTimeParts,
+  selectAllState,
+  selectedLoadedIds,
+  toggleSelected,
 } from "./homeView";
 
 // Local-time helpers so the tests do not depend on the machine's time zone.
@@ -121,5 +125,31 @@ assert.deepEqual(
   ["Teams", "ms-teams"],
 );
 assert.deepEqual(originLogoCandidates({ app_name: null, app_exe: null }), []);
+
+// --- multi-select delete (T-115) -------------------------------------------
+const sel = new Set([2]);
+assert.deepEqual([...toggleSelected(sel, 3)].sort(), [2, 3]);
+assert.deepEqual([...toggleSelected(sel, 2)], []);
+assert.deepEqual([...sel], [2], "toggleSelected must not mutate the input");
+
+assert.deepEqual(selectedLoadedIds([1, 2, 3], new Set([2, 9])), [2]);
+assert.deepEqual(selectedLoadedIds([], new Set([1])), []);
+
+assert.equal(selectAllState([1, 2, 3], new Set()), "none");
+assert.equal(selectAllState([1, 2, 3], new Set([2])), "some");
+assert.equal(selectAllState([1, 2, 3], new Set([1, 2, 3, 9])), "all");
+assert.equal(selectAllState([], new Set()), "none");
+
+// Select-all adds every loaded id; clicked again it removes exactly those.
+assert.deepEqual(
+  [...applySelectAll([1, 2, 3], new Set([2]))].sort(),
+  [1, 2, 3],
+);
+assert.deepEqual([...applySelectAll([1, 2, 3], new Set([1, 2, 3]))], []);
+// Partial state also completes the sweep.
+assert.deepEqual(
+  [...applySelectAll([1, 2], new Set([1, 7]))].sort(),
+  [1, 2, 7],
+);
 
 console.log("homeView tests passed");

@@ -181,6 +181,16 @@ const settingUpdaters: {
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
+  flowbar_visibility: (value) =>
+    commands.changeFlowbarVisibilitySetting(value as string),
+  flowbar_follow: (value) =>
+    commands.changeFlowbarFollowSetting(value as string),
+  flowbar_position_edge: (value) =>
+    commands.changeFlowbarEdgeSetting(value as string),
+  flowbar_show_notetaker: (value) =>
+    commands.changeFlowbarShowNotetakerSetting(value as boolean),
+  flowbar_show_notes: (value) =>
+    commands.changeFlowbarShowNotesSetting(value as boolean),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   vad_backend: async (value) => {
     const result = await commands.changeVadBackendSetting(value as VadBackend);

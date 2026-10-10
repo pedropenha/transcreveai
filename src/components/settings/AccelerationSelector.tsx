@@ -15,6 +15,7 @@ const ORT_LABELS: Record<OrtAcceleratorSetting, string> = {
   cuda: "CUDA",
   directml: "DirectML",
   rocm: "ROCm",
+  coreml: "CoreML",
 };
 
 interface AccelerationSelectorProps {

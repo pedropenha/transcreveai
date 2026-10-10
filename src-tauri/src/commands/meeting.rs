@@ -354,8 +354,15 @@ fn platform_icon(label: &str, exe: &str, path: Option<&str>) -> Option<String> {
     crate::meeting::app_icon::detection_icon(label, exe, path)
 }
 
-/// Icon extraction is Windows-only for now (macOS lands with v1.0 packaging).
-#[cfg(not(windows))]
+/// macOS: `NSWorkspace.iconForFile` renders the `.app` bundle icon to PNG.
+#[cfg(target_os = "macos")]
+fn platform_icon(label: &str, exe: &str, path: Option<&str>) -> Option<String> {
+    crate::meeting::app_icon::detection_icon(label, exe, path)
+}
+
+/// Icon extraction exists on Windows and macOS; other platforms get the
+/// monogram fallback.
+#[cfg(not(any(windows, target_os = "macos")))]
 fn platform_icon(_label: &str, _exe: &str, _path: Option<&str>) -> Option<String> {
     None
 }
@@ -481,6 +488,15 @@ fn delete_targets_live_meeting(
     }
 }
 
+/// The row guard shared by `meeting_delete` and `meeting_delete_audio`: a
+/// `processing` meeting's audio blocks may still be read (or appended to on
+/// a retried pipeline) by the post-processing worker, so deletes wait for it.
+/// A missing row never blocks — the delete proceeds (and is a no-op on the
+/// row itself).
+fn meeting_delete_blocked_by_processing(meeting: Option<&Meeting>) -> bool {
+    meeting.is_some_and(|meeting| meeting.status == "processing")
+}
+
 /// Delete a meeting row (segments/notes cascade) plus its audio blocks —
 /// the dir is only removed when it sits inside `audio/meetings/`.
 #[tauri::command]
@@ -509,7 +525,7 @@ pub fn meeting_delete(app: AppHandle, id: String) -> CommandResult<()> {
     let meeting = repo.get(&id).map_err(|e| {
         CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
     })?;
-    if meeting.is_some_and(|meeting| meeting.status == "processing") {
+    if meeting_delete_blocked_by_processing(meeting.as_ref()) {
         return Err(CommandError::new(
             CommandErrorCode::Busy,
             "Wait for meeting processing to finish before deleting it",
@@ -526,6 +542,53 @@ pub fn meeting_delete(app: AppHandle, id: String) -> CommandResult<()> {
         CommandError::logged(CommandErrorCode::Internal, "Failed to resolve app data", e)
     })?;
     remove_meeting_audio_dir(&app_data, &id)
+}
+
+/// T-115 audio-only delete: drops `audio/meetings/<id>` and clears the row's
+/// `audio_dir`, keeping the transcript, notes and summary. Same guards as
+/// `meeting_delete` — a live meeting's blocks are still being written and a
+/// `processing` meeting may still be reading them.
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_delete_audio(app: AppHandle, id: String) -> CommandResult<()> {
+    // Same canonicalization/refusal as `meeting_delete`: only UUID ids may
+    // reach the filesystem delete, and an uppercase/braced spelling must hit
+    // the busy guard and the same db row / audio dir.
+    let id = uuid::Uuid::parse_str(&id)
+        .map(|uuid| uuid.hyphenated().to_string())
+        .map_err(|_| CommandError::new(CommandErrorCode::InvalidInput, "Invalid meeting id"))?;
+    if delete_targets_live_meeting(
+        meeting_recording_active(),
+        manager(&app)?.current().as_ref(),
+        &id,
+    ) {
+        return Err(CommandError::new(
+            CommandErrorCode::Busy,
+            "Stop the meeting before deleting its audio",
+        ));
+    }
+    let conn = open_session_db(&app)?;
+    let repo = SqliteMeetingRepository::new(&conn);
+    let meeting = repo.get(&id).map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to load the meeting", e)
+    })?;
+    if meeting_delete_blocked_by_processing(meeting.as_ref()) {
+        return Err(CommandError::new(
+            CommandErrorCode::Busy,
+            "Wait for meeting processing to finish before deleting its audio",
+        ));
+    }
+    let app_data = app_data_dir(&app).map_err(|e| {
+        CommandError::logged(CommandErrorCode::Internal, "Failed to resolve app data", e)
+    })?;
+    remove_meeting_audio_dir(&app_data, &id)?;
+    repo.clear_audio_dir(&id).map_err(|e| {
+        CommandError::logged(
+            CommandErrorCode::Internal,
+            "Failed to clear the meeting audio reference",
+            e,
+        )
+    })
 }
 
 /// FR-009-02: the user acknowledged the first-use consent modal — persisted
@@ -776,5 +839,54 @@ mod tests {
             Some(&state("m1", "processing")),
             "m1"
         ));
+    }
+
+    // -- T-115: meeting_delete_audio guards ---------------------------------
+
+    fn meeting_with_status(status: &str) -> Meeting {
+        let mut meeting = Meeting::new("Daily", "manual");
+        meeting.status = status.to_string();
+        meeting
+    }
+
+    #[test]
+    fn audio_delete_refuses_the_live_meeting() {
+        // Same busy guard as `meeting_delete`: the live session still owns
+        // the blocks being written.
+        assert!(delete_targets_live_meeting(
+            true,
+            Some(&state("m1", "recording")),
+            "m1"
+        ));
+        assert!(delete_targets_live_meeting(
+            true,
+            Some(&state("m1", "paused")),
+            "m1"
+        ));
+        // Another meeting recording does not block this one's audio delete.
+        assert!(!delete_targets_live_meeting(
+            true,
+            Some(&state("m2", "recording")),
+            "m1"
+        ));
+    }
+
+    #[test]
+    fn audio_delete_refuses_a_processing_meeting() {
+        assert!(meeting_delete_blocked_by_processing(Some(
+            &meeting_with_status("processing")
+        )));
+    }
+
+    #[test]
+    fn processing_guard_ignores_terminal_and_missing_rows() {
+        for status in ["ready", "error", "recovered"] {
+            assert!(
+                !meeting_delete_blocked_by_processing(Some(&meeting_with_status(status))),
+                "{status} must not block the delete"
+            );
+        }
+        // A missing row is a no-op delete, never a busy refusal.
+        assert!(!meeting_delete_blocked_by_processing(None));
     }
 }

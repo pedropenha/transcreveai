@@ -23,9 +23,10 @@ use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
-    self, get_settings, AutoSubmitKey, ClipboardHandling, InsertionMethod, KeyboardImplementation,
-    LLMPrompt, NewlineMode, OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation,
-    ShortcutBinding, SoundTheme, Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
+    self, get_settings, AutoSubmitKey, ClipboardHandling, FlowbarEdge, FlowbarFollow,
+    FlowbarVisibility, InsertionMethod, KeyboardImplementation, LLMPrompt, NewlineMode,
+    OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation, ShortcutBinding, SoundTheme,
+    Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
 
@@ -713,6 +714,151 @@ pub fn change_overlay_style_setting(app: AppHandle, style: String) -> CommandRes
 
     // Reposition in case the window needs to re-center for the new style.
     crate::utils::update_overlay_position(&app);
+
+    Ok(())
+}
+
+/// F001/FR-001-10 (T-115): Flow Bar visibility policy — "always" /
+/// "during_recording" / "never". Applies immediately so the slit appears or
+/// disappears without waiting for the next session.
+#[tauri::command]
+#[specta::specta]
+pub fn change_flowbar_visibility_setting(app: AppHandle, visibility: String) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    let parsed = match visibility.as_str() {
+        "always" => FlowbarVisibility::Always,
+        "during_recording" => FlowbarVisibility::DuringRecording,
+        "never" => FlowbarVisibility::Never,
+        other => {
+            warn!(
+                "Invalid flowbar visibility '{}', defaulting to always",
+                other
+            );
+            FlowbarVisibility::Always
+        }
+    };
+    settings.flowbar_visibility = parsed;
+    settings::write_settings(&app, settings);
+
+    // Show/unmap the idle slit right away.
+    crate::overlay::apply_flowbar_presence(&app);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "flowbar_visibility",
+            "value": visibility
+        }),
+    );
+
+    Ok(())
+}
+
+/// F001/FR-001-09 (T-115): which monitor the Flow Bar follows —
+/// "foreground_monitor" / "cursor" / "primary_monitor".
+#[tauri::command]
+#[specta::specta]
+pub fn change_flowbar_follow_setting(app: AppHandle, follow: String) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    let parsed = match follow.as_str() {
+        "foreground_monitor" => FlowbarFollow::ForegroundMonitor,
+        "cursor" => FlowbarFollow::Cursor,
+        "primary_monitor" => FlowbarFollow::PrimaryMonitor,
+        other => {
+            warn!(
+                "Invalid flowbar follow '{}', defaulting to foreground_monitor",
+                other
+            );
+            FlowbarFollow::ForegroundMonitor
+        }
+    };
+    settings.flowbar_follow = parsed;
+    settings::write_settings(&app, settings);
+
+    // The bar may jump monitors; re-anchor it on the new one.
+    crate::utils::update_overlay_position(&app);
+    crate::overlay::apply_flowbar_presence(&app);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "flowbar_follow",
+            "value": follow
+        }),
+    );
+
+    Ok(())
+}
+
+/// F001/FR-001-08 (T-115): screen edge the Flow Bar docks to —
+/// "bottom" / "left" / "right".
+#[tauri::command]
+#[specta::specta]
+pub fn change_flowbar_edge_setting(app: AppHandle, edge: String) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    let parsed = match edge.as_str() {
+        "bottom" => FlowbarEdge::Bottom,
+        "left" => FlowbarEdge::Left,
+        "right" => FlowbarEdge::Right,
+        other => {
+            warn!("Invalid flowbar edge '{}', defaulting to bottom", other);
+            FlowbarEdge::Bottom
+        }
+    };
+    settings.flowbar_position_edge = parsed;
+    settings::write_settings(&app, settings);
+
+    // Re-dock on the new edge.
+    crate::utils::update_overlay_position(&app);
+    crate::overlay::apply_flowbar_presence(&app);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "flowbar_position_edge",
+            "value": edge
+        }),
+    );
+
+    Ok(())
+}
+
+/// T-115: the Flow Bar's ◉ notetaker button. The overlay webview listens for
+/// `settings-changed` and re-reads the setting to re-render.
+#[tauri::command]
+#[specta::specta]
+pub fn change_flowbar_show_notetaker_setting(app: AppHandle, enabled: bool) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    settings.flowbar_show_notetaker = enabled;
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "flowbar_show_notetaker",
+            "value": enabled
+        }),
+    );
+
+    Ok(())
+}
+
+/// T-115: the Flow Bar's notes button. The overlay webview listens for
+/// `settings-changed` and re-reads the setting to re-render.
+#[tauri::command]
+#[specta::specta]
+pub fn change_flowbar_show_notes_setting(app: AppHandle, enabled: bool) -> CommandResult<()> {
+    let mut settings = settings::get_settings(&app);
+    settings.flowbar_show_notes = enabled;
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "flowbar_show_notes",
+            "value": enabled
+        }),
+    );
 
     Ok(())
 }

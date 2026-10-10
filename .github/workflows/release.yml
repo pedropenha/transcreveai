@@ -21,19 +21,43 @@ jobs:
           VERSION=$(grep -o '"version": "[^"]*"' src-tauri/tauri.conf.json | cut -d'"' -f4)
           echo "Application version from tauri.conf.json: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Semver pre-release suffix (x.y.z-*) → GitHub prerelease flag.
+          if [[ "$VERSION" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create Draft Release
         id: create-release
         uses: actions/github-script@v9
         with:
           script: |
+            // Idempotent: a re-run after a failed matrix leg must reuse the
+            // existing draft for this tag rather than die on already_exists.
+            // getReleaseByTag never matches drafts, so scan the list.
+            const tag = `v${{ steps.get-version.outputs.version }}`;
+            const existing = await github.paginate(
+              github.rest.repos.listReleases,
+              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 },
+            );
+            const draft = existing.find((r) => r.tag_name === tag && r.draft);
+            if (draft) return draft.id;
+            const published = existing.find(
+              (r) => r.tag_name === tag && !r.draft,
+            );
+            if (published) {
+              throw new Error(
+                `A published release already exists for ${tag} — refusing to attach new artifacts to it`,
+              );
+            }
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: `v${{ steps.get-version.outputs.version }}`,
-              name: `v${{ steps.get-version.outputs.version }}`,
+              tag_name: tag,
+              name: tag,
               draft: true,
-              prerelease: false,
+              prerelease: ${{ steps.get-version.outputs.prerelease }},
               generate_release_notes: true
             })
             return data.id
@@ -46,12 +70,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS is out until there is a reason to pay for a Developer ID.
-          # Unsigned macOS updates would re-break the app's Accessibility and
-          # Microphone grants on every update (TCC keys them to the signing
-          # identity, which an ad-hoc signature changes per build), so the
-          # update would cost the same manual work it was meant to remove.
-          # Re-add both legs together with the certificate.
+          # macOS ships ad-hoc signed (signingIdentity "-") until there is a
+          # reason to pay for a Developer ID. Unsigned updates re-break the
+          # app's Accessibility and Microphone grants on every update (TCC
+          # keys them to the signing identity) — that cost exists for the
+          # manual .dmg install too, and macOS is the platform our users
+          # actually asked for, so the legs stay in. Re-sign when a
+          # certificate lands (sign-binaries: true + Apple secrets).
+          - platform: "macos-26" # for Arm based macs (M1 and above).
+            args: "--target aarch64-apple-darwin"
+            target: "aarch64-apple-darwin"
+          - platform: "macos-latest" # for Intel based macs.
+            args: "--target x86_64-apple-darwin"
+            target: "x86_64-apple-darwin"
           - platform: "ubuntu-22.04" # Build .deb on 22.04
             args: "--bundles deb"
             target: "x86_64-unknown-linux-gnu"
@@ -61,11 +92,13 @@ jobs:
           - platform: "ubuntu-24.04-arm" # Build for ARM64 Linux
             args: "--bundles appimage,deb,rpm"
             target: "aarch64-unknown-linux-gnu"
+          # NSIS only — `targets: "all"` would also try MSI, which rejects
+          # semver pre-release versions (0.10.0-beta.* → "must be numeric").
           - platform: "windows-latest"
-            args: ""
+            args: "--bundles nsis"
             target: "x86_64-pc-windows-msvc"
           - platform: "windows-11-arm" # for ARM64 Windows runner
-            args: "--target aarch64-pc-windows-msvc"
+            args: "--target aarch64-pc-windows-msvc --bundles nsis"
             target: "aarch64-pc-windows-msvc"
 
     uses: ./.github/workflows/build.yml

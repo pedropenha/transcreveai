@@ -732,6 +732,18 @@ impl AudioRecordingManager {
         Ok(())
     }
 
+    /// Warm the pieces of the capture path that survive between sessions —
+    /// the VAD recorder and the resolved-microphone cache — so a cold dictation
+    /// press doesn't pay Silero init and device enumeration while the mic
+    /// stream is trying to open (T-114). Does not open the mic stream.
+    pub fn warmup_capture_path(&self) {
+        if let Err(e) = self.preload_vad() {
+            debug!("capture warmup: VAD preload failed: {e}");
+        }
+        let settings = get_settings(&self.app_handle);
+        let _ = self.resolve_microphone_device(&settings);
+    }
+
     pub fn start_microphone_stream(&self) -> Result<(), anyhow::Error> {
         let mut open_flag = self.is_open.lock().unwrap();
         if *open_flag {

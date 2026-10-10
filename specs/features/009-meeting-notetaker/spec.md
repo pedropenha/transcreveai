@@ -23,8 +23,8 @@ Gravar o microfone **e** o áudio do sistema (os outros participantes), transcre
 - **FR-009-02** Aviso de consentimento: no **primeiro uso**, modal explicando a responsabilidade de informar os participantes (e LGPD); a cada início, lembrete discreto no toast (desativável) com ação "Copiar aviso para o chat" (texto configurável, ex.: "Estou usando um app local para transcrever esta reunião.").
 - **FR-009-03** Duas trilhas independentes, alinhadas por relógio monotônico:
   - `mic`: dispositivo de entrada selecionado;
-  - `system`: **loopback WASAPI** do dispositivo de saída padrão.
-- **FR-009-04** Troca de dispositivo padrão durante a reunião (ex.: conectar fone Bluetooth) → reabrir a captura no novo dispositivo em ≤ 2 s e inserir `gap_marker` na transcrição se houver lacuna.
+  - `system`: **loopback WASAPI** do dispositivo de saída padrão no Windows; **ScreenCaptureKit** (`capturesAudio`, process audio system-wide) no macOS.
+- **FR-009-04** Troca de dispositivo padrão durante a reunião (ex.: conectar fone Bluetooth) → reabrir a captura no novo dispositivo em ≤ 2 s e inserir `gap_marker` na transcrição se houver lacuna. No macOS o tap do SCK é system-wide (não vinculado ao endpoint), então trocas de saída não geram gap.
 - **FR-009-05** Gravação em disco incremental em blocos de 60 s por trilha (`audio/meetings/<id>/mic-0001.wav`…), com fsync por bloco. Na inicialização, reuniões em `recording` sem processo ativo são marcadas `recovered` e oferecidas para processamento.
 - **FR-009-06** Controles: **Pausar/Retomar** (pausa ambas as trilhas; `gap_marker`), **Parar**.
 - **FR-009-07** Indicador de gravação sempre visível enquanto grava (Flow Bar `meeting_recording` + ícone da bandeja vermelho). Não pode ser ocultado.
@@ -122,7 +122,7 @@ Em Configurações → Resumos de reunião, o usuário pode testar o provedor e 
 
 - Loopback: `cpal` no Windows suporta criar _input stream_ sobre um dispositivo de saída (WASAPI loopback); mudanças de dispositivo padrão via `IMMNotificationClient`.
 - O `audio engine` tem um único stream de mic com múltiplos assinantes (ditado, reunião, medidor) — nunca abrir o mic duas vezes.
-- macOS (v1.0): ScreenCaptureKit / Core Audio process taps (macOS 14.4+), exigindo permissão de gravação de áudio do sistema.
+- macOS: **ScreenCaptureKit** implementado (T-106) — `SCStream` com `capturesAudio`/`excludesCurrentProcessAudio` a 48 kHz, filtro incluindo todos os apps do display; exige permissão de Gravação de Tela (`CGPreflightScreenCaptureAccess`/`CGRequestScreenCaptureAccess` + `NSScreenCaptureUsageDescription`), e a sessão emite `TrackUnavailable` com a orientação de permissão enquanto não concedida. Core Audio process taps (macOS 14.4+) ficam como alternativa futura.
 
 ## Expansão especificada — conectores (v1.1+ proposta, não implementada)
 

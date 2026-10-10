@@ -663,6 +663,16 @@
   }
 }
 
+/* Model warm-up pill (T-113) — spinner + visible "carregando o modelo"
+   label; sized by content instead of the fixed working-pill width. */
+.f-loading {
+  width: auto;
+  padding: 0 10px;
+}
+.f-loading .frow-work {
+  gap: 8px;
+}
+
 /* Done flash — 48x24, success check (dwell 600 ms, AC-001-08). */
 .f-done {
   width: var(--flowbar-size-done-width);

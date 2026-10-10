@@ -172,3 +172,11 @@ export const suitabilityForModel = (
   modelId: string,
 ): Suitability | undefined =>
   recommendations?.labels.find((entry) => entry.model_id === modelId)?.label;
+
+/** Whether the model's engine has a GPU path on this machine (GPU badge). */
+export const gpuAcceleratedForModel = (
+  recommendations: ModelRecommendations | null,
+  modelId: string,
+): boolean =>
+  recommendations?.labels.find((entry) => entry.model_id === modelId)
+    ?.gpu_accelerated ?? false;

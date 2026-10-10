@@ -45,6 +45,7 @@ export type FlowbarView =
   | "recording" // ✕ | waveform | ■ (FR-001-05/06, AC-001-07)
   | "meeting-recording" // pause/resume | timer | ■ — the meeting pill (FR-009-07)
   | "streaming" // live transcription panel (pre-existing)
+  | "loading-model" // model cold-load: spinner + label while capture waits (T-113)
   | "working" // transcribing/processing/inserting dots (AC-001-08)
   | "done" // ✓ flash
   | "error" // ⚠ pill; hover shows cause + retry (AC-001-08)
@@ -117,6 +118,10 @@ export interface FlowbarViewInput {
   hovered: boolean;
   /** "Tentar novamente" is in flight — keep the working face up. */
   retrying: boolean;
+  /** The transcription model is (re)loading after an idle unload — capture
+   * already records, but the user should see "carregando" instead of a wave
+   * that looks dead while the engine warms up (T-113). */
+  modelLoading: boolean;
 }
 
 export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
@@ -129,6 +134,7 @@ export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
     hint,
     hovered,
     retrying,
+    modelLoading,
   } = input;
 
   // An in-flight retry outranks the stored error state so the user sees the
@@ -144,6 +150,12 @@ export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
   if (notice === "nothing_heard" || hint === "nothing-heard") {
     return "nothing-heard";
   }
+
+  // Model warm-up (T-113): the capture is already recording and the transcribe
+  // path waits on the in-flight load — the pill says "carregando o modelo"
+  // instead of a wave that looks unresponsive. Only claimed while a session
+  // overlay is up; a model switched from settings never flashes the bar.
+  if (modelLoading && windowActive) return "loading-model";
 
   // Live session phases. The streaming panel wins whenever the hint asks for
   // it — the coordinator reports the same phases for streaming models.
@@ -190,6 +202,19 @@ export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
   // show is in effect; otherwise the webview renders nothing.
   if (!alwaysOn && !windowActive) return "hidden";
   return hovered ? "hover" : "idle";
+}
+
+/**
+ * Which hover-card action buttons the settings allow (T-115): the dictate
+ * button always renders; notetaker/notes follow `flowbar_show_notetaker` /
+ * `flowbar_show_notes`, defaulting to notetaker on / notes off when the
+ * persisted setting is absent.
+ */
+export function resolveHoverActions(
+  showNotetaker: boolean | undefined,
+  showNotes: boolean | undefined,
+): { notetaker: boolean; notes: boolean } {
+  return { notetaker: showNotetaker ?? true, notes: showNotes ?? false };
 }
 
 /** The CSS dock edge the stage should mirror the native dock onto. */

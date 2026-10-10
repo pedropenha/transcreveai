@@ -32,6 +32,7 @@ export interface ModelRowState {
   /** MB/s while downloading. */
   speed?: number;
   suitability?: Suitability;
+  gpuAccelerated?: boolean;
   usages?: SttUsage[];
 }
 
@@ -116,6 +117,11 @@ const ModelRow: React.FC<{ row: ModelRowState } & ModelTableHandlers> = ({
           {row.suitability === "not_advised" ? (
             <Tag tone="warning">
               {t("settings.models.suitability.notAdvised")}
+            </Tag>
+          ) : null}
+          {row.gpuAccelerated ? (
+            <Tag tone="accent">
+              {t("settings.models.suitability.gpuAccelerated")}
             </Tag>
           ) : null}
           {row.usages?.map((usage) => (

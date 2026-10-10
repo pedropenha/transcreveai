@@ -627,8 +627,9 @@ fn start_meeting_from_surface(app: &AppHandle, req: meeting::session::StartReque
 
 /// FR-010-14 tray "Iniciar/Parar reunião": toggle — stop when a meeting is
 /// active, start a manual call-mode meeting otherwise. Failures get the same
-/// `toast://show` treatment as the other surfaces.
-fn toggle_meeting_from_surface(app: &AppHandle) {
+/// `toast://show` treatment as the other surfaces. Also the `meeting_toggle`
+/// shortcut action's target (T-115), hence `pub(crate)`.
+pub(crate) fn toggle_meeting_from_surface(app: &AppHandle) {
     use crate::commands::CommandErrorCode;
     use crate::meeting::session::{
         MeetingSessionManager, StartRequest, ToastPayload, TOAST_SHOW_EVENT,
@@ -935,6 +936,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_selected_language_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
+            shortcut::change_flowbar_visibility_setting,
+            shortcut::change_flowbar_follow_setting,
+            shortcut::change_flowbar_edge_setting,
+            shortcut::change_flowbar_show_notetaker_setting,
+            shortcut::change_flowbar_show_notes_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_word_correction_threshold_setting,
             shortcut::change_extra_recording_buffer_setting,
@@ -1057,6 +1063,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
             commands::history::delete_history_entry,
+            commands::history::delete_history_entries,
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
@@ -1101,6 +1108,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_source_icon,
             commands::meeting::meeting_export_markdown,
             commands::meeting::meeting_delete,
+            commands::meeting::meeting_delete_audio,
             commands::meeting::meeting_consent_accept,
             commands::meeting::meeting_consent_copy,
             commands::meeting::meeting_regenerate_summary,
@@ -1247,6 +1255,12 @@ pub fn run(cli_args: CliArgs) {
                     .filter(|metadata| {
                         let file_level = FILE_LOG_LEVEL.load(Ordering::Relaxed);
                         metadata.level() <= level_filter_from_u8(file_level)
+                            // enigo logs `location()` at DEBUG on every Flow Bar
+                            // hit-test poll (~12 lines/s while visible) — at the
+                            // 500 KB rotation cap that erases the session logs
+                            // within minutes. Keep enigo warnings/errors only.
+                            && (!metadata.target().starts_with("enigo")
+                                || metadata.level() <= log::Level::Warn)
                     }),
                     // Stream logs to the webview (via the `log://log` event) so the
                     // debug panel's live log viewer can show them in real time. Only
@@ -1256,6 +1270,8 @@ pub fn run(cli_args: CliArgs) {
                         WEBVIEW_LOG_STREAMING.load(Ordering::Relaxed)
                             && metadata.level()
                                 <= level_filter_from_u8(FILE_LOG_LEVEL.load(Ordering::Relaxed))
+                            && (!metadata.target().starts_with("enigo")
+                                || metadata.level() <= log::Level::Warn)
                     }),
                 ])
                 .build(),
@@ -1462,6 +1478,18 @@ pub fn run(cli_args: CliArgs) {
                 crate::managers::transcription::report_compute_devices();
                 let _ = crate::managers::transcription::get_available_accelerators();
             });
+
+            // Pre-warm the capture path (VAD + resolved-microphone cache) so the
+            // first dictation press opens the mic without Silero init or device
+            // enumeration on the critical path (T-114). No stream is opened.
+            {
+                let app_handle = app_handle.clone();
+                std::thread::spawn(move || {
+                    app_handle
+                        .state::<Arc<AudioRecordingManager>>()
+                        .warmup_capture_path();
+                });
+            }
 
             // Hide tray icon if --no-tray was passed
             if cli_args.no_tray {

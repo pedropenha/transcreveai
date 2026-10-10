@@ -60,6 +60,7 @@ O app escuta o microfone, instala um hook global de teclado, injeta teclas, lê 
 - **FR-011-22** Chamadas de LLM **sem ferramentas**; a saída é sempre tratada como texto a inserir, nunca como comando.
 
   Exceção autorizada F013: assistente/Notetaker pode devolver proposta estruturada tipada, validada no backend e revisada pelo usuário antes de publicação no conector. Credenciais OAuth nunca entram no modelo. Isso não habilita ferramentas gerais no pipeline de texto ou resumo.
+
 - **FR-011-23** Conteúdo do usuário (ditado, seleção, transcrição) sempre delimitado e declarado como dado no prompt; salvaguardas de saída da F004 (FR-004-15).
 
 ### Cadeia de suprimentos

@@ -6,6 +6,7 @@ use crate::insertion::InsertionStatus;
 use crate::managers::audio::{AudioRecordingManager, StopOutcome};
 use crate::managers::history::{HistoryManager, SessionEntry};
 use crate::managers::model::ModelManager;
+use crate::managers::transcription::StagedModelLoad;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{
@@ -671,13 +672,19 @@ impl ShortcutAction for TranscribeAction {
             ));
         }
 
-        // Load ASR model and VAD model in parallel
+        // Load ASR model and VAD model in parallel. The ASR load is only
+        // *staged* here: `is_loading` is already marked (so `start_stream` and
+        // `transcribe` wait correctly), but the heavy load job runs only after
+        // the microphone opens — see the `try_start_recording` block below.
         let kickoff_started = Instant::now();
-        if !tm.initiate_model_load_for(&settings.selected_model) {
-            self.clear_session();
-            emit_translation_error(app, "translation_model_loading");
-            return;
-        }
+        let staged_load = match tm.stage_model_load_for(&settings.selected_model) {
+            Some(staged) => staged,
+            None => {
+                self.clear_session();
+                emit_translation_error(app, "translation_model_loading");
+                return;
+            }
+        };
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -758,6 +765,13 @@ impl ShortcutAction for TranscribeAction {
         );
         debug!("Microphone mode - always_on: {}", is_always_on);
 
+        // The microphone opens before the staged model load runs: the load's
+        // CPU burst (GGUF mmap, Metal init, ORT session) starves CoreAudio
+        // bring-up for seconds on a cold start, and speech spoken while the
+        // mic stream was still opening is unrecoverable — a release queued
+        // behind that blocked start used to classify as "nada ouvido" (T-114).
+        // The load runs under held speech instead; `transcribe` waits on the
+        // load condvar.
         let mut recording_error: Option<String> = None;
         let recording_start_time = Instant::now();
         let capture = if binding_id == "assistant" {
@@ -771,6 +785,11 @@ impl ShortcutAction for TranscribeAction {
         } else {
             rm.try_start_recording(&binding_id, vad_policy)
         };
+
+        // Capture is armed (or failed) — run the staged model load now.
+        if let StagedModelLoad::Pending(run) = staged_load {
+            std::thread::spawn(run);
+        }
         match capture {
             Ok(readiness) => {
                 debug!(
@@ -1580,6 +1599,23 @@ impl ShortcutAction for AssistantAction {
     }
 }
 
+// Meeting Toggle Action (T-115): the `meeting_toggle` binding's press edge —
+// the same start/stop funnel as the tray's "Iniciar/Parar reunião" and the
+// Flow Bar ◉ button (`toggle_meeting_from_surface` emits the refusal toasts
+// itself). A toggle action: `stop` is a no-op so a key release can't undo
+// the press.
+struct MeetingToggleAction;
+
+impl ShortcutAction for MeetingToggleAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::toggle_meeting_from_surface(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Nothing to do on release — the press already toggled the meeting.
+    }
+}
+
 // Cancel Action
 struct CancelAction;
 
@@ -1653,6 +1689,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         Arc::new(AssistantAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
+        "meeting_toggle".to_string(),
+        Arc::new(MeetingToggleAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
     );
@@ -1699,6 +1739,17 @@ mod tests {
         assert!(super::ACTION_MAP.contains_key("transcribe_translate"));
         assert!(crate::transcription_coordinator::is_transcribe_binding(
             "transcribe_translate"
+        ));
+    }
+
+    /// T-115: `meeting_toggle` dispatches straight to ACTION_MAP on press —
+    /// it must not be a transcribe binding (the coordinator's dictation
+    /// state machine doesn't own meeting sessions).
+    #[test]
+    fn meeting_toggle_maps_to_action_not_transcribe_pipeline() {
+        assert!(super::ACTION_MAP.contains_key("meeting_toggle"));
+        assert!(!crate::transcription_coordinator::is_transcribe_binding(
+            "meeting_toggle"
         ));
     }
 

@@ -35,11 +35,13 @@ jobs:
           - platform: "ubuntu-24.04-arm"
             args: "--bundles appimage,deb,rpm"
             target: "aarch64-unknown-linux-gnu"
+          # NSIS only — `targets: "all"` would also try MSI, which rejects
+          # semver pre-release versions (0.10.0-beta.* → "must be numeric").
           - platform: "windows-latest"
-            args: ""
+            args: "--bundles nsis"
             target: "x86_64-pc-windows-msvc"
           - platform: "windows-11-arm"
-            args: "--target aarch64-pc-windows-msvc"
+            args: "--target aarch64-pc-windows-msvc --bundles nsis"
             target: "aarch64-pc-windows-msvc"
 
     uses: ./.github/workflows/build.yml
@@ -48,5 +50,9 @@ jobs:
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
       upload-artifacts: true
-      sign-binaries: true
+      # No OS-level signing certs are configured (no APPLE_CERTIFICATE, no
+      # AZURE_*): `true` hands empty credentials to the signing steps and
+      # fails the leg. The updater key is passed independently inside
+      # build.yml, so artifacts still get updater signatures.
+      sign-binaries: false
     secrets: inherit

@@ -41,6 +41,8 @@ interface MeetingDetailPanelProps {
   onRetry: (item: MeetingListItem) => void;
   onRenamed: () => void;
   onDelete: (id: string) => void;
+  /** T-115: refresh the list after the meeting's audio blocks are deleted. */
+  onAudioDeleted: () => void;
   onOpenSummarySettings: () => void;
 }
 
@@ -55,6 +57,7 @@ export const MeetingDetailPanel: React.FC<MeetingDetailPanelProps> = ({
   onRetry,
   onRenamed,
   onDelete,
+  onAudioDeleted,
   onOpenSummarySettings,
 }) => {
   const { t } = useTranslation();
@@ -62,6 +65,8 @@ export const MeetingDetailPanel: React.FC<MeetingDetailPanelProps> = ({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(item.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDeleteAudio, setConfirmDeleteAudio] = useState(false);
+  const [deletingAudio, setDeletingAudio] = useState(false);
   const renameSettled = useRef(false);
   const copiedTimer = useRef<number | undefined>(undefined);
 
@@ -95,6 +100,25 @@ export const MeetingDetailPanel: React.FC<MeetingDetailPanelProps> = ({
       console.warn("meeting_export_markdown failed:", e);
     }
     toast.error(t("settings.meetings.copyError"));
+  };
+
+  const deleteAudio = async () => {
+    setConfirmDeleteAudio(false);
+    setDeletingAudio(true);
+    try {
+      const result = await commands.meetingDeleteAudio(item.id);
+      if (result.status === "ok") {
+        toast.success(t("notetaker.detail.audioDeleted"));
+        onAudioDeleted();
+      } else {
+        toast.error(t("notetaker.detail.deleteAudioError"));
+      }
+    } catch (e) {
+      console.warn("meeting_delete_audio invoke failed:", e);
+      toast.error(t("notetaker.detail.deleteAudioError"));
+    } finally {
+      setDeletingAudio(false);
+    }
   };
 
   const submitRename = async () => {
@@ -219,6 +243,31 @@ export const MeetingDetailPanel: React.FC<MeetingDetailPanelProps> = ({
           )}
           {t("settings.meetings.copyMarkdown")}
         </button>
+        {item.audio_dir != null ? (
+          confirmDeleteAudio ? (
+            <button
+              type="button"
+              className="btn-secondary nt-danger"
+              disabled={deletingAudio}
+              onClick={() => void deleteAudio()}
+              onBlur={() => setConfirmDeleteAudio(false)}
+              autoFocus
+            >
+              <Trash2 width={14} height={14} aria-hidden="true" />
+              {t("notetaker.detail.confirmDeleteAudio")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={deletingAudio}
+              onClick={() => setConfirmDeleteAudio(true)}
+            >
+              <Trash2 width={14} height={14} aria-hidden="true" />
+              {t("notetaker.detail.deleteAudio")}
+            </button>
+          )
+        ) : null}
         {confirmDelete ? (
           <button
             type="button"

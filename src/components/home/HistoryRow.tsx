@@ -10,6 +10,10 @@ interface HistoryRowProps {
   position: "first" | "middle" | "last" | "only";
   retrying: boolean;
   tabbable: boolean;
+  /** T-115 selection mode: rows show a leading checkbox and clicks toggle. */
+  selecting: boolean;
+  selected: boolean;
+  onToggleSelect: (entry: HistoryEntry) => void;
   onActivate: (id: number) => void;
   onOpen: (entry: HistoryEntry) => void;
   onCopy: (entry: HistoryEntry) => void;
@@ -27,6 +31,9 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
   position,
   retrying,
   tabbable,
+  selecting,
+  selected,
+  onToggleSelect,
   onActivate,
   onOpen,
   onCopy,
@@ -49,15 +56,30 @@ export const HistoryRow: React.FC<HistoryRowProps> = ({
       className="hist-row"
       data-position={position}
       data-failed={failed}
+      data-selecting={selecting}
+      data-selected={selected}
       tabIndex={tabbable ? 0 : -1}
       onFocus={() => onActivate(entry.id)}
       onClick={(event) => {
-        // Inner buttons (copy, flag, retry, more) handle their own clicks.
-        if ((event.target as HTMLElement).closest("button")) return;
-        onOpen(entry);
+        // Inner controls (checkbox, copy, flag, retry, more) handle their own
+        // clicks. In selection mode a row click toggles instead of opening.
+        const target = event.target as HTMLElement;
+        if (target.closest("button") || target.closest(".hist-check")) return;
+        if (selecting) onToggleSelect(entry);
+        else onOpen(entry);
       }}
       onKeyDown={(event) => onKeyDown(event, entry)}
     >
+      {selecting ? (
+        <label className="hist-check">
+          <input
+            type="checkbox"
+            checked={selected}
+            aria-label={t("settings.history.selectEntry")}
+            onChange={() => onToggleSelect(entry)}
+          />
+        </label>
+      ) : null}
       <time className="hist-time" dateTime={moment.toISOString()}>
         {time}
       </time>

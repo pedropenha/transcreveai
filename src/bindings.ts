@@ -129,6 +129,67 @@ async changeOverlayStyleSetting(style: string) : Promise<Result<null, CommandErr
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * F001/FR-001-10 (T-115): Flow Bar visibility policy — "always" /
+ * "during_recording" / "never". Applies immediately so the slit appears or
+ * disappears without waiting for the next session.
+ */
+async changeFlowbarVisibilitySetting(visibility: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_flowbar_visibility_setting", { visibility }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * F001/FR-001-09 (T-115): which monitor the Flow Bar follows —
+ * "foreground_monitor" / "cursor" / "primary_monitor".
+ */
+async changeFlowbarFollowSetting(follow: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_flowbar_follow_setting", { follow }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * F001/FR-001-08 (T-115): screen edge the Flow Bar docks to —
+ * "bottom" / "left" / "right".
+ */
+async changeFlowbarEdgeSetting(edge: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_flowbar_edge_setting", { edge }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * T-115: the Flow Bar's ◉ notetaker button. The overlay webview listens for
+ * `settings-changed` and re-reads the setting to re-render.
+ */
+async changeFlowbarShowNotetakerSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_flowbar_show_notetaker_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * T-115: the Flow Bar's notes button. The overlay webview listens for
+ * `settings-changed` and re-reads the setting to re-render.
+ */
+async changeFlowbarShowNotesSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_flowbar_show_notes_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeDebugModeSetting(enabled: boolean) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_debug_mode_setting", { enabled }) };
@@ -1235,6 +1296,20 @@ async deleteHistoryEntry(id: number) : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * T-115 batch delete: each id goes through `delete_entry`, which removes
+ * the wav file and the db row. Best-effort — a failed id is logged and
+ * skipped so one bad row can't block the rest; the deleted count is
+ * returned. An empty list is a no-op.
+ */
+async deleteHistoryEntries(ids: number[]) : Promise<Result<number, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_history_entries", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async retryHistoryEntryTranscription(id: number) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("retry_history_entry_transcription", { id }) };
@@ -1754,6 +1829,20 @@ async meetingDelete(id: string) : Promise<Result<null, CommandError>> {
 }
 },
 /**
+ * T-115 audio-only delete: drops `audio/meetings/<id>` and clears the row's
+ * `audio_dir`, keeping the transcript, notes and summary. Same guards as
+ * `meeting_delete` — a live meeting's blocks are still being written and a
+ * `processing` meeting may still be reading them.
+ */
+async meetingDeleteAudio(id: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_delete_audio", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * FR-009-02: the user acknowledged the first-use consent modal — persisted
  * so the gate opens from now on.
  */
@@ -2074,8 +2163,10 @@ async mcpConfig(clientId: string) : Promise<Result<McpConfiguration, CommandErro
 }
 },
 /**
- * Stub implementation for non-macOS platforms
- * Always returns false since laptop detection is macOS-specific
+ * Checks if the Mac is a laptop by detecting battery presence
+ * 
+ * This uses pmset to check for battery information.
+ * Returns true if a battery is detected (laptop), false otherwise (desktop)
  */
 async isLaptop() : Promise<Result<boolean, CommandError>> {
     try {
@@ -2306,6 +2397,16 @@ flowbar_hide_in_fullscreen?: boolean;
  * reaches the store.
  */
 flowbar_snoozed_until_ms?: number | null; 
+/**
+ * Show the ◉ notetaker button on the Flow Bar (T-115). On by default —
+ * it needs an explicit serde default because `bool`'s own default is
+ * `false`, which would hide the button on every pre-T-115 store.
+ */
+flowbar_show_notetaker?: boolean; 
+/**
+ * Show the notes button on the Flow Bar (T-115). Off by default.
+ */
+flowbar_show_notes?: boolean; 
 /**
  * STT provider used for dictation (data-model `transcription.dictation_provider`).
  * Stays `None` in v1: the dictation model is `selected_model` (the real
@@ -2756,7 +2857,13 @@ gpu_names: string[];
  * VRAM of the largest usable GPU; 0 when no GPU or the backend does not
  * report capacity (e.g. Metal on unified-memory Apple Silicon).
  */
-max_gpu_vram_mb: number; tier: HardwareTier }
+max_gpu_vram_mb: number; 
+/**
+ * The GPU execution provider the ONNX stack can use on this build/host
+ * ("coreml" on macOS, "directml" on Windows x64), when one is compiled in.
+ * `None` means ONNX-family engines (Parakeet, Moonshine, …) run CPU-bound.
+ */
+ort_gpu_accelerator: string | null; tier: HardwareTier }
 /**
  * Coarse machine class, the row selector of FR-003-05's table.
  */
@@ -3097,7 +3204,11 @@ sha256: string | null } } |
 /**
  * One model's suitability label, joined to the model list by `model_id`.
  */
-export type ModelSuitabilityEntry = { model_id: string; label: Suitability }
+export type ModelSuitabilityEntry = { model_id: string; label: Suitability; 
+/**
+ * Whether this model's engine can run GPU-bound on the probed machine.
+ */
+gpu_accelerated: boolean }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
 /**
  * How `\n` is delivered while typing directly (`newline_mode`,
@@ -3111,7 +3222,7 @@ export type NewlineMode = "raw" | "shift_enter"
  */
 export type OperationRecord = { id: string; connection_id: string; meeting_id: string | null; action: string; status: OperationStatus; remote_id: string | null; remote_url: string | null; error_code: string | null; created_at: number; updated_at: number }
 export type OperationStatus = "awaiting_approval" | "executing" | "succeeded" | "failed" | "outcome_unknown" | "cancelled"
-export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
+export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm" | "coreml"
 export type OverlayPosition = "top" | "bottom"
 /**
  * Which recording overlay to display. `Minimal` and `Live` share one base

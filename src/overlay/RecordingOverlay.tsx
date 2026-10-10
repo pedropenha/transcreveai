@@ -35,6 +35,7 @@ import {
   hoverTipParts,
   meetingStateClaimsFlowbar,
   resolveFlowbarView,
+  resolveHoverActions,
   toastBadgeVisible,
   type FlowbarView,
   type HoverTipParts,
@@ -110,6 +111,11 @@ const RecordingOverlay: React.FC = () => {
   const [edge, setEdge] = useState<StageEdge>("bottom");
   const [dictateShortcut, setDictateShortcut] = useState<string>("");
 
+  // --- Hover-card action toggles (T-115): which buttons the card shows. ---
+  const [hoverActions, setHoverActions] = useState(() =>
+    resolveHoverActions(undefined, undefined),
+  );
+
   // --- Collapsed/suppressed meeting toast → amber dot (FR-008-10/12) ---
   const [toastPending, setToastPending] = useState(false);
 
@@ -117,6 +123,11 @@ const RecordingOverlay: React.FC = () => {
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
   const [captureReady, setCaptureReady] = useState(false);
+  // T-113: the engine can be unloaded when the shortcut fires (idle unload /
+  // first use). Capture starts anyway and transcription waits on the load —
+  // the pill shows "carregando o modelo" meanwhile so the press doesn't look
+  // dead.
+  const [modelLoading, setModelLoading] = useState(false);
   const [levels, setLevels] = useState<number[]>(Array(WAVE_BARS).fill(0));
   const [streamText, setStreamText] = useState<StreamTextEvent>({
     committed: "",
@@ -137,6 +148,10 @@ const RecordingOverlay: React.FC = () => {
   const meetingStatusRef = useRef<MeetingStatus>("idle");
   const meetingIdRef = useRef<string | null>(null);
   const overlayEventGenerationRef = useRef(0);
+  // Mirror of `windowActive` for event callbacks — a `loading_started` model
+  // event only claims the pill while a session overlay is up, never for a
+  // model switched from the settings window.
+  const windowActiveRef = useRef(false);
   const enterTimerRef = useRef<number | undefined>(undefined);
   const leaveTimerRef = useRef<number | undefined>(undefined);
   // The interactive surface the core keeps clickable (rest of the window stays
@@ -161,6 +176,9 @@ const RecordingOverlay: React.FC = () => {
         s.flowbar_visibility === "always" && s.overlay_style !== "none",
       );
       setEdge(effectiveEdge(s.flowbar_position_edge, s.overlay_position));
+      setHoverActions(
+        resolveHoverActions(s.flowbar_show_notetaker, s.flowbar_show_notes),
+      );
       setDictateShortcut(
         formatKeyCombination(
           s.bindings?.["transcribe"]?.current_binding ?? "",
@@ -219,27 +237,55 @@ const RecordingOverlay: React.FC = () => {
 
         await syncLanguageFromSettings();
         await refreshSettings();
+        // T-113: the model may still be warming up — the capture started
+        // regardless and waits on the load, so flag the "carregando" face
+        // until `model-state-changed` reports the engine ready.
+        const modelReady = await commands
+          .isModelLoading()
+          .then((r) => !(r.status === "ok" && r.data))
+          .catch(() => true);
         if (generation !== overlayEventGenerationRef.current) return;
         setHint(overlayHint);
+        if (overlayHint === "recording" || overlayHint === "streaming") {
+          setModelLoading(!modelReady);
+        }
         if (overlayHint === "streaming") {
           setStreamPhase("listening");
           setWorkKind("transcribing");
           setElapsed(0);
           setSession((s) => s + 1); // remount the card fresh for this session
         }
+        windowActiveRef.current = true;
         setWindowActive(true);
       });
 
       const unlistenHide = await listen("hide-overlay", () => {
         overlayEventGenerationRef.current += 1;
+        windowActiveRef.current = false;
         setWindowActive(false);
         setHint(null);
         setNotice(null);
         setCaptureReady(false);
+        setModelLoading(false);
         clearHoverTimers();
         setHovered(false);
         setTip(null);
       });
+
+      // T-113: while a session overlay is up, a starting model load claims
+      // the "carregando" face; any terminal model event hands the pill back
+      // to the session faces (a failed load surfaces as the session's error).
+      const unlistenModelState = await listen<{ event_type: string }>(
+        "model-state-changed",
+        (event) => {
+          const kind = event.payload.event_type;
+          if (kind === "loading_started") {
+            if (windowActiveRef.current) setModelLoading(true);
+          } else {
+            setModelLoading(false);
+          }
+        },
+      );
 
       // Coordinator lifecycle — the authoritative state vocabulary (F001).
       const unlistenSession = await listen<SessionStatePayload>(
@@ -269,6 +315,13 @@ const RecordingOverlay: React.FC = () => {
           }
         },
       );
+
+      // T-115: settings edits (presence edge, visibility, hover-card toggles)
+      // must reach the idle slit without an app restart — re-read them on
+      // every settings-changed broadcast.
+      const unlistenSettings = await listen("settings-changed", () => {
+        void refreshSettings();
+      });
 
       const unlistenReady = await listen("recording-ready", () => {
         setElapsed(0);
@@ -394,8 +447,10 @@ const RecordingOverlay: React.FC = () => {
       return () => {
         unlistenShow();
         unlistenHide();
+        unlistenModelState();
         unlistenSession();
         unlistenCursor();
+        unlistenSettings();
         unlistenReady();
         unlistenLevel();
         unlistenMeeting();
@@ -430,6 +485,7 @@ const RecordingOverlay: React.FC = () => {
     notice,
     hint,
     hovered,
+    modelLoading,
     retrying,
   });
 
@@ -643,6 +699,8 @@ const RecordingOverlay: React.FC = () => {
         return meetingStatus === "paused"
           ? t("overlay.meetingPaused")
           : t("overlay.meetingRecording");
+      case "loading-model":
+        return t("overlay.loadingModel");
       case "working":
         if (meetingStatus === "processing" && phase === "idle") {
           return t("overlay.meetingProcessing");
@@ -677,8 +735,14 @@ const RecordingOverlay: React.FC = () => {
 
   const tipContent: HoverTipParts | null = (() => {
     if (tip === "dictate") return dictateTipParts;
-    if (tip === "notetaker") return hoverTipParts(t("overlay.notetaker"), "");
-    if (tip === "notes") return hoverTipParts(t("overlay.notes"), "");
+    // A toggle flip mid-hover must not leave a tooltip pointing at a button
+    // that is no longer rendered.
+    if (tip === "notetaker" && hoverActions.notetaker) {
+      return hoverTipParts(t("overlay.notetaker"), "");
+    }
+    if (tip === "notes" && hoverActions.notes) {
+      return hoverTipParts(t("overlay.notes"), "");
+    }
     if (tip === "error") {
       return hoverTipParts(sessionError || t("overlay.failed"), "");
     }
@@ -757,6 +821,8 @@ const RecordingOverlay: React.FC = () => {
             dictateTip={dictateTipParts}
             notetakerLabel={t("overlay.notetaker")}
             notesLabel={t("overlay.notes")}
+            showNotetaker={hoverActions.notetaker}
+            showNotes={hoverActions.notes}
             onTip={setTip}
             onDictate={dictate}
             onNotetaker={notetaker}
@@ -845,6 +911,23 @@ const RecordingOverlay: React.FC = () => {
           </div>
         );
       }
+
+      case "loading-model":
+        // T-113: cold load after an idle unload — the mic already records and
+        // the transcribe waits on the engine; the pill explains the pause.
+        // The user asked for the label to be visible, not AT-only.
+        return (
+          <div
+            className="scard fbar-card f-work f-loading"
+            role="status"
+            aria-label={t("overlay.loadingModel")}
+          >
+            <div className="frow frow-work">
+              <span className="sspinner" aria-hidden="true" />
+              <span className="swork-label">{t("overlay.loadingModel")}</span>
+            </div>
+          </div>
+        );
 
       case "working":
         // F001 processing shape: three pulsing dots + an AT-only label — the

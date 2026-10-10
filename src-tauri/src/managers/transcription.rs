@@ -106,6 +106,17 @@ impl Drop for LoadingGuard {
     }
 }
 
+/// Outcome of [`TranscriptionManager::stage_model_load_for`].
+pub(crate) enum StagedModelLoad {
+    /// The requested model is already loaded; nothing to run.
+    Loaded,
+    /// A load for this same model is already in flight.
+    InFlight,
+    /// The load is marked pending; run the job on a worker thread to perform
+    /// it. Dropping the job un-marks the load and wakes condvar waiters.
+    Pending(Box<dyn FnOnce() + Send>),
+}
+
 #[derive(Clone)]
 pub struct TranscriptionManager {
     engine: Arc<Mutex<Option<engine::LoadedEngine>>>,
@@ -349,6 +360,27 @@ impl TranscriptionManager {
 
     /// Load a session-selected model without modifying the persisted selection.
     pub(crate) fn initiate_model_load_for(&self, model_id: &str) -> bool {
+        match self.stage_model_load_for(model_id) {
+            Some(StagedModelLoad::Pending(run)) => {
+                thread::spawn(run);
+                true
+            }
+            Some(StagedModelLoad::Loaded | StagedModelLoad::InFlight) => true,
+            None => false,
+        }
+    }
+
+    /// Mark a session model load as pending and hand back the load job without
+    /// running it, so the caller can interleave latency-critical work (opening
+    /// the microphone) before the heavy load starts competing for CPU. Audio
+    /// spoken while the mic stream is still opening is unrecoverable, whereas
+    /// the model can keep loading under held speech — the inference path waits
+    /// on the load condvar either way.
+    ///
+    /// `is_loading` is set immediately, so `start_stream`/`transcribe` waiters
+    /// already see the pending load. Dropping the [`StagedModelLoad::Pending`]
+    /// job without running it releases the mark and wakes waiters.
+    pub(crate) fn stage_model_load_for(&self, model_id: &str) -> Option<StagedModelLoad> {
         let mut is_loading = self.is_loading.lock().unwrap();
         if *is_loading {
             // A cold start may capture while its own model loads, as before.
@@ -359,7 +391,8 @@ impl TranscriptionManager {
                     .unwrap_or_else(|e| e.into_inner())
                     .as_deref(),
                 model_id,
-            );
+            )
+            .then_some(StagedModelLoad::InFlight);
         }
 
         let reload_pending = self.reload_model_on_next_use.load(Ordering::Acquire);
@@ -367,7 +400,7 @@ impl TranscriptionManager {
             && self.is_model_loaded()
             && self.get_current_model().as_deref() == Some(model_id)
         {
-            return true;
+            return Some(StagedModelLoad::Loaded);
         }
 
         *is_loading = true;
@@ -375,14 +408,17 @@ impl TranscriptionManager {
             .loading_model_id
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(model_id.to_string());
+        // The guard is created now (not inside the job) so that dropping a
+        // never-run `Pending` still releases the `is_loading` mark.
+        let loading_guard = LoadingGuard {
+            is_loading: self.is_loading.clone(),
+            loading_condvar: self.loading_condvar.clone(),
+            loading_model_id: self.loading_model_id.clone(),
+        };
         let self_clone = self.clone();
         let model_id = model_id.to_string();
-        thread::spawn(move || {
-            let _loading_guard = LoadingGuard {
-                is_loading: self_clone.is_loading.clone(),
-                loading_condvar: self_clone.loading_condvar.clone(),
-                loading_model_id: self_clone.loading_model_id.clone(),
-            };
+        Some(StagedModelLoad::Pending(Box::new(move || {
+            let _loading_guard = loading_guard;
             if reload_pending {
                 self_clone
                     .reload_model_on_next_use
@@ -391,8 +427,12 @@ impl TranscriptionManager {
             if let Err(e) = self_clone.load_model(&model_id) {
                 error!("Failed to load model: {}", e);
             }
-        });
-        true
+        })))
+    }
+
+    /// Whether a model load is currently in progress.
+    pub fn is_loading_model(&self) -> bool {
+        *self.is_loading.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn get_current_model(&self) -> Option<String> {

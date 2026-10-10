@@ -8,6 +8,9 @@ interface FlowbarHoverCardProps {
   dictateTip: HoverTipParts;
   notetakerLabel: string;
   notesLabel: string;
+  /** T-115 toggles: dictate always renders; these gate the other two. */
+  showNotetaker: boolean;
+  showNotes: boolean;
   onTip: (tip: FlowbarTip | null) => void;
   onDictate: () => void;
   onNotetaker: () => void;
@@ -52,6 +55,8 @@ export function FlowbarHoverCard({
   dictateTip,
   notetakerLabel,
   notesLabel,
+  showNotetaker,
+  showNotes,
   onTip,
   onDictate,
   onNotetaker,
@@ -68,22 +73,26 @@ export function FlowbarHoverCard({
       >
         <Mic size={18} aria-hidden="true" />
       </HoverButton>
-      <HoverButton
-        tip="notetaker"
-        label={notetakerLabel}
-        onTip={onTip}
-        onClick={onNotetaker}
-      >
-        <CircleDot size={18} aria-hidden="true" />
-      </HoverButton>
-      <HoverButton
-        tip="notes"
-        label={notesLabel}
-        onTip={onTip}
-        onClick={onNotes}
-      >
-        <StickyNote size={16} aria-hidden="true" />
-      </HoverButton>
+      {showNotetaker && (
+        <HoverButton
+          tip="notetaker"
+          label={notetakerLabel}
+          onTip={onTip}
+          onClick={onNotetaker}
+        >
+          <CircleDot size={18} aria-hidden="true" />
+        </HoverButton>
+      )}
+      {showNotes && (
+        <HoverButton
+          tip="notes"
+          label={notesLabel}
+          onTip={onTip}
+          onClick={onNotes}
+        >
+          <StickyNote size={16} aria-hidden="true" />
+        </HoverButton>
+      )}
     </div>
   );
 }
