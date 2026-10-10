@@ -53,6 +53,7 @@ pub trait MicUsageSource: Send {
 
 /// Convert a Windows FILETIME (100 ns ticks since 1601-01-01) to unix epoch
 /// milliseconds. `0` maps to `None` — the ConsentStore uses it as "unset".
+#[cfg(any(target_os = "windows", test))]
 pub fn filetime_to_unix_ms(filetime: u64) -> Option<i64> {
     if filetime == 0 {
         return None;
@@ -65,6 +66,7 @@ pub fn filetime_to_unix_ms(filetime: u64) -> Option<i64> {
 /// Decode a `NonPackaged` subkey name: `C:#Program Files#Zoom#bin#Zoom.exe`
 /// → `C:\Program Files\Zoom\bin\Zoom.exe`. The `#` encoding is unambiguous —
 /// `\` never appears inside a path segment — so a straight replace is exact.
+#[cfg(any(target_os = "windows", test))]
 pub fn decode_nonpackaged_path(encoded: &str) -> String {
     encoded.replace('#', "\\")
 }
@@ -78,6 +80,7 @@ pub fn path_file_name(path: &str) -> &str {
 /// Derive the `exe_name` for a packaged ConsentStore subkey: the tail after
 /// the last `!` (`MSTeams_8wekyb3d8bbwe!MSTeams` → `MSTeams`), or the whole
 /// name when there is no `!`.
+#[cfg(any(target_os = "windows", test))]
 fn packaged_app_name(subkey: &str) -> &str {
     subkey.rsplit('!').next().unwrap_or(subkey)
 }
@@ -85,6 +88,7 @@ fn packaged_app_name(subkey: &str) -> &str {
 /// Build the [`MicUsage`] for one leaf entry. `subkey` is the raw child key
 /// name; `packaged` distinguishes the `microphone\<subkey>` layout from
 /// `microphone\NonPackaged\<subkey>`.
+#[cfg(any(target_os = "windows", test))]
 pub fn usage_from_entry(
     subkey: &str,
     packaged: bool,
@@ -308,6 +312,244 @@ mod imp {
 #[cfg(target_os = "windows")]
 pub use imp::ConsentStoreSource;
 
+// ---------------------------------------------------------------------------
+// macOS implementation (CoreAudio process objects, macOS 14.2+)
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+mod imp {
+    //! macOS S1 (spec F008 notas técnicas): `coreaudiod` tracks one *process
+    //! object* per process doing audio I/O since macOS 14.2
+    //! (`kAudioHardwarePropertyProcessObjectList` on the system object).
+    //! `kAudioProcessPropertyIsRunningInput` answers "is this process
+    //! capturing the mic right now" — the exact ConsentStore analogue. On
+    //! older macOS the property read fails (`kAudioHardwareUnknownProperty-
+    //! Error`); the source logs once and reports an empty set, so detection
+    //! stays off without breaking the app.
+    //!
+    //! Identity: `kAudioProcessPropertyPID` → `NSRunningApplication.bundleURL`
+    //! → the **outermost** `.app`, so a renderer helper
+    //! (`…/Google Chrome.app/Contents/Frameworks/Google Chrome Helper
+    //! (Renderer).app`) attributes to `Google Chrome.app` — matching what the
+    //! `meeting_app_rules` rows and the window snapshot report. Bare binaries
+    //! fall back to `proc_pidpath`.
+
+    use std::io;
+    use std::ptr::NonNull;
+
+    use objc2::rc::autoreleasepool;
+    use objc2_app_kit::NSRunningApplication;
+    use objc2_core_audio::{
+        kAudioHardwarePropertyProcessObjectList, kAudioObjectPropertyElementMain,
+        kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject,
+        kAudioProcessPropertyIsRunningInput, kAudioProcessPropertyPID, AudioObjectGetPropertyData,
+        AudioObjectGetPropertyDataSize, AudioObjectHasProperty, AudioObjectID,
+        AudioObjectPropertyAddress,
+    };
+
+    use super::{path_file_name, MicUsage, MicUsageSource};
+
+    /// CoreAudio process-object reader. `unsupported_logged` makes the
+    /// pre-14.2 / read-failure path warn exactly once instead of every tick.
+    pub struct MacMicUsageSource {
+        self_pid: i32,
+        unsupported_logged: bool,
+    }
+
+    impl MacMicUsageSource {
+        pub fn new() -> Self {
+            Self {
+                self_pid: std::process::id() as i32,
+                unsupported_logged: false,
+            }
+        }
+    }
+
+    impl Default for MacMicUsageSource {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    fn address(selector: u32) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress {
+            mSelector: selector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain,
+        }
+    }
+
+    fn os_err(status: i32) -> io::Error {
+        io::Error::from_raw_os_error(status)
+    }
+
+    /// `AudioObjectGetPropertyData` for a fixed-size `u32` property.
+    fn u32_property(object: AudioObjectID, selector: u32) -> io::Result<u32> {
+        let mut addr = address(selector);
+        let mut value = 0u32;
+        let mut size = std::mem::size_of::<u32>() as u32;
+        // SAFETY: `addr`, `size` and `value` are valid for the call; the
+        // buffer is exactly `size` bytes as the API requires.
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                object,
+                NonNull::from(&mut addr),
+                0,
+                std::ptr::null(),
+                NonNull::from(&mut size),
+                NonNull::from(&mut value).cast(),
+            )
+        };
+        if status == 0 {
+            Ok(value)
+        } else {
+            Err(os_err(status))
+        }
+    }
+
+    /// All live audio process objects (not only capturing ones).
+    fn process_objects() -> io::Result<Vec<AudioObjectID>> {
+        let mut addr = address(kAudioHardwarePropertyProcessObjectList);
+        let mut size = 0u32;
+        // SAFETY: `addr`/`size` out-params are valid; no qualifier needed.
+        let status = unsafe {
+            AudioObjectGetPropertyDataSize(
+                kAudioObjectSystemObject as AudioObjectID,
+                NonNull::from(&mut addr),
+                0,
+                std::ptr::null(),
+                NonNull::from(&mut size),
+            )
+        };
+        if status != 0 {
+            return Err(os_err(status));
+        }
+        let count = size as usize / std::mem::size_of::<AudioObjectID>();
+        let mut objects = vec![0 as AudioObjectID; count];
+        // SAFETY: `objects` has capacity for `size` bytes as returned above.
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                kAudioObjectSystemObject as AudioObjectID,
+                NonNull::from(&mut addr),
+                0,
+                std::ptr::null(),
+                NonNull::from(&mut size),
+                NonNull::new(objects.as_mut_ptr().cast()).unwrap(),
+            )
+        };
+        if status == 0 {
+            Ok(objects)
+        } else {
+            Err(os_err(status))
+        }
+    }
+
+    /// Whether the system object even exposes process objects — distinguishes
+    /// "no audio activity" (empty vec is normal) from "API absent" (pre-14.2).
+    fn process_objects_supported() -> bool {
+        let mut addr = address(kAudioHardwarePropertyProcessObjectList);
+        // SAFETY: `addr` is a valid pointer for the duration of the call.
+        unsafe {
+            AudioObjectHasProperty(
+                kAudioObjectSystemObject as AudioObjectID,
+                NonNull::from(&mut addr),
+            )
+        }
+    }
+
+    /// First path component ending in `.app` wins, so nested helper bundles
+    /// (`/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome
+    /// Helper (Renderer).app`) attribute to the user-facing app. Paths with
+    /// no `.app` component (bare binaries) pass through unchanged.
+    pub(crate) fn outermost_app(path: &str) -> &str {
+        let mut from = 0;
+        while let Some(rel) = path[from..].find(".app") {
+            let end = from + rel + ".app".len();
+            if end == path.len() || path.as_bytes()[end] == b'/' {
+                return &path[..end];
+            }
+            from = end;
+        }
+        path
+    }
+
+    /// `.app` bundle path for `pid`, normalizing nested helpers to the
+    /// outermost bundle.
+    fn bundle_path_for(pid: i32) -> Option<String> {
+        let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
+        let path = app.bundleURL()?.path()?.to_string();
+        Some(outermost_app(&path).to_string())
+    }
+
+    /// Executable path via `proc_pidpath` — fallback for processes with no
+    /// `NSRunningApplication` (bare binaries, helpers outside a bundle).
+    fn proc_path_for(pid: i32) -> Option<String> {
+        let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+        // SAFETY: `buf` is `PROC_PIDPATHINFO_MAXSIZE` writable bytes.
+        let len = unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr().cast(), buf.len() as u32) };
+        if len <= 0 {
+            return None;
+        }
+        let path = String::from_utf8_lossy(&buf[..len as usize]).into_owned();
+        Some(outermost_app(&path).to_string())
+    }
+
+    /// `(exe_name, exe_path)` for a capturing pid: bundle file name
+    /// (`Google Chrome.app`) or the bare binary name, with the normalized
+    /// `.app` path as the icon source.
+    fn identity_for(pid: i32) -> Option<(String, Option<String>)> {
+        let path = bundle_path_for(pid).or_else(|| proc_path_for(pid))?;
+        let exe_name = path_file_name(&path).to_string();
+        if exe_name.is_empty() {
+            return None;
+        }
+        Some((exe_name, Some(path)))
+    }
+
+    impl MicUsageSource for MacMicUsageSource {
+        fn snapshot(&mut self) -> io::Result<Vec<MicUsage>> {
+            if !process_objects_supported() {
+                if !self.unsupported_logged {
+                    self.unsupported_logged = true;
+                    log::warn!(
+                        "Meeting detection unavailable: CoreAudio process objects \
+                         require macOS 14.2+; S1 will report no mic usage"
+                    );
+                }
+                return Ok(Vec::new());
+            }
+            let objects = process_objects()?;
+            let self_pid = self.self_pid;
+            Ok(autoreleasepool(|_| {
+                objects
+                    .into_iter()
+                    .filter(|&obj| {
+                        u32_property(obj, kAudioProcessPropertyIsRunningInput).unwrap_or(0) != 0
+                    })
+                    .filter_map(|obj| {
+                        u32_property(obj, kAudioProcessPropertyPID)
+                            .ok()
+                            .map(|p| p as i32)
+                    })
+                    .filter(|&pid| pid != self_pid)
+                    .filter_map(identity_for)
+                    .map(|(exe_name, exe_path)| MicUsage {
+                        key: exe_path.clone().unwrap_or_else(|| exe_name.clone()),
+                        exe_name,
+                        exe_path,
+                        since_ms: None,
+                    })
+                    .collect()
+            }))
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) use imp::outermost_app;
+#[cfg(target_os = "macos")]
+pub use imp::MacMicUsageSource;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +601,40 @@ mod tests {
         assert_eq!(usage.exe_name, "MSTeams");
         assert_eq!(usage.exe_path, None);
         assert_eq!(usage.key, "MSTeams_8wekyb3d8bbwe!MSTeams");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn outermost_app_attributes_nested_helpers() {
+        assert_eq!(
+            imp::outermost_app(
+                "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"
+            ),
+            "/Applications/Google Chrome.app"
+        );
+        // Zoom's own helper layout stays inside `zoom.us.app`.
+        assert_eq!(
+            imp::outermost_app("/Applications/zoom.us.app/Contents/MacOS/zoom.us"),
+            "/Applications/zoom.us.app"
+        );
+        // `.app` inside a file name segment is not a bundle boundary.
+        assert_eq!(
+            imp::outermost_app("/usr/libexec/my.applet-helper"),
+            "/usr/libexec/my.applet-helper"
+        );
+        // Bare binaries pass through unchanged.
+        assert_eq!(
+            imp::outermost_app("/opt/homebrew/bin/ffmpeg"),
+            "/opt/homebrew/bin/ffmpeg"
+        );
+    }
+
+    #[test]
+    fn file_name_of_app_bundle_path() {
+        assert_eq!(
+            path_file_name("/Applications/Google Chrome.app"),
+            "Google Chrome.app"
+        );
+        assert_eq!(path_file_name("/Applications/zoom.us.app"), "zoom.us.app");
     }
 }

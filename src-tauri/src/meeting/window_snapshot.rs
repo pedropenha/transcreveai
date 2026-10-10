@@ -138,3 +138,162 @@ mod imp {
 
 #[cfg(target_os = "windows")]
 pub use imp::EnumWindowsSource;
+
+// ---------------------------------------------------------------------------
+// macOS implementation (CGWindowListCopyWindowInfo)
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+mod imp {
+    //! macOS S2 (spec F008 notas técnicas): `CGWindowListCopyWindowInfo`
+    //! returns the on-screen windows with `kCGWindowOwnerPID` /
+    //! `kCGWindowOwnerName` / `kCGWindowName` (the title).
+    //!
+    //! `kCGWindowName` for other apps' windows requires Screen Recording
+    //! (same permission the meeting loopback needs): without it titles are
+    //! absent, so exe-only rules (Zoom, Teams) still fire but browser rules
+    //! (Meet) can't see a title to match — the source logs that hint once.
+    //!
+    //! `exe_name` resolution mirrors the mic source: pid →
+    //! `NSRunningApplication.bundleURL` → outermost `.app` file name, so a
+    //! window of `Google Chrome Helper (Renderer)` still reports
+    //! `Google Chrome.app`. `kCGWindowOwnerName` is the fallback.
+
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use objc2::rc::{autoreleasepool, Retained};
+    use objc2::runtime::AnyObject;
+    use objc2_app_kit::NSRunningApplication;
+    use objc2_core_foundation::CFRetained;
+    use objc2_core_graphics::{
+        kCGNullWindowID, CGPreflightScreenCaptureAccess, CGWindowListCopyWindowInfo,
+        CGWindowListOption,
+    };
+    use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString};
+
+    use super::super::consent::{outermost_app, path_file_name};
+    use super::{WindowInfo, WindowSnapshotSource};
+
+    /// `CGWindowListCopyWindowInfo` reader. `titles_hint_logged` (interior
+    /// mutability — `snapshot` takes `&self`) warns once when titles are
+    /// being withheld for lack of Screen Recording.
+    pub struct MacWindowSource {
+        titles_hint_logged: AtomicBool,
+    }
+
+    impl MacWindowSource {
+        pub fn new() -> Self {
+            Self {
+                titles_hint_logged: AtomicBool::new(false),
+            }
+        }
+    }
+
+    impl Default for MacWindowSource {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    type WindowDict = NSDictionary<NSString, AnyObject>;
+
+    /// `dict[key]` as an `i32`, when the value is an `NSNumber`.
+    fn number(dict: &WindowDict, key: &NSString) -> Option<i32> {
+        dict.objectForKey(key)?
+            .downcast::<NSNumber>()
+            .ok()
+            .map(|n| n.as_i32())
+    }
+
+    /// `dict[key]` as a `String`, when the value is an `NSString`.
+    fn string(dict: &WindowDict, key: &NSString) -> Option<String> {
+        dict.objectForKey(key)?
+            .downcast::<NSString>()
+            .ok()
+            .map(|s| s.to_string())
+    }
+
+    /// Outermost `.app` file name for `pid` (`Google Chrome.app`), `None`
+    /// when the owner has no resolvable bundle path.
+    fn exe_name_for_pid(pid: i32) -> Option<String> {
+        let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
+        let path = app.bundleURL()?.path()?.to_string();
+        let path = outermost_app(&path);
+        Some(path_file_name(path).to_string()).filter(|name| !name.is_empty())
+    }
+
+    impl WindowSnapshotSource for MacWindowSource {
+        fn snapshot(&self) -> Vec<WindowInfo> {
+            autoreleasepool(|_| self.inner())
+        }
+    }
+
+    impl MacWindowSource {
+        fn inner(&self) -> Vec<WindowInfo> {
+            // Layer-0 windows only: the list otherwise carries menu-bar items,
+            // status icons and other chrome that can never host a meeting tab.
+            let options =
+                CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
+            let Some(list) = CGWindowListCopyWindowInfo(options, kCGNullWindowID) else {
+                return Vec::new();
+            };
+            // SAFETY: elements of the returned array are CFDictionaryRef —
+            // toll-free bridged with NSDictionary. `into_raw` hands the +1
+            // reference to the Retained below, so ownership is preserved.
+            let windows: Retained<NSArray<WindowDict>> =
+                unsafe { Retained::from_raw(CFRetained::into_raw(list).as_ptr().cast()) }
+                    .unwrap_or_default();
+
+            let key_pid = NSString::from_str("kCGWindowOwnerPID");
+            let key_name = NSString::from_str("kCGWindowName");
+            let key_owner = NSString::from_str("kCGWindowOwnerName");
+            let key_layer = NSString::from_str("kCGWindowLayer");
+
+            let has_screen_recording = CGPreflightScreenCaptureAccess();
+            let mut missing_titles = false;
+            // pid → exe_name, resolved once per snapshot (a browser owns
+            // dozens of windows).
+            let mut exe_by_pid: HashMap<i32, Option<String>> = HashMap::new();
+            let mut out = Vec::new();
+            for dict in windows.iter() {
+                if number(&dict, &key_layer).unwrap_or(0) != 0 {
+                    continue;
+                }
+                let Some(pid) = number(&dict, &key_pid) else {
+                    continue;
+                };
+                let Some(title) = string(&dict, &key_name) else {
+                    missing_titles = true;
+                    continue;
+                };
+                if title.trim().is_empty() {
+                    continue;
+                }
+                let exe_name = exe_by_pid
+                    .entry(pid)
+                    .or_insert_with(|| exe_name_for_pid(pid).or_else(|| string(&dict, &key_owner)))
+                    .clone()
+                    .unwrap_or_default();
+                out.push(WindowInfo {
+                    pid: pid as u32,
+                    exe_name,
+                    title,
+                });
+            }
+            if missing_titles
+                && !has_screen_recording
+                && !self.titles_hint_logged.swap(true, Ordering::Relaxed)
+            {
+                log::warn!(
+                    "Meeting detection: window titles need Screen Recording — \
+                     browser rules (Google Meet) stay quiet until it is granted"
+                );
+            }
+            out
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub use imp::MacWindowSource;

@@ -749,12 +749,14 @@ mod tests {
     #[test]
     fn builtin_meeting_app_rules_are_seeded_by_migration() {
         // T-060 / spec F008: the closed v1 set — Zoom, Teams (packaged key +
-        // both exes), Meet on the five browsers, Webex.
+        // both exes), Meet on the five browsers, Webex. T-117 adds the
+        // macOS `.app` bundle names for the same apps (bundle file names are
+        // what CoreAudio/CGWindow report).
         let conn = setup();
         let rules = SqliteMeetingAppRuleRepository::new(&conn);
         let all = rules.list().expect("list seeded rules");
 
-        assert_eq!(all.len(), 11);
+        assert_eq!(all.len(), 22);
         for r in &all {
             assert!(r.builtin, "{} must be builtin", r.id);
             assert_eq!(r.action, "ask");
@@ -785,6 +787,23 @@ mod tests {
         assert!(!re.is_match("YouTube - Google Chrome"));
         assert!(by_exe("CiscoCollabHost.exe").is_some());
         assert!(by_exe("webexmta.exe").is_some());
+
+        // macOS `.app` identities (T-117): Zoom/Teams fire on exe alone;
+        // browser bundles carry the same Meet title pattern.
+        assert!(by_exe("zoom.us.app").unwrap().title_pattern.is_none());
+        assert_eq!(
+            by_exe("Microsoft Teams.app").unwrap().label,
+            "Microsoft Teams"
+        );
+        let mac_chrome = by_exe("Google Chrome.app").unwrap();
+        assert_eq!(mac_chrome.label, "Google Meet");
+        assert_eq!(
+            mac_chrome.title_pattern.as_deref(),
+            Some("^Meet -|meet\\.google\\.com")
+        );
+        assert!(by_exe("Safari.app").is_some());
+        assert!(by_exe("Arc.app").is_some());
+        assert!(by_exe("Webex.app").is_some());
     }
 
     #[test]

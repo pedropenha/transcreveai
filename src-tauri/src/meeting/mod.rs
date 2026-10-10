@@ -53,8 +53,12 @@ pub use window_snapshot::{WindowInfo, WindowSnapshotSource};
 
 #[cfg(target_os = "windows")]
 pub use consent::ConsentStoreSource;
+#[cfg(target_os = "macos")]
+pub use consent::MacMicUsageSource;
 #[cfg(target_os = "windows")]
 pub use window_snapshot::EnumWindowsSource;
+#[cfg(target_os = "macos")]
+pub use window_snapshot::MacWindowSource;
 
 use tauri::Manager as _;
 
@@ -63,10 +67,9 @@ use tauri::Manager as _;
 pub type SharedDetector = std::sync::Arc<std::sync::Mutex<Detector>>;
 
 /// Create the detector, publish it as [`SharedDetector`] state and spawn the
-/// microphone-usage monitor thread. The monitor is a no-op outside Windows
-/// (macOS has its own S1/S2 equivalents, scheduled for v1.0 — see spec F008
-/// notas técnicas); the managed state exists on every platform so the IPC
-/// commands resolve uniformly.
+/// microphone-usage monitor thread. The monitor is a no-op on Linux (no S1/S2
+/// equivalents — see spec F008 notas técnicas); the managed state exists on
+/// every platform so the IPC commands resolve uniformly.
 pub fn start(app: &tauri::AppHandle) {
     let shared: SharedDetector = std::sync::Arc::new(std::sync::Mutex::new(Detector::new(
         current_exe_name().unwrap_or_default(),
@@ -77,13 +80,32 @@ pub fn start(app: &tauri::AppHandle) {
         let app = app.clone();
         match std::thread::Builder::new()
             .name("meeting-mic-monitor".to_string())
-            .spawn(move || run(app, shared))
+            .spawn(move || run(app, shared, ConsentStoreSource::new(), EnumWindowsSource))
         {
             Ok(_) => log::info!("Meeting detector started (ConsentStore + window snapshots)"),
             Err(e) => log::error!("Failed to spawn meeting mic monitor: {e}"),
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let app = app.clone();
+        match std::thread::Builder::new()
+            .name("meeting-mic-monitor".to_string())
+            .spawn(move || {
+                run(
+                    app,
+                    shared,
+                    MacMicUsageSource::new(),
+                    MacWindowSource::new(),
+                )
+            }) {
+            Ok(_) => {
+                log::info!("Meeting detector started (CoreAudio process objects + CGWindowList)")
+            }
+            Err(e) => log::error!("Failed to spawn meeting mic monitor: {e}"),
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = app;
         let _ = shared;
@@ -92,15 +114,20 @@ pub fn start(app: &tauri::AppHandle) {
 }
 
 /// The monitor loop body. Runs until process exit (the thread is detached;
-/// there is no shutdown signal wired in this task).
-#[cfg(target_os = "windows")]
-fn run(app: tauri::AppHandle, detector: SharedDetector) {
+/// there is no shutdown signal wired in this task). Generic over the S1/S2
+/// sources so each platform supplies its own; everything downstream —
+/// classifier, detector, `detector://meeting` events — is shared.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn run<S: MicUsageSource, W: WindowSnapshotSource>(
+    app: tauri::AppHandle,
+    detector: SharedDetector,
+    source: S,
+    windows: W,
+) {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use std::time::Instant;
 
-    let source = ConsentStoreSource::new();
-    let windows = EnumWindowsSource;
     let self_exe = current_exe_name().unwrap_or_default();
     let stop = Arc::new(AtomicBool::new(false));
 
@@ -164,7 +191,7 @@ fn run(app: tauri::AppHandle, detector: SharedDetector) {
 /// click (AC-008-04). Its `detector://meeting` action is reported as
 /// `"auto_start"` so the toast renders the "Gravando · <App>"
 /// confirmation instead of the ask prompt.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn emit_detector_outputs(app: &tauri::AppHandle, outputs: Vec<DetectorOutput>) {
     use tauri::Emitter;
 
@@ -230,7 +257,7 @@ fn emit_detector_outputs(app: &tauri::AppHandle, outputs: Vec<DetectorOutput>) {
 
 /// Fresh `meeting_app_rules` rows each tick so user edits apply live; `None`
 /// (or an error) degrades to an empty rule set.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn load_rules(conn: Option<&rusqlite::Connection>) -> Vec<crate::db::meetings::MeetingAppRule> {
     use crate::db::meetings::{MeetingAppRuleRepository, SqliteMeetingAppRuleRepository};
     conn.and_then(|c| {
@@ -242,7 +269,7 @@ fn load_rules(conn: Option<&rusqlite::Connection>) -> Vec<crate::db::meetings::M
     .unwrap_or_default()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn open_rules_conn(app: &tauri::AppHandle) -> Option<rusqlite::Connection> {
     let dir = crate::portable::app_data_dir(app).ok()?;
     let path = crate::db::database_path(&dir).ok()?;

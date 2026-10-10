@@ -88,6 +88,19 @@ pub const BROWSER_EXES: &[&str] = &[
     "vivaldi.exe",
     "chromium.exe",
     "iexplore.exe",
+    // macOS bundle names (window snapshot reports the outermost `.app`).
+    "Google Chrome.app",
+    "Safari.app",
+    "Firefox.app",
+    "Microsoft Edge.app",
+    "Brave Browser.app",
+    "Arc.app",
+    "Opera.app",
+    "Opera GX.app",
+    "Vivaldi.app",
+    "Chromium.app",
+    "Orion.app",
+    "Zen.app",
 ];
 
 pub(crate) fn is_browser_exe(exe_name: &str) -> bool {
@@ -382,6 +395,52 @@ mod tests {
     fn unrelated_mic_usage_yields_nothing() {
         let found = classify(&[usage("audacity.exe")], &[], &builtin_rules(), "app.exe");
         assert!(found.is_empty());
+    }
+
+    #[test]
+    fn macos_zoom_bundle_matches_on_exe_alone() {
+        // macOS reports the bundle file name (`zoom.us.app`); exe-only rules
+        // fire the same as `Zoom.exe` on Windows.
+        let rules = vec![rule("zoom.us.app", "Zoom", None, "ask")];
+        let found = classify(&[usage("zoom.us.app")], &[], &rules, "app");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].label, "Zoom");
+        assert_eq!(found[0].pid, None);
+    }
+
+    #[test]
+    fn macos_browser_bundle_needs_a_matching_title() {
+        let rules = vec![rule(
+            "Google Chrome.app",
+            "Google Meet",
+            Some(r"^Meet -|meet\.google\.com"),
+            "ask",
+        )];
+        let usage = usage("Google Chrome.app");
+        assert!(classify(
+            std::slice::from_ref(&usage),
+            &[window("Google Chrome.app", "YouTube")],
+            &rules,
+            "app",
+        )
+        .is_empty());
+        let found = classify(
+            &[usage],
+            &[window("Google Chrome.app", "Meet - abc-defg-hij")],
+            &rules,
+            "app",
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].label, "Google Meet");
+    }
+
+    #[test]
+    fn macos_safari_is_a_browser_exe() {
+        // Safari.app needs a title hit too — mic-only Safari usage is not a
+        // meeting signal.
+        assert!(is_browser_exe("Safari.app"));
+        assert!(is_browser_exe("google chrome.app"));
+        assert!(!is_browser_exe("zoom.us.app"));
     }
 
     #[test]

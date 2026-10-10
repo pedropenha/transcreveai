@@ -540,4 +540,25 @@ Regras: nunca invente responsáveis nem prazos; tarefas do grupo ficam como Todo
         );
         CREATE INDEX meeting_remote_links_meeting ON meeting_remote_links(meeting_id);",
     ),
+    // --- macOS meeting-app detection rules (18, T-117) -----------------------
+    // Migration 10's builtin set is Windows-only; these are the macOS
+    // counterparts keyed on the outermost `.app` bundle file name, which is
+    // what the CoreAudio process-object source (S1) and the CGWindowList
+    // source (S2) both report (nested helpers normalize to the host app).
+    // Same semantics: browsers need a title hit, Zoom/Teams/Webex fire on
+    // the exe match alone.
+    M::up(
+        "INSERT OR IGNORE INTO meeting_app_rules (id, exe, title_pattern, label, action, builtin) VALUES
+            ('builtin-mac-zoom',         'zoom.us.app',            NULL, 'Zoom',            'ask', 1),
+            ('builtin-mac-teams',        'Microsoft Teams.app',    NULL, 'Microsoft Teams', 'ask', 1),
+            ('builtin-mac-teams-ws',     'Microsoft Teams (work or school).app', NULL, 'Microsoft Teams', 'ask', 1),
+            ('builtin-mac-meet-chrome',  'Google Chrome.app',  '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-mac-meet-safari',  'Safari.app',         '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-mac-meet-firefox', 'Firefox.app',        '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-mac-meet-edge',    'Microsoft Edge.app', '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-mac-meet-brave',   'Brave Browser.app',  '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-mac-meet-arc',     'Arc.app',            '^Meet -|meet\\.google\\.com', 'Google Meet', 'ask', 1),
+            ('builtin-mac-webex',        'Webex.app',              NULL, 'Webex',           'ask', 1),
+            ('builtin-mac-webex-legacy', 'Cisco Webex Meetings.app', NULL, 'Webex',         'ask', 1);",
+    ),
 ];
