@@ -5,6 +5,7 @@ import {
   hoverTipText,
   meetingStateClaimsFlowbar,
   resolveFlowbarView,
+  resolveHoverActions,
   toastBadgeVisible,
   type FlowbarViewInput,
 } from "./flowbarView";
@@ -264,3 +265,18 @@ assert.equal(
   "Ditar Win + Space",
 );
 assert.equal(hoverTipText({ label: "Notas", shortcut: null }), "Notas");
+
+// T-115: hover-card action toggles — dictate always renders; notetaker
+// defaults on, notes defaults off; explicit settings win.
+assert.deepEqual(resolveHoverActions(undefined, undefined), {
+  notetaker: true,
+  notes: false,
+});
+assert.deepEqual(resolveHoverActions(false, true), {
+  notetaker: false,
+  notes: true,
+});
+assert.deepEqual(resolveHoverActions(true, false), {
+  notetaker: true,
+  notes: false,
+});

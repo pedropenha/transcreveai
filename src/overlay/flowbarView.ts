@@ -204,6 +204,19 @@ export function resolveFlowbarView(input: FlowbarViewInput): FlowbarView {
   return hovered ? "hover" : "idle";
 }
 
+/**
+ * Which hover-card action buttons the settings allow (T-115): the dictate
+ * button always renders; notetaker/notes follow `flowbar_show_notetaker` /
+ * `flowbar_show_notes`, defaulting to notetaker on / notes off when the
+ * persisted setting is absent.
+ */
+export function resolveHoverActions(
+  showNotetaker: boolean | undefined,
+  showNotes: boolean | undefined,
+): { notetaker: boolean; notes: boolean } {
+  return { notetaker: showNotetaker ?? true, notes: showNotes ?? false };
+}
+
 /** The CSS dock edge the stage should mirror the native dock onto. */
 export type StageEdge = "top" | "bottom" | "left" | "right";
 

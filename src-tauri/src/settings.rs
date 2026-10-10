@@ -780,6 +780,14 @@ pub struct AppSettings {
     /// reaches the store.
     #[serde(default)]
     pub flowbar_snoozed_until_ms: Option<i64>,
+    /// Show the ◉ notetaker button on the Flow Bar (T-115). On by default —
+    /// it needs an explicit serde default because `bool`'s own default is
+    /// `false`, which would hide the button on every pre-T-115 store.
+    #[serde(default = "default_flowbar_show_notetaker")]
+    pub flowbar_show_notetaker: bool,
+    /// Show the notes button on the Flow Bar (T-115). Off by default.
+    #[serde(default)]
+    pub flowbar_show_notes: bool,
     /// STT provider used for dictation (data-model `transcription.dictation_provider`).
     /// Stays `None` in v1: the dictation model is `selected_model` (the real
     /// engine switch — `commands::models::set_stt_provider` writes it via
@@ -1105,6 +1113,11 @@ fn default_flowbar_position_offset() -> f64 {
 }
 
 fn default_flowbar_hide_in_fullscreen() -> bool {
+    true
+}
+
+/// T-115: the Flow Bar's ◉ notetaker button ships on.
+fn default_flowbar_show_notetaker() -> bool {
     true
 }
 
@@ -1459,6 +1472,21 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // T-115: global meeting toggle — the same start/stop funnel as the
+    // tray's "Iniciar/Parar reunião" and the Flow Bar ◉ button. The load
+    // path merges default bindings for missing keys, so pre-T-115 stores
+    // gain the shortcut on first read.
+    bindings.insert(
+        "meeting_toggle".to_string(),
+        ShortcutBinding {
+            id: "meeting_toggle".to_string(),
+            name: "Meeting / Notetaker".to_string(),
+            description: "Starts or stops a meeting recording (NoteTaker).".to_string(),
+            default_binding: "ctrl+alt+m".to_string(),
+            current_binding: "ctrl+alt+m".to_string(),
+        },
+    );
+
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
         bindings,
@@ -1543,6 +1571,8 @@ pub fn get_default_settings() -> AppSettings {
         flowbar_position_offset: default_flowbar_position_offset(),
         flowbar_hide_in_fullscreen: default_flowbar_hide_in_fullscreen(),
         flowbar_snoozed_until_ms: None,
+        flowbar_show_notetaker: default_flowbar_show_notetaker(),
+        flowbar_show_notes: false,
         dictation_provider_id: None,
         meeting_provider_id: None,
         fallback_provider_id: None,
@@ -2770,5 +2800,58 @@ mod tests {
         assert!(dump.contains("[REDACTED len="));
         // Non-sensitive metadata (ids, names) stays visible.
         assert!(dump.contains("Resumo"));
+    }
+
+    /// T-115: the notetaker button ships on, the notes button off — and a
+    /// store written before the fields existed must still deserialize with
+    /// those defaults (`flowbar_show_notetaker` needs its explicit serde
+    /// default because a bare `bool` would parse to `false`).
+    #[test]
+    fn flowbar_button_fields_default_and_survive_old_stores() {
+        let settings = get_default_settings();
+        assert!(settings.flowbar_show_notetaker);
+        assert!(!settings.flowbar_show_notes);
+
+        let raw = serde_json::json!({ "onboarding_completed": true });
+        let settings: AppSettings =
+            serde_json::from_value(raw).expect("pre-T-115 store must parse");
+        assert!(settings.flowbar_show_notetaker);
+        assert!(!settings.flowbar_show_notes);
+    }
+
+    /// T-115: `meeting_toggle` (ctrl+alt+m) is a default binding, so both
+    /// fresh installs and upgraded stores (via the missing-keys merge in
+    /// `get_settings`) get the meeting start/stop shortcut.
+    #[test]
+    fn default_bindings_include_meeting_toggle() {
+        let settings = get_default_settings();
+        let binding = settings
+            .bindings
+            .get("meeting_toggle")
+            .expect("meeting_toggle is a default binding");
+        assert_eq!(binding.id, "meeting_toggle");
+        assert_eq!(binding.default_binding, "ctrl+alt+m");
+        assert_eq!(binding.current_binding, "ctrl+alt+m");
+    }
+
+    /// `get_settings` merges `get_default_settings().bindings` for missing
+    /// keys — replicate that loop to pin that a store without
+    /// `meeting_toggle` gains it on load.
+    #[test]
+    fn missing_binding_merge_adds_meeting_toggle_to_old_stores() {
+        let raw = serde_json::json!({ "bindings": {} });
+        let mut settings: AppSettings = serde_json::from_value(raw).expect("store must parse");
+        assert!(settings.bindings.get("meeting_toggle").is_none());
+
+        for (key, value) in get_default_settings().bindings {
+            if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
+                entry.insert(value);
+            }
+        }
+
+        assert_eq!(
+            settings.bindings["meeting_toggle"].current_binding,
+            "ctrl+alt+m"
+        );
     }
 }

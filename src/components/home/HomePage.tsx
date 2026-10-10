@@ -7,8 +7,16 @@ import React, {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { FolderOpen, Keyboard, Search, X } from "lucide-react";
+import {
+  FolderOpen,
+  Keyboard,
+  ListChecks,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { commands, type HistoryEntry } from "@/bindings";
 import { useDismissedUi } from "@/hooks/useDismissedUi";
 import { useNow } from "@/hooks/useNow";
@@ -20,9 +28,13 @@ import { HistoryRow } from "./HistoryRow";
 import { HomeBanner } from "./HomeBanner";
 import { StatsCard } from "./StatsCard";
 import {
+  applySelectAll,
   computeStreak,
   greetingPeriod,
   groupEntriesByDay,
+  selectAllState,
+  selectedLoadedIds,
+  toggleSelected,
   type DayKind,
 } from "./homeView";
 import { useHistoryActions } from "./useHistoryActions";
@@ -82,6 +94,11 @@ export const HomePage: React.FC = () => {
   const currentModel = useModelStore((state) => state.currentModel);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
+  // T-115 multi-select: a "Selecionar" mode adds per-row checkboxes and a
+  // bar with select-all + "Apagar selecionadas (N)".
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const entriesRef = useRef(feed.entries);
   entriesRef.current = feed.entries;
 
@@ -180,6 +197,54 @@ export const HomePage: React.FC = () => {
     virtualItems,
   ]);
 
+  const entryIds = useMemo(
+    () => feed.entries.map((entry) => entry.id),
+    [feed.entries],
+  );
+  const selectedIds = useMemo(
+    () => selectedLoadedIds(entryIds, selected),
+    [entryIds, selected],
+  );
+  const allState = selectAllState(entryIds, selected);
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelected((current) => toggleSelected(current, id));
+  }, []);
+
+  const exitSelection = useCallback(() => {
+    setSelecting(false);
+    setSelected(new Set());
+  }, []);
+
+  const deleteSelected = useCallback(async () => {
+    const ids = selectedIds;
+    if (ids.length === 0) return;
+    const confirmed = window.confirm(
+      t("settings.history.deleteSelectedConfirm", { count: ids.length }),
+    );
+    if (!confirmed) return;
+    setDeletingSelected(true);
+    try {
+      const result = await commands.deleteHistoryEntries(ids);
+      if (result.status !== "ok") {
+        toast.error(t("settings.history.deleteError"));
+        return;
+      }
+      feed.removeEntries(ids);
+      exitSelection();
+      setDetailId((current) =>
+        current !== null && ids.includes(current) ? null : current,
+      );
+      toast.success(
+        t("settings.history.deletedSelected", { count: result.data }),
+      );
+    } catch {
+      toast.error(t("settings.history.deleteError"));
+    } finally {
+      setDeletingSelected(false);
+    }
+  }, [exitSelection, feed, selectedIds, t]);
+
   const focusEntry = useCallback(
     (id: number) => {
       const index = rows.findIndex(
@@ -211,9 +276,10 @@ export const HomePage: React.FC = () => {
       const ids = feed.entries.map((item) => item.id);
       const edge = event.key === "Home" ? ids[0] : ids[ids.length - 1];
       if (edge !== undefined && edge !== entry.id) focusEntry(edge);
-    } else if (event.key === "Enter") {
+    } else if (event.key === "Enter" || (selecting && event.key === " ")) {
       event.preventDefault();
-      openDetail(entry);
+      if (selecting) toggleSelect(entry.id);
+      else openDetail(entry);
     } else if (
       (event.ctrlKey || event.metaKey) &&
       event.key.toLowerCase() === "c"
@@ -361,7 +427,51 @@ export const HomePage: React.FC = () => {
                   </select>
                 </label>
               ))}
+              <button
+                type="button"
+                className="btn-secondary home-select-toggle"
+                aria-pressed={selecting}
+                onClick={() =>
+                  selecting ? exitSelection() : setSelecting(true)
+                }
+              >
+                <ListChecks width={14} height={14} aria-hidden="true" />
+                {t("settings.history.select")}
+              </button>
             </div>
+
+            {selecting ? (
+              <div className="home-selectbar" aria-busy={deletingSelected}>
+                <label className="home-selectall">
+                  <input
+                    type="checkbox"
+                    checked={allState === "all"}
+                    aria-label={t("settings.history.selectAll")}
+                    ref={(input) => {
+                      if (input) input.indeterminate = allState === "some";
+                    }}
+                    onChange={() =>
+                      setSelected((current) =>
+                        applySelectAll(entryIds, current),
+                      )
+                    }
+                  />
+                  {t("settings.history.selectAll")}
+                </label>
+                <span className="home-selectbar-spacer" />
+                <button
+                  type="button"
+                  className="btn-secondary home-danger"
+                  disabled={selectedIds.length === 0 || deletingSelected}
+                  onClick={() => void deleteSelected()}
+                >
+                  <Trash2 width={14} height={14} aria-hidden="true" />
+                  {t("settings.history.deleteSelected", {
+                    count: selectedIds.length,
+                  })}
+                </button>
+              </div>
+            ) : null}
 
             <div
               ref={listRef}
@@ -421,6 +531,9 @@ export const HomePage: React.FC = () => {
                           tabbable={
                             (activeId ?? feed.entries[0]?.id) === row.entry.id
                           }
+                          selecting={selecting}
+                          selected={selected.has(row.entry.id)}
+                          onToggleSelect={(entry) => toggleSelect(entry.id)}
                           onActivate={setActiveId}
                           retrying={actions.retrying === row.entry.id}
                           onOpen={openDetail}

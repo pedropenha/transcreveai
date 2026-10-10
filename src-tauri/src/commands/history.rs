@@ -314,6 +314,27 @@ pub async fn delete_history_entry(
     })
 }
 
+/// T-115 batch delete: each id goes through `delete_entry`, which removes
+/// the wav file and the db row. Best-effort — a failed id is logged and
+/// skipped so one bad row can't block the rest; the deleted count is
+/// returned. An empty list is a no-op.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_history_entries(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    ids: Vec<i64>,
+) -> CommandResult<u64> {
+    let mut deleted = 0u64;
+    for id in ids {
+        match history_manager.delete_entry(id).await {
+            Ok(()) => deleted += 1,
+            Err(e) => log::warn!("Failed to delete history entry {id}: {e}"),
+        }
+    }
+    Ok(deleted)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn retry_history_entry_transcription(

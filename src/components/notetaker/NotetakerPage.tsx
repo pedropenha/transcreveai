@@ -329,6 +329,7 @@ export const NotetakerPage: React.FC = () => {
           onRetry={(row) => void retry(row)}
           onRenamed={() => void feed.refresh()}
           onDelete={(id) => void deleteMeeting(id)}
+          onAudioDeleted={() => void feed.refresh()}
           onOpenSummarySettings={openSummarySettings}
         />
       ) : null}

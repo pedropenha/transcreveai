@@ -627,8 +627,9 @@ fn start_meeting_from_surface(app: &AppHandle, req: meeting::session::StartReque
 
 /// FR-010-14 tray "Iniciar/Parar reunião": toggle — stop when a meeting is
 /// active, start a manual call-mode meeting otherwise. Failures get the same
-/// `toast://show` treatment as the other surfaces.
-fn toggle_meeting_from_surface(app: &AppHandle) {
+/// `toast://show` treatment as the other surfaces. Also the `meeting_toggle`
+/// shortcut action's target (T-115), hence `pub(crate)`.
+pub(crate) fn toggle_meeting_from_surface(app: &AppHandle) {
     use crate::commands::CommandErrorCode;
     use crate::meeting::session::{
         MeetingSessionManager, StartRequest, ToastPayload, TOAST_SHOW_EVENT,
@@ -935,6 +936,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_selected_language_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
+            shortcut::change_flowbar_visibility_setting,
+            shortcut::change_flowbar_follow_setting,
+            shortcut::change_flowbar_edge_setting,
+            shortcut::change_flowbar_show_notetaker_setting,
+            shortcut::change_flowbar_show_notes_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_word_correction_threshold_setting,
             shortcut::change_extra_recording_buffer_setting,
@@ -1057,6 +1063,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
             commands::history::delete_history_entry,
+            commands::history::delete_history_entries,
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
@@ -1101,6 +1108,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::meeting::meeting_source_icon,
             commands::meeting::meeting_export_markdown,
             commands::meeting::meeting_delete,
+            commands::meeting::meeting_delete_audio,
             commands::meeting::meeting_consent_accept,
             commands::meeting::meeting_consent_copy,
             commands::meeting::meeting_regenerate_summary,

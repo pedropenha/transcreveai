@@ -171,6 +171,11 @@ export function useHistoryFeed() {
     setEntries((current) => current.filter((entry) => entry.id !== id));
   }, []);
 
+  const removeEntries = useCallback((ids: readonly number[]) => {
+    const drop = new Set(ids);
+    setEntries((current) => current.filter((entry) => !drop.has(entry.id)));
+  }, []);
+
   return {
     entries,
     stats,
@@ -186,5 +191,6 @@ export function useHistoryFeed() {
     loadError,
     loadMore,
     removeEntry,
+    removeEntries,
   };
 }

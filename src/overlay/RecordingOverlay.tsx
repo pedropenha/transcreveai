@@ -35,6 +35,7 @@ import {
   hoverTipParts,
   meetingStateClaimsFlowbar,
   resolveFlowbarView,
+  resolveHoverActions,
   toastBadgeVisible,
   type FlowbarView,
   type HoverTipParts,
@@ -110,6 +111,11 @@ const RecordingOverlay: React.FC = () => {
   const [edge, setEdge] = useState<StageEdge>("bottom");
   const [dictateShortcut, setDictateShortcut] = useState<string>("");
 
+  // --- Hover-card action toggles (T-115): which buttons the card shows. ---
+  const [hoverActions, setHoverActions] = useState(() =>
+    resolveHoverActions(undefined, undefined),
+  );
+
   // --- Collapsed/suppressed meeting toast → amber dot (FR-008-10/12) ---
   const [toastPending, setToastPending] = useState(false);
 
@@ -170,6 +176,9 @@ const RecordingOverlay: React.FC = () => {
         s.flowbar_visibility === "always" && s.overlay_style !== "none",
       );
       setEdge(effectiveEdge(s.flowbar_position_edge, s.overlay_position));
+      setHoverActions(
+        resolveHoverActions(s.flowbar_show_notetaker, s.flowbar_show_notes),
+      );
       setDictateShortcut(
         formatKeyCombination(
           s.bindings?.["transcribe"]?.current_binding ?? "",
@@ -307,6 +316,13 @@ const RecordingOverlay: React.FC = () => {
         },
       );
 
+      // T-115: settings edits (presence edge, visibility, hover-card toggles)
+      // must reach the idle slit without an app restart — re-read them on
+      // every settings-changed broadcast.
+      const unlistenSettings = await listen("settings-changed", () => {
+        void refreshSettings();
+      });
+
       const unlistenReady = await listen("recording-ready", () => {
         setElapsed(0);
         setCaptureReady(true);
@@ -434,6 +450,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenModelState();
         unlistenSession();
         unlistenCursor();
+        unlistenSettings();
         unlistenReady();
         unlistenLevel();
         unlistenMeeting();
@@ -718,8 +735,14 @@ const RecordingOverlay: React.FC = () => {
 
   const tipContent: HoverTipParts | null = (() => {
     if (tip === "dictate") return dictateTipParts;
-    if (tip === "notetaker") return hoverTipParts(t("overlay.notetaker"), "");
-    if (tip === "notes") return hoverTipParts(t("overlay.notes"), "");
+    // A toggle flip mid-hover must not leave a tooltip pointing at a button
+    // that is no longer rendered.
+    if (tip === "notetaker" && hoverActions.notetaker) {
+      return hoverTipParts(t("overlay.notetaker"), "");
+    }
+    if (tip === "notes" && hoverActions.notes) {
+      return hoverTipParts(t("overlay.notes"), "");
+    }
     if (tip === "error") {
       return hoverTipParts(sessionError || t("overlay.failed"), "");
     }
@@ -798,6 +821,8 @@ const RecordingOverlay: React.FC = () => {
             dictateTip={dictateTipParts}
             notetakerLabel={t("overlay.notetaker")}
             notesLabel={t("overlay.notes")}
+            showNotetaker={hoverActions.notetaker}
+            showNotes={hoverActions.notes}
             onTip={setTip}
             onDictate={dictate}
             onNotetaker={notetaker}

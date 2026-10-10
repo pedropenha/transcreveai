@@ -116,6 +116,53 @@ export function isStreakExact(
   return distinctDays > computeStreak(timestampsSeconds, now);
 }
 
+// --- multi-select delete (T-115) -------------------------------------------
+
+/** A row's checkbox/click flips its id in the selection set (non-mutating). */
+export function toggleSelected(
+  selected: ReadonlySet<number>,
+  id: number,
+): Set<number> {
+  const next = new Set(selected);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
+/** Ids of the *loaded* rows that are selected — deletion only ever touches
+ * rows the list currently displays, never stale ids from an older filter. */
+export function selectedLoadedIds(
+  entryIds: readonly number[],
+  selected: ReadonlySet<number>,
+): number[] {
+  return entryIds.filter((id) => selected.has(id));
+}
+
+export type SelectAllState = "none" | "some" | "all";
+
+/** Header checkbox state over the loaded rows: none / indeterminate / all. */
+export function selectAllState(
+  entryIds: readonly number[],
+  selected: ReadonlySet<number>,
+): SelectAllState {
+  const count = selectedLoadedIds(entryIds, selected).length;
+  if (count === 0) return "none";
+  return count === entryIds.length ? "all" : "some";
+}
+
+/** Clicking the header checkbox: fully selected → drop the loaded ids from
+ * the set; otherwise add every loaded id. */
+export function applySelectAll(
+  entryIds: readonly number[],
+  selected: ReadonlySet<number>,
+): Set<number> {
+  if (selectAllState(entryIds, selected) === "all") {
+    const drop = new Set(entryIds);
+    return new Set([...selected].filter((id) => !drop.has(id)));
+  }
+  return new Set([...selected, ...entryIds]);
+}
+
 // --- origin app of a dictation --------------------------------------------
 
 /** The slice of a history entry that identifies where it was dictated. */

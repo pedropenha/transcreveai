@@ -1599,6 +1599,23 @@ impl ShortcutAction for AssistantAction {
     }
 }
 
+// Meeting Toggle Action (T-115): the `meeting_toggle` binding's press edge —
+// the same start/stop funnel as the tray's "Iniciar/Parar reunião" and the
+// Flow Bar ◉ button (`toggle_meeting_from_surface` emits the refusal toasts
+// itself). A toggle action: `stop` is a no-op so a key release can't undo
+// the press.
+struct MeetingToggleAction;
+
+impl ShortcutAction for MeetingToggleAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::toggle_meeting_from_surface(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Nothing to do on release — the press already toggled the meeting.
+    }
+}
+
 // Cancel Action
 struct CancelAction;
 
@@ -1672,6 +1689,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         Arc::new(AssistantAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
+        "meeting_toggle".to_string(),
+        Arc::new(MeetingToggleAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
     );
@@ -1718,6 +1739,17 @@ mod tests {
         assert!(super::ACTION_MAP.contains_key("transcribe_translate"));
         assert!(crate::transcription_coordinator::is_transcribe_binding(
             "transcribe_translate"
+        ));
+    }
+
+    /// T-115: `meeting_toggle` dispatches straight to ACTION_MAP on press —
+    /// it must not be a transcribe binding (the coordinator's dictation
+    /// state machine doesn't own meeting sessions).
+    #[test]
+    fn meeting_toggle_maps_to_action_not_transcribe_pipeline() {
+        assert!(super::ACTION_MAP.contains_key("meeting_toggle"));
+        assert!(!crate::transcription_coordinator::is_transcribe_binding(
+            "meeting_toggle"
         ));
     }
 

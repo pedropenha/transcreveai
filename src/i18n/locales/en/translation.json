@@ -205,6 +205,10 @@
           "transcribe_translate": {
             "name": "Translate dictation hotkey",
             "description": "Translate only this recording into English using a compatible local model."
+          },
+          "meeting_toggle": {
+            "name": "Meeting Hotkey",
+            "description": "Starts or stops meeting capture (Notetaker) from anywhere."
           }
         },
         "errors": {
@@ -487,6 +491,43 @@
         "description": "Removes common hesitation words from transcriptions. Turn off to keep them."
       }
     },
+    "flowbar": {
+      "visibility": {
+        "title": "Flow Bar Visibility",
+        "description": "When the Flow Bar stays on screen. 'Never' still keeps hotkeys and tray feedback working.",
+        "options": {
+          "always": "Always",
+          "during_recording": "While recording",
+          "never": "Never"
+        }
+      },
+      "follow": {
+        "title": "Follow Monitor",
+        "description": "Which monitor hosts the Flow Bar.",
+        "options": {
+          "foreground_monitor": "Monitor of the focused window",
+          "cursor": "Monitor under the cursor",
+          "primary_monitor": "Primary monitor"
+        }
+      },
+      "edge": {
+        "title": "Edge",
+        "description": "Screen edge the Flow Bar is docked to.",
+        "options": {
+          "bottom": "Bottom",
+          "left": "Left",
+          "right": "Right"
+        }
+      },
+      "showNotetaker": {
+        "label": "Notetaker Button on Flow Bar",
+        "description": "Show a button that starts meeting capture from the Flow Bar."
+      },
+      "showNotes": {
+        "label": "Notes Button on Flow Bar",
+        "description": "Show a button that saves a quick note from the Flow Bar."
+      }
+    },
     "postProcessing": {
       "hotkey": {
         "title": "Hotkey"
@@ -623,6 +664,12 @@
       "deleteConfirm": "Delete this history entry and its retained audio? This cannot be undone.",
       "deleted": "History entry deleted",
       "deleteError": "Failed to delete entry. Please try again.",
+      "select": "Select",
+      "selectEntry": "Select entry",
+      "selectAll": "Select all",
+      "deleteSelected": "Delete selected ({{count}})",
+      "deleteSelectedConfirm": "Delete {{count}} transcriptions? This cannot be undone.",
+      "deletedSelected": "{{count}} transcriptions deleted",
       "retranscribe": "Try transcription again",
       "retryModel": "Model used when trying again",
       "retranscribeError": "Failed to transcribe again. The audio may no longer be available.",
@@ -1474,7 +1521,11 @@
       "processingInfo": "Audio & processing",
       "microphone": "Microphone",
       "system": "System",
-      "summaryProvider": "Summary · {{provider}}"
+      "summaryProvider": "Summary · {{provider}}",
+      "deleteAudio": "Delete audio",
+      "confirmDeleteAudio": "Delete audio files only",
+      "audioDeleted": "Audio deleted",
+      "deleteAudioError": "Failed to delete audio"
     },
     "startError": "Could not start the meeting."
   },

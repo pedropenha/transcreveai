@@ -24,6 +24,7 @@ import { PostProcessingSettingsApi } from "../PostProcessingSettingsApi";
 import { AutostartToggle } from "../AutostartToggle";
 import { StartHidden } from "../StartHidden";
 import { ShowOverlay } from "../ShowOverlay";
+import { FlowbarSettings } from "../FlowbarSettings";
 import { ShowTrayIcon } from "../ShowTrayIcon";
 import { HistoryLimit } from "../HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
@@ -65,6 +66,7 @@ const ShortcutsPage: React.FC = () => {
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped />}
         {/* F012/T-091: assistant overlay hotkey (FR-012-10). */}
         <ShortcutInput shortcutId="assistant" grouped />
+        <ShortcutInput shortcutId="meeting_toggle" grouped />
       </SettingsGroup>
     </div>
   );
@@ -215,6 +217,7 @@ const SystemPage: React.FC = () => {
       </SettingsGroup>
       <SettingsGroup title={t("settingsHub.groups.flowbar")}>
         <ShowOverlay descriptionMode="tooltip" grouped />
+        <FlowbarSettings descriptionMode="tooltip" grouped />
       </SettingsGroup>
     </div>
   );

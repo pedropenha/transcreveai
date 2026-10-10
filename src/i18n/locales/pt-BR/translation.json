@@ -205,6 +205,10 @@
           "transcribe_translate": {
             "name": "Atalho de ditado traduzido",
             "description": "Traduzir somente esta gravação para inglês usando um modelo local compatível."
+          },
+          "meeting_toggle": {
+            "name": "Atalho de Reunião",
+            "description": "Inicia ou para a captura de reunião (Notetaker) de qualquer lugar."
           }
         },
         "errors": {
@@ -487,6 +491,43 @@
         "description": "Remove hesitações comuns das transcrições. Desative para mantê-las."
       }
     },
+    "flowbar": {
+      "visibility": {
+        "title": "Visibilidade da Flow Bar",
+        "description": "Quando a Flow Bar fica na tela. 'Nunca' mantém os atalhos e o feedback na bandeja funcionando.",
+        "options": {
+          "always": "Sempre",
+          "during_recording": "Durante a gravação",
+          "never": "Nunca"
+        }
+      },
+      "follow": {
+        "title": "Seguir monitor",
+        "description": "Em qual monitor a Flow Bar aparece.",
+        "options": {
+          "foreground_monitor": "Monitor da janela em foco",
+          "cursor": "Monitor sob o cursor",
+          "primary_monitor": "Monitor principal"
+        }
+      },
+      "edge": {
+        "title": "Borda",
+        "description": "Borda da tela onde a Flow Bar fica ancorada.",
+        "options": {
+          "bottom": "Inferior",
+          "left": "Esquerda",
+          "right": "Direita"
+        }
+      },
+      "showNotetaker": {
+        "label": "Botão Notetaker na Flow Bar",
+        "description": "Mostra um botão que inicia a captura de reunião pela Flow Bar."
+      },
+      "showNotes": {
+        "label": "Botão Notas na Flow Bar",
+        "description": "Mostra um botão que salva uma nota rápida pela Flow Bar."
+      }
+    },
     "postProcessing": {
       "hotkey": {
         "title": "Tecla de atalho"
@@ -623,6 +664,12 @@
       "deleteConfirm": "Excluir esta entrada do histórico e o áudio preservado? Esta ação não pode ser desfeita.",
       "deleted": "Entrada do histórico excluída",
       "deleteError": "Falha ao excluir entrada. Tente novamente.",
+      "select": "Selecionar",
+      "selectEntry": "Selecionar item",
+      "selectAll": "Selecionar tudo",
+      "deleteSelected": "Apagar selecionadas ({{count}})",
+      "deleteSelectedConfirm": "Apagar {{count}} transcrições? Esta ação não pode ser desfeita.",
+      "deletedSelected": "{{count}} transcrições apagadas",
       "retranscribe": "Tentar transcrição novamente",
       "retryModel": "Modelo usado ao tentar novamente",
       "retranscribeError": "Falha ao transcrever novamente. O áudio pode não estar mais disponível.",
@@ -1474,7 +1521,11 @@
       "processingInfo": "Áudio e processamento",
       "microphone": "Microfone",
       "system": "Sistema",
-      "summaryProvider": "Resumo · {{provider}}"
+      "summaryProvider": "Resumo · {{provider}}",
+      "deleteAudio": "Apagar áudio",
+      "confirmDeleteAudio": "Apagar só os arquivos de áudio",
+      "audioDeleted": "Áudio apagado",
+      "deleteAudioError": "Falha ao apagar o áudio"
     },
     "startError": "Não foi possível iniciar a reunião."
   },
