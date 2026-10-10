@@ -167,8 +167,8 @@ mod imp {
     use objc2_app_kit::NSRunningApplication;
     use objc2_core_foundation::CFRetained;
     use objc2_core_graphics::{
-        kCGNullWindowID, CGPreflightScreenCaptureAccess, CGWindowListCopyWindowInfo,
-        CGWindowListOption,
+        kCGNullWindowID, CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess,
+        CGWindowListCopyWindowInfo, CGWindowListOption,
     };
     use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString};
 
@@ -285,9 +285,15 @@ mod imp {
                 && !has_screen_recording
                 && !self.titles_hint_logged.swap(true, Ordering::Relaxed)
             {
+                // First snapshot that would need a title: ask macOS to
+                // surface the Screen Recording prompt instead of staying
+                // silent (the dialog offers "Open System Settings"; the
+                // permission takes effect on the next app launch).
+                CGRequestScreenCaptureAccess();
                 log::warn!(
                     "Meeting detection: window titles need Screen Recording — \
-                     browser rules (Google Meet) stay quiet until it is granted"
+                     prompted the user; browser rules (Google Meet) stay quiet \
+                     until it is granted and the app restarts"
                 );
             }
             out
