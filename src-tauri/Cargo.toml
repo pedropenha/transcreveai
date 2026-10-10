@@ -210,6 +210,8 @@ objc2-core-media = "0.3.2"
 objc2-core-graphics = "0.3.2"
 objc2-core-foundation = "0.3.2"
 objc2-core-audio-types = "0.3.2"
+# Meeting detection S1: audio process objects (kAudioHardwarePropertyProcessObjectList).
+objc2-core-audio = "0.3.2"
 block2 = "0.6"
 dispatch2 = "0.3"
 
