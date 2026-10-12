@@ -1140,6 +1140,14 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             supports_structured_output: true,
         },
         PostProcessProvider {
+            id: "gemini".to_string(),
+            label: "Google Gemini".to_string(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/models".to_string()),
+            supports_structured_output: true,
+        },
+        PostProcessProvider {
             id: "zai".to_string(),
             label: "Z.AI".to_string(),
             base_url: "https://api.z.ai/api/paas/v4".to_string(),
@@ -1238,6 +1246,11 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
 fn default_model_for_provider(provider_id: &str) -> String {
     if provider_id == APPLE_INTELLIGENCE_PROVIDER_ID {
         return APPLE_INTELLIGENCE_DEFAULT_MODEL_ID.to_string();
+    }
+    if provider_id == "gemini" {
+        // BYOK users only paste the key — a sensible default model keeps the
+        // picker pre-filled.
+        return "gemini-2.5-flash".to_string();
     }
     String::new()
 }
@@ -2852,6 +2865,43 @@ mod tests {
         assert_eq!(
             settings.bindings["meeting_toggle"].current_binding,
             "ctrl+alt+m"
+        );
+    }
+
+    /// The Gemini provider ships pre-configured — the user only pastes the
+    /// API key. `ensure_post_process_defaults` must graft it onto stores
+    /// written before it existed.
+    #[test]
+    fn gemini_provider_is_a_default_and_is_merged_into_old_stores() {
+        let gemini = default_post_process_providers()
+            .into_iter()
+            .find(|p| p.id == "gemini")
+            .expect("gemini is a built-in post-process provider");
+        assert_eq!(
+            gemini.base_url,
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        );
+        assert!(!gemini.allow_base_url_edit);
+        assert!(gemini.supports_structured_output);
+        assert_eq!(gemini.models_endpoint.as_deref(), Some("/models"));
+
+        let raw = serde_json::json!({ "onboarding_completed": true });
+        let mut settings: AppSettings = serde_json::from_value(raw).expect("store must parse");
+        settings.post_process_providers.retain(|p| p.id != "gemini");
+        settings.post_process_models.remove("gemini");
+
+        assert!(ensure_post_process_defaults(&mut settings));
+
+        let merged = settings
+            .post_process_provider("gemini")
+            .expect("gemini merged into old store");
+        assert_eq!(merged.base_url, gemini.base_url);
+        assert_eq!(
+            settings
+                .post_process_models
+                .get("gemini")
+                .map(String::as_str),
+            Some("gemini-2.5-flash")
         );
     }
 }
