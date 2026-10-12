@@ -321,7 +321,10 @@ pub(crate) fn toast_origin(
         ToastPosition::BottomRight => corner(),
         ToastPosition::AboveFlowbar => {
             let Some((fx, fy, fw, fh)) = flowbar else {
-                return corner();
+                // Flow Bar hidden (e.g. `during_recording`/`never`): anchor
+                // bottom-center — where the bar sits by default — instead of
+                // a corner, so the toast still reads as "above the Flow Bar".
+                return (ax + aw / 2.0 - tw / 2.0, ay + ah - th - margin);
             };
             // Centered on the bar, clamped inside the work area.
             let lo = ax + margin;
