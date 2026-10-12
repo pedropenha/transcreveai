@@ -489,6 +489,10 @@ mod imp {
     /// when the call fails or the responsible pid is `pid` itself.
     fn responsible_pid_for(pid: i32) -> Option<i32> {
         // libproc private API, stable since 10.9 and present in libSystem.
+        // Two ABIs observed: older macOS writes `*responsible_pid` and
+        // returns 0; macOS 26 returns the responsible pid directly and
+        // leaves the out-param untouched. Prefer the out-param; otherwise
+        // take a positive return value as the pid.
         extern "C" {
             fn responsibility_get_pid_responsible_for_pid(
                 pid: i32,
@@ -498,10 +502,11 @@ mod imp {
         let mut resp = 0i32;
         // SAFETY: `resp` is a valid out-pointer; failure leaves it untouched.
         let rc = unsafe { responsibility_get_pid_responsible_for_pid(pid, &mut resp) };
-        if rc != 0 || resp <= 0 || resp == pid {
+        let candidate = if resp > 0 { resp } else { rc };
+        if candidate <= 0 || candidate == pid {
             return None;
         }
-        Some(resp)
+        Some(candidate)
     }
 
     /// `.app` bundle path of the *responsible* application for `pid` — used
