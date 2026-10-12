@@ -82,7 +82,9 @@ fn above_flowbar_centers_and_stacks() {
 }
 
 #[test]
-fn above_flowbar_falls_back_to_corner_without_bar() {
+fn above_flowbar_falls_back_to_bottom_center_without_bar() {
+    // Hidden Flow Bar (`during_recording`/`never`): the toast anchors
+    // bottom-center — where the bar sits — rather than a corner.
     let (x, y) = toast_origin(
         AREA,
         None,
@@ -91,7 +93,7 @@ fn above_flowbar_falls_back_to_corner_without_bar() {
         6.0,
         16.0,
     );
-    assert_eq!((x, y), (1920.0 - 376.0 - 16.0, 1040.0 - 88.0 - 16.0));
+    assert_eq!((x, y), (1920.0 / 2.0 - 188.0, 1040.0 - 88.0 - 16.0));
 }
 
 #[test]
