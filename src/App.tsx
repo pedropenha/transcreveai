@@ -19,7 +19,10 @@ import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
 import Footer from "./components/footer";
-import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
+import Onboarding, {
+  AccessibilityOnboarding,
+  SetupOnboarding,
+} from "./components/onboarding";
 import { type OnboardingPreviewStep } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
@@ -415,7 +418,14 @@ function App() {
       <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />
     );
   } else if (onboardingStep === "model") {
-    content = <Onboarding onModelSelected={handleModelSelected} />;
+    // Windows ships zero-config: Parakeet V3 downloads by itself and the
+    // summary agent is detected (F010). Other platforms keep the model list.
+    content =
+      platform() === "windows" ? (
+        <SetupOnboarding onComplete={handleModelSelected} />
+      ) : (
+        <Onboarding onModelSelected={handleModelSelected} />
+      );
   } else {
     content = (
       <HubNavigationContext.Provider value={goTo}>

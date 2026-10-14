@@ -136,6 +136,70 @@
         "checkFailed": "Failed to check permissions. Please try again.",
         "requestFailed": "Failed to request permission. Please try again."
       }
+    },
+    "setup": {
+      "subtitle": "We're getting everything ready for you",
+      "start": "Get started",
+      "mic": {
+        "title": "Microphone",
+        "defaultDevice": "Windows default microphone",
+        "test": "Test microphone",
+        "stop": "Stop test",
+        "speak": "Say something…",
+        "hearing": "We can hear you, your microphone works",
+        "verified": "Tested and working",
+        "error": "We couldn't open the microphone. Check that it's connected and allowed.",
+        "meterLabel": "Microphone level"
+      },
+      "model": {
+        "title": "Transcription model",
+        "badge": "Parakeet V3 · Portuguese",
+        "description": "Runs on your computer, no audio is sent to the internet",
+        "loading": "Preparing…",
+        "downloading": "Downloading {{percentage}}%",
+        "downloadingOf": "Downloading {{percentage}}% · {{done}} of {{total}} MB",
+        "verifying": "Verifying the file…",
+        "extracting": "Installing…",
+        "activating": "Activating the model…",
+        "installed": "Installed",
+        "installedSize": "Installed · {{size}}",
+        "error": "Couldn't download the model. Check your connection and try again.",
+        "retry": "Try again"
+      },
+      "shortcut": {
+        "title": "Dictation shortcut",
+        "description": "Press the shortcut now to check that it works",
+        "waiting": "Press {{shortcut}}…",
+        "verified": "Shortcut recognized",
+        "change": "Change shortcut",
+        "testAgain": "Test shortcut"
+      },
+      "agent": {
+        "title": "Meeting summaries",
+        "names": {
+          "claude": "Claude Code",
+          "codex": "Codex"
+        },
+        "using": "We'll use {{name}} with your subscription",
+        "found": "{{name}} found",
+        "bothFound": "We found both. Which one do you prefer?",
+        "missing": "You don't have Claude Code or Codex installed. If you subscribe to Claude or ChatGPT, install one of them to get meeting summaries at no extra cost.",
+        "install": "Install {{name}}",
+        "later": "Maybe later",
+        "deferred": "Summaries are off, you can turn them on later",
+        "installNow": "Install now",
+        "installTitle": "Install {{name}}",
+        "guide": {
+          "claude": "Open PowerShell, paste the command below, then sign in with your Claude account by running claude.",
+          "codex": "Requires Node.js. Open PowerShell, paste the command below, then sign in with your ChatGPT account by running codex."
+        },
+        "copy": "Copy",
+        "copied": "Copied",
+        "check": "I've installed it, check again",
+        "docs": "Open the official guide",
+        "back": "Back",
+        "polling": "Checking every few seconds…"
+      }
     }
   },
   "modelSelector": {
@@ -1527,7 +1591,12 @@
       "audioDeleted": "Audio deleted",
       "deleteAudioError": "Failed to delete audio"
     },
-    "startError": "Could not start the meeting."
+    "startError": "Could not start the meeting.",
+    "agentBanner": {
+      "title": "Summaries are off.",
+      "body": "Install Claude Code or Codex to get automatic meeting summaries.",
+      "close": "Dismiss"
+    }
   },
   "connectors": {
     "intro": "Connect services to read selected content. Each connection stays separate from your AI provider.",

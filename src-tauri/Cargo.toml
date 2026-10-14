@@ -1,6 +1,6 @@
 [package]
 name = "transcreve-ai"
-version = "1.0.4"
+version = "1.0.5-beta.1"
 description = "Transcreve.ai"
 authors = ["Creator4all", "CJ Pais"]
 edition = "2021"

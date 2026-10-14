@@ -533,3 +533,25 @@ fn effective_timeout_is_clamped_to_the_cap() {
     let provider = CliAgentProvider::new(spec, config(), String::new());
     assert_eq!(provider.effective_timeout(&r), r.timeout);
 }
+
+#[test]
+fn registry_path_expansion_substitutes_known_variables() {
+    let lookup = |name: &str| match name {
+        "USERPROFILE" => Some(r"C:\Users\ana".to_string()),
+        "SystemRoot" => Some(r"C:\Windows".to_string()),
+        _ => None,
+    };
+    assert_eq!(
+        expand_env_vars(r"%USERPROFILE%\.local\bin;%SystemRoot%\system32", lookup),
+        r"C:\Users\ana\.local\bin;C:\Windows\system32"
+    );
+}
+
+#[test]
+fn registry_path_expansion_keeps_unknown_and_dangling_percent() {
+    let lookup = |_: &str| None;
+    assert_eq!(expand_env_vars(r"%NOPE%\bin", lookup), r"%NOPE%\bin");
+    assert_eq!(expand_env_vars("100% sure", lookup), "100% sure");
+    assert_eq!(expand_env_vars("%%", lookup), "%%");
+    assert_eq!(expand_env_vars("plain", lookup), "plain");
+}

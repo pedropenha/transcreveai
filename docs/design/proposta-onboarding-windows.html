@@ -1,0 +1,1143 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Proposta — Onboarding zero-config no Windows</title>
+    <style>
+      :root {
+        --canvas: #f1ece3;
+        --panel: #fdfcf9;
+        --sunken: #f6f3ec;
+        --hover: #efe9de;
+        --line: #e6dfd2;
+        --line-strong: #8f8676;
+        --text: #1c1915;
+        --muted: #5c554b;
+        --subtle: #6d655a;
+        --accent: #3f3cbb;
+        --accent-hover: #34319f;
+        --accent-soft: #ebeafb;
+        --success: #1d7149;
+        --success-soft: #e3f2e9;
+        --warning: #8a5300;
+        --warning-soft: #fbefd6;
+        --elev-window:
+          0 0 0 1px rgb(60 45 20 / 10%), 0 30px 80px -30px rgb(60 45 20 / 40%);
+        --sans:
+          "Instrument Sans Variable", "Segoe UI Variable", "Segoe UI",
+          system-ui, sans-serif;
+        --serif: "Instrument Serif", Georgia, serif;
+        --mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 14.5px;
+        line-height: 1.55;
+      }
+      .doc {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 48px 32px 96px;
+      }
+      h1 {
+        font-family: var(--serif);
+        font-weight: 400;
+        font-size: 40px;
+        margin: 0 0 8px;
+        letter-spacing: -0.015em;
+      }
+      h2 {
+        font-family: var(--serif);
+        font-weight: 400;
+        font-size: 28px;
+        margin: 56px 0 8px;
+      }
+      .lead {
+        color: var(--muted);
+        font-size: 16px;
+        max-width: 760px;
+      }
+      .label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--subtle);
+        font-weight: 600;
+      }
+      .note {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px 20px;
+        margin: 16px 0;
+        max-width: 860px;
+      }
+      .note b {
+        color: var(--accent-ink, #2f2c9a);
+      }
+      .flow {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 20px 0;
+      }
+      .flow span {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 14px;
+        font-size: 13.5px;
+      }
+      .flow span.new {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .flow i {
+        color: var(--subtle);
+        font-style: normal;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+        gap: 32px;
+        margin-top: 24px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 13.5px;
+      }
+      figcaption b {
+        color: var(--text);
+      }
+
+      /* App window */
+      .win {
+        background: var(--canvas);
+        border-radius: 12px;
+        box-shadow: var(--elev-window);
+        overflow: hidden;
+      }
+      .titlebar {
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 0 0 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .titlebar .ctl {
+        display: flex;
+      }
+      .titlebar .ctl span {
+        width: 44px;
+        text-align: center;
+        line-height: 32px;
+      }
+      .screen {
+        background: var(--panel);
+        margin: 0 8px 8px;
+        border-radius: 10px;
+        min-height: 500px;
+        padding: 32px 40px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .wordmark {
+        font-family: var(--serif);
+        font-size: 34px;
+        letter-spacing: -0.01em;
+      }
+      .wordmark em {
+        color: var(--accent);
+        font-style: normal;
+      }
+      .sub {
+        color: rgb(28 25 21 / 70%);
+        font-weight: 500;
+        margin: 4px 0 24px;
+        text-align: center;
+      }
+      .stack {
+        width: 100%;
+        max-width: 480px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      /* Rows (pattern from AccessibilityOnboarding cards) */
+      .row {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        padding: 14px 16px;
+        border-radius: 10px;
+        border: 1px solid rgb(92 85 75 / 20%);
+        background: rgb(255 255 255 / 5%);
+      }
+      .ico {
+        width: 40px;
+        height: 40px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        background: rgb(63 60 187 / 15%);
+        color: var(--accent);
+      }
+      .ico.ok {
+        background: var(--success-soft);
+        color: var(--success);
+      }
+      .ico.warn {
+        background: var(--warning-soft);
+        color: var(--warning);
+      }
+      .ico svg {
+        width: 20px;
+        height: 20px;
+      }
+      .body {
+        flex: 1;
+        min-width: 0;
+      }
+      .body h3 {
+        margin: 0;
+        font-size: 14.5px;
+        font-weight: 600;
+      }
+      .body p {
+        margin: 2px 0 0;
+        font-size: 13.5px;
+        color: rgb(28 25 21 / 60%);
+      }
+      .state {
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .state.ok {
+        color: var(--success);
+      }
+      .state.wait {
+        color: rgb(28 25 21 / 55%);
+      }
+      .bar {
+        height: 6px;
+        background: rgb(92 85 75 / 20%);
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 8px;
+      }
+      .bar > div {
+        height: 100%;
+        background: var(--accent);
+        border-radius: 999px;
+      }
+      .meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: rgb(28 25 21 / 50%);
+        margin-top: 4px;
+        font-variant-numeric: tabular-nums;
+      }
+      kbd {
+        font-family: var(--mono);
+        font-size: 12px;
+        background: var(--sunken);
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        border-radius: 6px;
+        padding: 1px 6px;
+      }
+      .spin {
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .btn {
+        font: inherit;
+        font-size: 13.5px;
+        font-weight: 500;
+        border-radius: 8px;
+        padding: 7px 14px;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn.primary:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .btn.secondary {
+        background: var(--panel);
+        border-color: var(--line-strong);
+        color: var(--text);
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--muted);
+      }
+      .btn.link {
+        background: none;
+        border: 0;
+        padding: 0;
+        color: var(--accent);
+        font-weight: 500;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .footer {
+        margin-top: auto;
+        padding-top: 20px;
+        width: 100%;
+        max-width: 480px;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+      }
+      .rowline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 8px;
+      }
+      .meter {
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        height: 22px;
+      }
+      .meter i {
+        width: 4px;
+        border-radius: 2px;
+        background: var(--success);
+        animation: lvl 0.9s ease-in-out infinite alternate;
+      }
+      .meter i.off {
+        background: rgb(92 85 75 / 25%);
+        animation: none;
+        height: 4px !important;
+      }
+      @keyframes lvl {
+        from {
+          transform: scaleY(0.45);
+        }
+        to {
+          transform: scaleY(1);
+        }
+      }
+      .meter i {
+        transform-origin: bottom;
+      }
+      .keys {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .keys kbd {
+        font-size: 13px;
+        padding: 4px 10px;
+      }
+      .keys kbd.hit {
+        background: var(--success-soft);
+        border-color: var(--success);
+        color: var(--success);
+      }
+      .keys kbd.wait {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--accent-soft);
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.55;
+        }
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .cmd {
+        font-family: var(--mono);
+        font-size: 12px;
+        background: var(--sunken);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 10px;
+        margin-top: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .radio {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .radio label {
+        flex: 1;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .radio label.on {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      /* Hub banner */
+      .hub {
+        display: flex;
+        min-height: 300px;
+      }
+      .rail {
+        width: 180px;
+        padding: 16px 12px;
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      .rail div {
+        padding: 6px 10px;
+        border-radius: 8px;
+      }
+      .rail .on {
+        background: var(--panel);
+        color: var(--text);
+        font-weight: 600;
+      }
+      .hubpanel {
+        flex: 1;
+        background: var(--panel);
+        margin: 0 8px 8px 0;
+        border-radius: 10px;
+        padding: 24px 28px;
+      }
+      .banner {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        background: var(--warning-soft);
+        border: 1px solid rgb(138 83 0 / 25%);
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 13.5px;
+      }
+      .banner .t {
+        flex: 1;
+      }
+      .banner b {
+        color: var(--warning);
+      }
+
+      /* NSIS mock */
+      .nsis {
+        background: #fff;
+        border: 1px solid #c8c8c8;
+        border-radius: 6px;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        font-size: 13px;
+        color: #111;
+        overflow: hidden;
+      }
+      .nsis .hd {
+        padding: 14px 18px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+      }
+      .nsis .hd b {
+        display: block;
+      }
+      .nsis .bd {
+        padding: 18px;
+        min-height: 220px;
+      }
+      .nsis .pb {
+        height: 18px;
+        border: 1px solid #bbb;
+        background: #eee;
+        margin: 12px 0 6px;
+      }
+      .nsis .pb div {
+        height: 100%;
+        width: 38%;
+        background: #06b025;
+      }
+      .nsis .log {
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        background: #fafafa;
+        border: 1px solid #ddd;
+        padding: 8px;
+        height: 90px;
+        color: #444;
+      }
+      .nsis .ft {
+        border-top: 1px solid #ddd;
+        padding: 10px 18px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        background: #f3f3f3;
+      }
+      .nsis .ft span {
+        border: 1px solid #adadad;
+        background: #e1e1e1;
+        padding: 3px 18px;
+      }
+      .nsis .ft span.dis {
+        color: #999;
+      }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        max-width: 980px;
+        margin-top: 12px;
+        background: var(--panel);
+        border-radius: 12px;
+        overflow: hidden;
+        font-size: 13.5px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        background: var(--sunken);
+        font-weight: 600;
+      }
+      td.rec {
+        color: var(--success);
+        font-weight: 600;
+      }
+      ol li,
+      ul li {
+        margin: 4px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="doc">
+      <div class="label">Proposta de design · Onboarding · Windows</div>
+      <h1>Instalou, já está pronto</h1>
+      <p class="lead">
+        No Windows o usuário não escolhe modelo nem configura provedor. O
+        Parakeet V3 é baixado sozinho, o atalho já vem definido e, se o Claude
+        Code ou o Codex estiver instalado, ele passa a gerar os resumos das
+        reuniões. Se nenhum dos dois estiver instalado, o app avisa e deixa
+        instalar agora ou mais tarde. No macOS nada muda.
+      </p>
+
+      <div class="flow">
+        <span>Instalador</span><i>→</i>
+        <span
+          >Microfone <small>(já existe, pula sozinho se liberado)</small></span
+        ><i>→</i>
+        <span class="new"
+          >Preparando o Transcreve.ai
+          <small>(novo, substitui a lista de modelos)</small></span
+        ><i>→</i>
+        <span>Hub</span>
+      </div>
+
+      <div class="note">
+        <b>Mudança de comportamento por trás da tela:</b> hoje o provedor dos
+        resumos vem como <code>openai</code>, e sem chave de API o resumo falha.
+        Na proposta, quando o Claude Code ou o Codex é detectado no primeiro
+        uso, ele vira o provedor dos resumos (e do assistente) automaticamente.
+        Ninguém precisa abrir as Configurações.
+      </div>
+
+      <h2>1 · Tela “Preparando”, caminho feliz</h2>
+      <p class="lead">
+        Usa o mesmo padrão de cartões da tela de permissões (ícone redondo,
+        título, descrição, estado). Cada linha passa de “em andamento” para
+        “pronto”. O botão Começar só libera quando o modelo termina de baixar.
+      </p>
+      <div class="grid">
+        <figure>
+          <div class="win">
+            <div class="titlebar">
+              <span>Transcreve.ai</span>
+              <div class="ctl"><span>—</span><span>☐</span><span>✕</span></div>
+            </div>
+            <div class="screen">
+              <div class="wordmark">transcreve<em>.ai</em></div>
+              <p class="sub">Estamos deixando tudo pronto para você</p>
+              <div class="stack">
+                <div class="row">
+                  <div class="ico ok">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <rect x="9" y="2" width="6" height="12" rx="3" />
+                      <path d="M5 10a7 7 0 0 0 14 0M12 19v3" />
+                    </svg>
+                  </div>
+                  <div class="body">
+                    <h3>Microfone</h3>
+                    <p>Microfone (Realtek High Definition Audio)</p>
+                    <div class="rowline">
+                      <div class="meter">
+                        <i style="height: 8px; animation-delay: 0s"></i
+                        ><i style="height: 14px; animation-delay: 0.1s"></i
+                        ><i style="height: 20px; animation-delay: 0.2s"></i
+                        ><i style="height: 16px; animation-delay: 0.05s"></i
+                        ><i style="height: 22px; animation-delay: 0.15s"></i
+                        ><i style="height: 12px; animation-delay: 0.25s"></i
+                        ><i style="height: 18px; animation-delay: 0.08s"></i
+                        ><i style="height: 10px; animation-delay: 0.18s"></i
+                        ><i class="off"></i><i class="off"></i
+                        ><i class="off"></i><i class="off"></i>
+                      </div>
+                      <button class="btn secondary">Parar teste</button>
+                    </div>
+                    <div class="state ok">
+                      ✓ Estamos ouvindo você, o microfone está funcionando
+                    </div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ico">
+                    <svg
+                      class="spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="M21 12a9 9 0 1 1-6.2-8.6" />
+                    </svg>
+                  </div>
+                  <div class="body">
+                    <h3>
+                      Modelo de transcrição
+                      <span class="chip">Parakeet V3 · Português</span>
+                    </h3>
+                    <p>
+                      Roda no seu computador, sem enviar áudio para a internet
+                    </p>
+                    <div class="bar"><div style="width: 62%"></div></div>
+                    <div class="meta">
+                      <span>Baixando 62% · 458 de 740 MB</span
+                      ><span>11,4 MB/s</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ico ok">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <rect x="2" y="6" width="20" height="12" rx="2" />
+                      <path
+                        d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"
+                      />
+                    </svg>
+                  </div>
+                  <div class="body">
+                    <h3>Atalho de ditado</h3>
+                    <p>Aperte o atalho agora para ver se ele funciona</p>
+                    <div class="rowline">
+                      <div class="keys">
+                        <kbd class="hit">Ctrl</kbd><span>+</span
+                        ><kbd class="wait">Espaço</kbd>
+                      </div>
+                      <button class="btn link">Trocar atalho</button>
+                    </div>
+                    <div class="state wait">Esperando você apertar…</div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ico ok">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="M4 5h16v11H8l-4 4z" />
+                      <path d="M8 9h8M8 12h5" />
+                    </svg>
+                  </div>
+                  <div class="body">
+                    <h3>Resumos de reuniões</h3>
+                    <p>Vamos usar o <b>Claude Code</b> com a sua assinatura</p>
+                    <div class="state ok">✓ Claude Code encontrado</div>
+                  </div>
+                </div>
+              </div>
+              <div class="footer">
+                <button class="btn primary" disabled>Começar</button>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            <b>1a.</b> Tudo acontece ao mesmo tempo. O usuário clica em
+            <b>Testar microfone</b> e as barrinhas mostram que o som está
+            chegando. Enquanto isso, o Parakeet V3 baixa em segundo plano e a
+            linha do atalho pede para apertar <kbd>Ctrl</kbd> +
+            <kbd>Espaço</kbd>: cada tecla fica verde quando é reconhecida. Só é
+            baixado o Parakeet V3, que transcreve português. Os modelos só de
+            inglês ficam de fora.
+          </figcaption>
+        </figure>
+
+        <figure>
+          <div class="win">
+            <div class="titlebar">
+              <span>Transcreve.ai</span>
+              <div class="ctl"><span>—</span><span>☐</span><span>✕</span></div>
+            </div>
+            <div class="screen">
+              <div class="wordmark">transcreve<em>.ai</em></div>
+              <p class="sub">Estamos deixando tudo pronto para você</p>
+              <div class="stack">
+                <div class="row">
+                  <div class="ico ok">✓</div>
+                  <div class="body">
+                    <h3>Microfone</h3>
+                    <div class="state ok">✓ Testado e funcionando</div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ico ok">✓</div>
+                  <div class="body">
+                    <h3>
+                      Modelo de transcrição
+                      <span class="chip">Parakeet V3 · Português</span>
+                    </h3>
+                    <div class="state ok">✓ Instalado · 740 MB</div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ico ok">✓</div>
+                  <div class="body">
+                    <h3>Atalho de ditado</h3>
+                    <div class="rowline">
+                      <div class="keys">
+                        <kbd class="hit">Ctrl</kbd><span>+</span
+                        ><kbd class="hit">Espaço</kbd>
+                      </div>
+                    </div>
+                    <div class="state ok">✓ Atalho reconhecido</div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ico ok">✓</div>
+                  <div class="body">
+                    <h3>Resumos de reuniões</h3>
+                    <p>Encontramos os dois. Qual prefere usar?</p>
+                    <div class="radio">
+                      <label class="on">◉ Claude Code</label>
+                      <label>○ Codex</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="footer">
+                <button class="btn primary">Começar</button>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            <b>1b.</b> Tudo pronto. Se os <b>dois</b> estiverem instalados,
+            aparece uma escolha rápida (Claude Code já vem marcado). Com só um
+            instalado, a linha fica igual à 1a, sem escolha.
+          </figcaption>
+        </figure>
+      </div>
+
+      <h2>2 · Nenhum agente encontrado</h2>
+      <p class="lead">
+        O modelo continua baixando normalmente. Só a linha das reuniões muda
+        para o tom de aviso e explica por que importa. O app não instala nada
+        por conta própria: ele abre a instrução oficial e confere de novo.
+      </p>
+      <div class="grid">
+        <figure>
+          <div class="win">
+            <div class="titlebar">
+              <span>Transcreve.ai</span>
+              <div class="ctl"><span>—</span><span>☐</span><span>✕</span></div>
+            </div>
+            <div class="screen">
+              <div class="wordmark">transcreve<em>.ai</em></div>
+              <p class="sub">Estamos deixando tudo pronto para você</p>
+              <div class="stack">
+                <div class="row">
+                  <div class="ico">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <rect x="9" y="2" width="6" height="12" rx="3" />
+                      <path d="M5 10a7 7 0 0 0 14 0M12 19v3" />
+                    </svg>
+                  </div>
+                  <div class="body">
+                    <h3>Microfone</h3>
+                    <p>Microfone (Realtek High Definition Audio)</p>
+                    <div class="rowline">
+                      <div class="meter">
+                        <i class="off"></i><i class="off"></i><i class="off"></i
+                        ><i class="off"></i><i class="off"></i
+                        ><i class="off"></i><i class="off"></i
+                        ><i class="off"></i><i class="off"></i
+                        ><i class="off"></i><i class="off"></i
+                        ><i class="off"></i>
+                      </div>
+                      <button class="btn primary">Testar microfone</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ico">
+                    <svg
+                      class="spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="M21 12a9 9 0 1 1-6.2-8.6" />
+                    </svg>
+                  </div>
+                  <div class="body">
+                    <h3>
+                      Modelo de transcrição
+                      <span class="chip">Parakeet V3 · Português</span>
+                    </h3>
+                    <div class="bar"><div style="width: 34%"></div></div>
+                    <div class="meta">
+                      <span>Baixando 34%</span><span>9,8 MB/s</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="row" style="border-color: rgb(138 83 0 / 30%)">
+                  <div class="ico warn">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="M12 3 2 21h20zM12 10v5M12 18h.01" />
+                    </svg>
+                  </div>
+                  <div class="body">
+                    <h3>Resumos de reuniões</h3>
+                    <p>
+                      Você não tem o Claude Code nem o Codex instalado. Se você
+                      assina o Claude ou o ChatGPT, instale um deles para
+                      receber resumos das reuniões sem custo extra.
+                    </p>
+                    <div class="actions">
+                      <button class="btn secondary">
+                        Instalar Claude Code
+                      </button>
+                      <button class="btn secondary">Instalar Codex</button>
+                      <button class="btn ghost">Deixar para depois</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="footer">
+                <button class="btn primary" disabled>Começar</button>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            <b>2a.</b> Aqui o microfone ainda não foi testado, por isso aparece
+            o botão <b>Testar microfone</b>. “Deixar para depois” encolhe a
+            linha para “Resumos desligados, dá para ativar depois” e não trava o
+            Começar. A transcrição das reuniões funciona normalmente, só não sai
+            o resumo.
+          </figcaption>
+        </figure>
+
+        <figure>
+          <div class="win">
+            <div class="titlebar">
+              <span>Transcreve.ai</span>
+              <div class="ctl"><span>—</span><span>☐</span><span>✕</span></div>
+            </div>
+            <div class="screen">
+              <div class="wordmark">transcreve<em>.ai</em></div>
+              <p class="sub">Estamos deixando tudo pronto para você</p>
+              <div class="stack">
+                <div class="row">
+                  <div class="ico ok">✓</div>
+                  <div class="body">
+                    <h3>
+                      Modelo de transcrição
+                      <span class="chip">Parakeet V3 · Português</span>
+                    </h3>
+                    <div class="state ok">✓ Instalado</div>
+                  </div>
+                </div>
+                <div class="row" style="border-color: rgb(63 60 187 / 35%)">
+                  <div class="ico">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="M4 17l6-6-6-6M12 19h8" />
+                    </svg>
+                  </div>
+                  <div class="body">
+                    <h3>Instalar o Claude Code</h3>
+                    <p>
+                      Abra o PowerShell, cole o comando abaixo e faça login com
+                      a sua conta Claude.
+                    </p>
+                    <div class="cmd">
+                      <span>irm https://claude.ai/install.ps1 | iex</span
+                      ><button class="btn link">Copiar</button>
+                    </div>
+                    <div class="actions">
+                      <button class="btn primary">
+                        Já instalei, verificar
+                      </button>
+                      <button class="btn link">Ver guia oficial ↗</button>
+                      <button class="btn ghost">Voltar</button>
+                    </div>
+                    <div class="state wait">
+                      <svg
+                        class="spin"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path d="M21 12a9 9 0 1 1-6.2-8.6" />
+                      </svg>
+                      Procurando a cada poucos segundos…
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="footer">
+                <button class="btn primary">Começar</button>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            <b>2b.</b> Ao clicar em Instalar, a linha mostra o comando oficial
+            com botão de copiar e o link do guia. Enquanto a tela está aberta, o
+            app confere a instalação a cada poucos segundos (a detecção é só
+            olhar o PATH, não abre processo nenhum). Quando acha, vira a linha
+            verde da 1a.
+          </figcaption>
+        </figure>
+      </div>
+
+      <h2>3 · Quem deixou para depois</h2>
+      <p class="lead">
+        Um aviso discreto no topo do Notetaker, no mesmo tom de warning, que
+        some quando um agente é detectado ou quando o usuário fecha. As reuniões
+        já gravadas continuam com o chip “Sem resumo” que existe hoje.
+      </p>
+      <figure>
+        <div class="win" style="max-width: 860px">
+          <div class="titlebar">
+            <span>Transcreve.ai</span>
+            <div class="ctl"><span>—</span><span>☐</span><span>✕</span></div>
+          </div>
+          <div class="hub">
+            <div class="rail">
+              <div>Início</div>
+              <div class="on">Notetaker</div>
+              <div>Notas</div>
+              <div>Dicionário</div>
+              <div>Configurações</div>
+            </div>
+            <div class="hubpanel">
+              <div class="banner">
+                <div class="ico warn" style="width: 32px; height: 32px">!</div>
+                <div class="t">
+                  <b>Resumos desligados.</b> Instale o Claude Code ou o Codex
+                  para receber resumos automáticos das reuniões.
+                </div>
+                <button class="btn secondary">Instalar</button>
+                <button class="btn ghost">✕</button>
+              </div>
+              <div style="margin-top: 20px" class="label">Hoje</div>
+              <div class="row" style="margin-top: 8px">
+                <div class="body">
+                  <h3>Reunião semanal · Teams</h3>
+                  <p>
+                    32 min ·
+                    <span
+                      class="chip"
+                      style="background: var(--sunken); color: var(--muted)"
+                      >Sem resumo</span
+                    >
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>3.</b> O botão Instalar abre o mesmo passo a passo da 2b, num
+          diálogo.
+        </figcaption>
+      </figure>
+
+      <h2>4 · Baixar o modelo no instalador?</h2>
+      <p class="lead">
+        Você pediu que o download aconteça na instalação. Dá para fazer, porque
+        o instalador já baixa o WebView2 do mesmo jeito. Mas tem custos. Abaixo,
+        as três opções:
+      </p>
+      <div class="grid">
+        <figure>
+          <div class="nsis">
+            <div class="hd">
+              <div>
+                <b>Instalando</b>Aguarde enquanto o Transcreve.ai é instalado.
+              </div>
+              <div>🎙</div>
+            </div>
+            <div class="bd">
+              Baixando o modelo de transcrição Parakeet V3 (740 MB)…
+              <div class="pb"><div></div></div>
+              <div class="log">
+                Extraindo arquivos… concluído<br />WebView2 já instalado<br />Baixando
+                parakeet-tdt-0.6b-v3-Q8_0.gguf<br />281 MB de 740 MB
+              </div>
+            </div>
+            <div class="ft">
+              <span class="dis">&lt; Voltar</span
+              ><span class="dis">Avançar &gt;</span><span>Cancelar</span>
+            </div>
+          </div>
+          <figcaption>
+            <b>4.</b> Como ficaria a página do instalador NSIS (opção A).
+          </figcaption>
+        </figure>
+        <div>
+          <table>
+            <tr>
+              <th>Opção</th>
+              <th>Prós</th>
+              <th>Contras</th>
+            </tr>
+            <tr>
+              <td><b>A.</b> Instalador baixa</td>
+              <td>Abre o app e já está tudo pronto.</td>
+              <td>
+                Instalação mais lenta. Sem internet, a etapa falha. O NSIS não
+                confere o hash do arquivo. É mais script NSIS para manter.
+              </td>
+            </tr>
+            <tr>
+              <td><b>B.</b> Modelo dentro do instalador</td>
+              <td>Funciona offline.</td>
+              <td>
+                Instalador fica com mais de 750 MB, e
+                <b>cada atualização baixaria tudo de novo</b>.
+              </td>
+            </tr>
+            <tr>
+              <td class="rec"><b>C.</b> App baixa no 1º uso (tela 1a) ✓</td>
+              <td>
+                Usa o download que já existe, com conferência de hash, retomada
+                e cancelamento. Funciona igual em qualquer instalação. O usuário
+                vê o progresso.
+              </td>
+              <td>
+                Na primeira abertura, espera o download terminar (a tela mostra
+                o progresso).
+              </td>
+            </tr>
+          </table>
+          <p class="lead" style="font-size: 14px; margin-top: 12px">
+            Recomendo a <b>C</b>, com a opção de juntar com a A: se o instalador
+            já baixou o arquivo, a tela 1a abre direto com “✓ Instalado”.
+          </p>
+        </div>
+      </div>
+
+      <h2>Escopo técnico, em resumo</h2>
+      <ul class="lead">
+        <li>
+          Windows, primeira execução: a lista de modelos dá lugar à tela
+          “Preparando”, que baixa e seleciona o Parakeet V3 (o GGUF que hoje já
+          aparece em destaque no pt-BR).
+        </li>
+        <li>
+          Detecção do agente pelo comando <code>cli_agents_status</code>, que já
+          existe. Ao detectar, o provedor de pós-processamento/resumo passa a
+          ser <code>cli_agent/claude</code> ou <code>cli_agent/codex</code>, sem
+          sobrescrever uma escolha que o usuário já tenha feito.
+        </li>
+        <li>
+          Textos novos em <code>en</code> e <code>pt-BR</code>. A spec F010/F009
+          é atualizada no mesmo PR.
+        </li>
+        <li>macOS e Linux continuam com o fluxo de hoje.</li>
+      </ul>
+    </div>
+  </body>
+</html>

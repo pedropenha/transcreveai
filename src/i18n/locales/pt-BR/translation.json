@@ -136,6 +136,70 @@
         "checkFailed": "Erro ao verificar permissões. Por favor, tente novamente.",
         "requestFailed": "Erro ao solicitar permissão. Por favor, tente novamente."
       }
+    },
+    "setup": {
+      "subtitle": "Estamos deixando tudo pronto para você",
+      "start": "Começar",
+      "mic": {
+        "title": "Microfone",
+        "defaultDevice": "Microfone padrão do Windows",
+        "test": "Testar microfone",
+        "stop": "Parar teste",
+        "speak": "Fale alguma coisa…",
+        "hearing": "Estamos ouvindo você, o microfone está funcionando",
+        "verified": "Testado e funcionando",
+        "error": "Não conseguimos abrir o microfone. Confira se ele está conectado e liberado.",
+        "meterLabel": "Nível do microfone"
+      },
+      "model": {
+        "title": "Modelo de transcrição",
+        "badge": "Parakeet V3 · Português",
+        "description": "Roda no seu computador, sem enviar áudio para a internet",
+        "loading": "Preparando…",
+        "downloading": "Baixando {{percentage}}%",
+        "downloadingOf": "Baixando {{percentage}}% · {{done}} de {{total}} MB",
+        "verifying": "Conferindo o arquivo…",
+        "extracting": "Instalando…",
+        "activating": "Ativando o modelo…",
+        "installed": "Instalado",
+        "installedSize": "Instalado · {{size}}",
+        "error": "Não foi possível baixar o modelo. Confira a internet e tente de novo.",
+        "retry": "Tentar de novo"
+      },
+      "shortcut": {
+        "title": "Atalho de ditado",
+        "description": "Aperte o atalho agora para ver se ele funciona",
+        "waiting": "Aperte {{shortcut}}…",
+        "verified": "Atalho reconhecido",
+        "change": "Trocar atalho",
+        "testAgain": "Testar atalho"
+      },
+      "agent": {
+        "title": "Resumos de reuniões",
+        "names": {
+          "claude": "Claude Code",
+          "codex": "Codex"
+        },
+        "using": "Vamos usar o {{name}} com a sua assinatura",
+        "found": "{{name}} encontrado",
+        "bothFound": "Encontramos os dois. Qual prefere usar?",
+        "missing": "Você não tem o Claude Code nem o Codex instalado. Se você assina o Claude ou o ChatGPT, instale um deles para receber resumos das reuniões sem custo extra.",
+        "install": "Instalar {{name}}",
+        "later": "Deixar para depois",
+        "deferred": "Resumos desligados, dá para ativar depois",
+        "installNow": "Instalar agora",
+        "installTitle": "Instalar o {{name}}",
+        "guide": {
+          "claude": "Abra o PowerShell, cole o comando abaixo e depois faça login com a sua conta Claude rodando claude.",
+          "codex": "Precisa do Node.js. Abra o PowerShell, cole o comando abaixo e depois faça login com a sua conta ChatGPT rodando codex."
+        },
+        "copy": "Copiar",
+        "copied": "Copiado",
+        "check": "Já instalei, verificar",
+        "docs": "Ver guia oficial",
+        "back": "Voltar",
+        "polling": "Procurando a cada poucos segundos…"
+      }
     }
   },
   "modelSelector": {
@@ -1527,7 +1591,12 @@
       "audioDeleted": "Áudio apagado",
       "deleteAudioError": "Falha ao apagar o áudio"
     },
-    "startError": "Não foi possível iniciar a reunião."
+    "startError": "Não foi possível iniciar a reunião.",
+    "agentBanner": {
+      "title": "Resumos desligados.",
+      "body": "Instale o Claude Code ou o Codex para receber resumos automáticos das reuniões.",
+      "close": "Fechar aviso"
+    }
   },
   "connectors": {
     "intro": "Conecte serviços para ler conteúdo selecionado. Cada conexão é independente do provedor de IA.",

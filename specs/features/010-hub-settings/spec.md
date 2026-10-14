@@ -73,6 +73,12 @@ O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredonda
   4. **Atalho**: mostra o padrão e permite trocar. Sem campo de prática obrigatório (decisão do usuário em 2026-10-03); validação de ditado pode ser feita em um aplicativo de texto.
   5. **Flow Bar**: animação mostrando hover e as 2 ações.
   6. **Reuniões**: liga/desliga detecção, explica consentimento.
+- **FR-010-16a** **Windows: configuração automática** (substitui os passos 3 e 4 no Windows; macOS/Linux seguem com a lista de modelos). Depois da permissão do microfone, uma tela única "Estamos deixando tudo pronto para você" roda em paralelo, no padrão de cartões da tela de permissões (proposta em `docs/design/proposta-onboarding-windows.html`):
+  1. **Microfone**: botão "Testar microfone" abre o dispositivo selecionado num stream próprio (sem gravar, sem VAD) e mostra barras com o nível (`onboarding://mic-level`, ~30 Hz); ouvir voz marca "Testado e funcionando". O teste para sozinho em 30 s.
+  2. **Modelo**: baixa e ativa o **Parakeet V3** (GGUF do catálogo, multilíngue com português) sem lista nem escolha; modelos só de inglês e o ONNX legado nunca são baixados. Download com progresso, conferência e "Tentar de novo" em caso de falha. O download é feito pelo app na primeira abertura, não pelo instalador.
+  3. **Atalho**: pede para apertar o atalho de ditado e acende cada tecla reconhecida; "Trocar atalho" abre o editor existente.
+  4. **Resumos de reuniões**: detecta Claude Code e Codex (PATH do processo, PATH persistido no registro do Windows e `~/.local/bin`, para enxergar uma instalação feita com o app aberto). Detectado → passa a ser o provedor dos resumos quando o atual não funciona (sem sobrescrever um provedor BYOK com chave); os dois → escolha rápida, Claude Code marcado. Nenhum → aviso com "Instalar Claude Code", "Instalar Codex" (comando oficial copiável + guia; o app não roda o instalador) e "Deixar para depois"; a detecção é refeita a cada 3 s.
+     "Começar" libera quando o modelo está ativo e o passo de resumos está resolvido (agente encontrado ou adiado). Microfone e atalho orientam, não bloqueiam. Quem adiou vê no Notetaker o aviso "Resumos desligados", que some ao detectar um agente ou ao ser fechado.
 - **FR-010-17** Onboarding pode ser pulado e reaberto em Configurações → Ajuda.
 - **FR-010-18** Instância única: abrir o app de novo foca o Hub existente.
 - **FR-010-19** (v1.1+, com a T-049) Atualizações: checagem diária (desativável), notas da versão, instalar ao sair. Na v1 não há updater.
@@ -88,6 +94,8 @@ O rail fica sobre o canvas (papel) e o conteúdo vive num painel inset arredonda
 ## Critérios de aceitação
 
 - **AC-010-01** _Dado_ uma instalação nova, _quando_ completo o onboarding escolhendo um modelo local, _então_ o onboarding salva a escolha e conclui sem exigir ditado em campo de prática; o modelo deve estar disponível antes de iniciar o ditado.
+- **AC-010-01a** _Dado_ uma instalação nova no Windows com o Claude Code instalado, _quando_ abro o app, _então_ o Parakeet V3 baixa e ativa sozinho, os resumos passam a usar o Claude Code e "Começar" leva ao Hub sem nenhuma escolha de modelo ou provedor.
+- **AC-010-01b** _Dado_ uma instalação nova no Windows sem Claude Code nem Codex, _quando_ escolho "Deixar para depois", _então_ consigo começar, as reuniões são transcritas sem resumo e o Notetaker mostra o aviso "Resumos desligados"; _quando_ instalo um agente, _então_ o aviso some sem reiniciar o app.
 - **AC-010-02** _Dado_ o mic bloqueado nas configurações de privacidade do Windows, _então_ o passo 2 explica e o botão abre a página correta.
 - **AC-010-03** _Quando_ clico em "Tentar novamente" numa entrada que falhou, escolhendo outro provedor, _então_ uma nova transcrição é feita e a entrada é atualizada.
 - **AC-010-05** _Quando_ fecho o Hub, _então_ o app continua na bandeja e os atalhos seguem funcionando.

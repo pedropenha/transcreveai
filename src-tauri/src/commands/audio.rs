@@ -2,6 +2,7 @@ use crate::audio_feedback;
 use crate::audio_toolkit::audio::{list_input_devices, list_output_devices, AudioRecorder};
 use crate::commands::{CommandError, CommandErrorCode, CommandResult};
 use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
+use crate::mic_test::{self, MicTestStarted};
 use crate::settings::{get_settings, write_settings};
 use log::warn;
 use serde::{Deserialize, Serialize};
@@ -347,6 +348,33 @@ pub async fn play_test_sound(app: AppHandle, sound_type: String) -> CommandResul
     };
     audio_feedback::play_test_sound(&app, sound);
     Ok(())
+}
+
+/// First-run setup (F010): open the selected microphone and stream its level
+/// on `onboarding://mic-level` until `stop_microphone_test`, a 30 s timeout
+/// or another start. Returns the name of the device being tested.
+#[tauri::command]
+#[specta::specta]
+pub async fn start_microphone_test(app: AppHandle) -> CommandResult<MicTestStarted> {
+    let selected = get_settings(&app).selected_microphone;
+    tokio::task::spawn_blocking(move || mic_test::start(&app, selected))
+        .await
+        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Audio task failed", e))?
+        .map_err(|e| {
+            CommandError::logged(
+                CommandErrorCode::AudioDevice,
+                "Failed to start microphone test",
+                e,
+            )
+        })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn stop_microphone_test() -> CommandResult<()> {
+    tokio::task::spawn_blocking(mic_test::stop)
+        .await
+        .map_err(|e| CommandError::logged(CommandErrorCode::Internal, "Audio task failed", e))
 }
 
 #[tauri::command]

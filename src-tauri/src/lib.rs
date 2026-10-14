@@ -26,6 +26,7 @@ mod managers;
 pub mod meeting;
 mod meeting_window;
 mod memory;
+mod mic_test;
 mod overlay;
 mod paste_tx;
 pub mod pipeline;
@@ -1044,6 +1045,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::audio::set_selected_output_device,
             commands::audio::get_selected_output_device,
             commands::audio::play_test_sound,
+            commands::audio::start_microphone_test,
+            commands::audio::stop_microphone_test,
             commands::audio::check_custom_sounds,
             commands::audio::set_clamshell_microphone,
             commands::audio::get_clamshell_microphone,

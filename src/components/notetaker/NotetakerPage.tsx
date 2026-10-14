@@ -15,6 +15,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { useHubNavigation } from "../shell/HubNavigation";
 import { SUMMARY_SETTINGS_TAB } from "../shell/navModel";
 import { SEARCH_DEBOUNCE_MS } from "../settings/meetings/meetingsView";
+import { AgentReminderBanner } from "./AgentReminderBanner";
 import { LiveBlock } from "./LiveBlock";
 import { MeetingDetailPanel } from "./MeetingDetailPanel";
 import { MeetingRow } from "./MeetingRow";
@@ -213,6 +214,8 @@ export const NotetakerPage: React.FC = () => {
           </button>
           <StartMeetingMenu onStart={(micOnly) => void startMeeting(micOnly)} />
         </header>
+
+        <AgentReminderBanner />
 
         {live ? (
           <LiveBlock

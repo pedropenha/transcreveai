@@ -1,5 +1,6 @@
 export { default } from "./Onboarding";
 export { default as AccessibilityOnboarding } from "./AccessibilityOnboarding";
+export { default as SetupOnboarding } from "./setup/SetupOnboarding";
 export {
   default as ModelCard,
   getLanguageDisplayText,
