@@ -1132,6 +1132,27 @@ async playTestSound(soundType: string) : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * First-run setup (F010): open the selected microphone and stream its level
+ * on `onboarding://mic-level` until `stop_microphone_test`, a 30 s timeout
+ * or another start. Returns the name of the device being tested.
+ */
+async startMicrophoneTest() : Promise<Result<MicTestStarted, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_microphone_test") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopMicrophoneTest() : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_microphone_test") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async checkCustomSounds() : Promise<Result<CustomSounds, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("check_custom_sounds") };
@@ -3165,6 +3186,11 @@ status: string;
  * Milliseconds since the meeting started (pause time included).
  */
 elapsed_ms: number }
+export type MicTestStarted = { 
+/**
+ * Display name of the device being tested.
+ */
+device_name: string }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**

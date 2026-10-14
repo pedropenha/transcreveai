@@ -127,15 +127,93 @@ pub(crate) fn resolve_binary(spec: &CliAgentSpec, config: &CliAgentConfig) -> Op
             .ok()
             .and_then(|path| native_launch_binary(&path, spec));
     }
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .flat_map(|dir| {
-            candidate_names(spec.binary, &pathext())
-                .into_iter()
-                .map(move |name| dir.join(name))
-        })
+    let names = candidate_names(spec.binary, &pathext());
+    search_dirs()
+        .into_iter()
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
         .filter(|path| is_executable_file(path))
         .find_map(|path| native_launch_binary(&path, spec))
+}
+
+/// Directories searched for agent binaries, in order: this process's PATH,
+/// then (Windows) the user's and the machine's PATH as persisted in the
+/// registry, then `~/.local/bin` (where the official Claude Code installer
+/// puts `claude`). An agent installed while the app is running only updates
+/// the registry, not our inherited environment — without the extra entries
+/// the first-run setup could only see a fresh install after a restart.
+fn search_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    let mut push = |dir: PathBuf| {
+        if !dir.as_os_str().is_empty() && !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    };
+    #[cfg(windows)]
+    for raw in persisted_windows_path() {
+        let expanded = OsString::from(expand_env_vars(&raw, |n| std::env::var(n).ok()));
+        std::env::split_paths(&expanded).for_each(&mut push);
+    }
+    if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+        push(PathBuf::from(home).join(".local").join("bin"));
+    }
+    dirs
+}
+
+/// User then machine `Path` values (raw `REG_EXPAND_SZ`, not yet expanded).
+#[cfg(windows)]
+fn persisted_windows_path() -> Vec<String> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+    [
+        (HKEY_CURRENT_USER, "Environment"),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(root, key)| {
+        RegKey::predef(root)
+            .open_subkey(key)
+            .ok()?
+            .get_value::<String, _>("Path")
+            .ok()
+    })
+    .collect()
+}
+
+/// Expand `%NAME%` references the way `REG_EXPAND_SZ` values expect.
+/// Unknown variables and a dangling `%` are kept literally.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn expand_env_vars(raw: &str, lookup: impl Fn(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut rest = raw;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        match after.find('%') {
+            Some(end) => {
+                let name = &after[..end];
+                match lookup(name).filter(|_| !name.is_empty()) {
+                    Some(value) => out.push_str(&value),
+                    None => {
+                        out.push('%');
+                        out.push_str(name);
+                        out.push('%');
+                    }
+                }
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push_str(&rest[start..]);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// npm's batch shim is discovery metadata only. Never interpret its contents
